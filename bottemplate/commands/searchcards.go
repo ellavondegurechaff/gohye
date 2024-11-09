@@ -3,6 +3,7 @@ package commands
 import (
 	"context"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/disgoorg/bot-template/bottemplate/utils"
 	"github.com/disgoorg/disgo/discord"
 	"github.com/disgoorg/disgo/handler"
+	"github.com/disgoorg/paginator"
 )
 
 var SearchCards = discord.SlashCommandCreate{
@@ -33,11 +35,11 @@ var SearchCards = discord.SlashCommandCreate{
 			Description: "Filter by card level (1-5)",
 			Required:    false,
 			Choices: []discord.ApplicationCommandOptionChoiceInt{
-				{Name: "⭐ Common", Value: 1},
-				{Name: "⭐⭐ Uncommon", Value: 2},
-				{Name: "⭐⭐⭐ Rare", Value: 3},
-				{Name: "⭐⭐⭐⭐ Epic", Value: 4},
-				{Name: "⭐⭐⭐⭐⭐ Legendary", Value: 5},
+				{Name: "1", Value: 1},
+				{Name: "2", Value: 2},
+				{Name: "3", Value: 3},
+				{Name: "4", Value: 4},
+				{Name: "5", Value: 5},
 			},
 		},
 		discord.ApplicationCommandOptionString{
@@ -52,7 +54,6 @@ var SearchCards = discord.SlashCommandCreate{
 			Choices: []discord.ApplicationCommandOptionChoiceString{
 				{Name: "👯‍♀️ Girl Groups", Value: "girlgroups"},
 				{Name: "👯‍♂️ Boy Groups", Value: "boygroups"},
-				{Name: "👤 Solo Artists", Value: "soloist"},
 			},
 		},
 		discord.ApplicationCommandOptionBool{
@@ -67,11 +68,6 @@ const cardsPerPage = 10
 
 func SearchCardsHandler(b *bottemplate.Bot) handler.CommandHandler {
 	return func(e *handler.CommandEvent) error {
-		// First, send a deferred response
-		if err := e.DeferCreateMessage(false); err != nil {
-			return fmt.Errorf("failed to defer response: %w", err)
-		}
-
 		// Extract search filters from command options
 		filters := repositories.SearchFilters{
 			Name:       e.SlashCommandInteractionData().String("name"),
@@ -86,61 +82,50 @@ func SearchCardsHandler(b *bottemplate.Bot) handler.CommandHandler {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
+		// Get total count first
 		cards, totalCount, err := b.CardRepository.Search(ctx, filters, 0, cardsPerPage)
 		if err != nil {
-			_, err = e.UpdateInteractionResponse(discord.MessageUpdate{
-				Embeds: &[]discord.Embed{
-					{
-						Title:       "❌ Search Failed",
-						Description: fmt.Sprintf("```diff\n- Error: %v\n```", err),
-						Color:       0xFF0000,
-					},
-				},
-			})
-			return err
+			return sendErrorEmbed(e, "Search Failed", err)
 		}
 
 		if len(cards) == 0 {
-			_, err = e.UpdateInteractionResponse(discord.MessageUpdate{
-				Embeds: &[]discord.Embed{
-					{
-						Title:       "❌ No Results Found",
-						Description: "```diff\n- No cards match your search criteria\n```",
-						Color:       0xFF0000,
-						Footer: &discord.EmbedFooter{
-							Text: "Try different search terms or filters",
-						},
-					},
-				},
-			})
-			return err
+			return sendNoResultsEmbed(e)
 		}
 
-		// Create embed with search results
-		embed := createSearchResultsEmbed(cards, filters, 1, totalCount)
+		// Calculate total pages
+		totalPages := int(math.Ceil(float64(totalCount) / float64(cardsPerPage)))
 
-		// Add pagination buttons if needed
-		var components []discord.ContainerComponent
-		if totalCount > cardsPerPage {
-			components = []discord.ContainerComponent{
-				discord.NewActionRow(
-					discord.NewPrimaryButton("◀️ Previous", "search:prev:0"),
-					discord.NewPrimaryButton("Next ▶️", "search:next:2"),
-					discord.NewSecondaryButton("🔍 Refine Search", "search:refine"),
-				),
-			}
+		// Create paginator
+		err = b.Paginator.Create(e.Respond, paginator.Pages{
+			ID:      e.ID().String(),
+			Creator: e.User().ID,
+			PageFunc: func(page int, embed *discord.EmbedBuilder) {
+				// Fetch cards for current page
+				offset := page * cardsPerPage
+				pageCards, _, _ := b.CardRepository.Search(context.Background(), filters, offset, cardsPerPage)
+
+				// Build embed description
+				description := buildSearchDescription(pageCards, filters, page+1, totalCount, totalPages)
+
+				embed.
+					SetTitle("🔍 Card Search Results").
+					SetDescription(description).
+					SetColor(0x00FF00).
+					SetFooter("Use the buttons below to navigate or refine your search", "")
+			},
+			Pages:      totalPages,
+			ExpireMode: paginator.ExpireModeAfterLastUsage,
+		}, false)
+
+		if err != nil {
+			return fmt.Errorf("failed to create paginator: %w", err)
 		}
 
-		// Update the deferred response with results
-		_, err = e.UpdateInteractionResponse(discord.MessageUpdate{
-			Embeds:     &[]discord.Embed{embed},
-			Components: &components,
-		})
-		return err
+		return nil
 	}
 }
 
-func createSearchResultsEmbed(cards []*models.Card, filters repositories.SearchFilters, page int, totalCount int) discord.Embed {
+func buildSearchDescription(cards []*models.Card, filters repositories.SearchFilters, currentPage, totalCount, totalPages int) string {
 	var description strings.Builder
 	description.WriteString("```md\n# Search Results\n")
 
@@ -154,7 +139,7 @@ func createSearchResultsEmbed(cards []*models.Card, filters repositories.SearchF
 			description.WriteString(fmt.Sprintf("* ID: %d\n", filters.ID))
 		}
 		if filters.Level != 0 {
-			description.WriteString(fmt.Sprintf("* Level: %s\n", getRarityName(filters.Level)))
+			description.WriteString(fmt.Sprintf("* Level: %d ⭐\n", filters.Level))
 		}
 		if filters.Collection != "" {
 			description.WriteString(fmt.Sprintf("* Collection: %s\n", filters.Collection))
@@ -169,27 +154,47 @@ func createSearchResultsEmbed(cards []*models.Card, filters repositories.SearchF
 
 	description.WriteString("\n## Cards\n")
 	for _, card := range cards {
-		stars := strings.Repeat("⭐", card.Level)
-		description.WriteString(fmt.Sprintf("* %s %s [%s] (#%d)\n",
-			stars,
+		// Format level with stars and remove double brackets and card ID
+		description.WriteString(fmt.Sprintf("* %d ⭐ %s [%s]\n",
+			card.Level,
 			utils.FormatCardName(card.Name),
-			utils.FormatCollectionName(card.ColID),
-			card.ID,
+			strings.Trim(utils.FormatCollectionName(card.ColID), "[]"), // Remove double brackets
 		))
 	}
 
-	totalPages := (totalCount + cardsPerPage - 1) / cardsPerPage
-	description.WriteString(fmt.Sprintf("\n> Page %d of %d (%d total cards)\n", page, totalPages, totalCount))
+	description.WriteString(fmt.Sprintf("\n> Page %d of %d (%d total cards)\n", currentPage, totalPages, totalCount))
 	description.WriteString("```")
 
-	return discord.Embed{
-		Title:       "🔍 Card Search Results",
-		Description: description.String(),
-		Color:       0x00FF00,
-		Footer: &discord.EmbedFooter{
-			Text: "Use the buttons below to navigate or refine your search",
+	return description.String()
+}
+
+func sendErrorEmbed(e *handler.CommandEvent, title string, err error) error {
+	_, err2 := e.UpdateInteractionResponse(discord.MessageUpdate{
+		Embeds: &[]discord.Embed{
+			{
+				Title:       "❌ " + title,
+				Description: fmt.Sprintf("```diff\n- Error: %v\n```", err),
+				Color:       0xFF0000,
+			},
 		},
-	}
+	})
+	return err2
+}
+
+func sendNoResultsEmbed(e *handler.CommandEvent) error {
+	_, err := e.UpdateInteractionResponse(discord.MessageUpdate{
+		Embeds: &[]discord.Embed{
+			{
+				Title:       "❌ No Results Found",
+				Description: "```diff\n- No cards match your search criteria\n```",
+				Color:       0xFF0000,
+				Footer: &discord.EmbedFooter{
+					Text: "Try different search terms or filters",
+				},
+			},
+		},
+	})
+	return err
 }
 
 func hasActiveFilters(filters repositories.SearchFilters) bool {
