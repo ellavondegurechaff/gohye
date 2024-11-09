@@ -104,6 +104,7 @@ func main() {
 	h.Command("/usercardtest", commands.UserCardTestHandler(b))
 	h.Command("/migratecards", commands.MigrateCardsHandler(b))
 	h.Command("/deletecard", commands.DeleteCardHandler(b))
+	h.Command("/summon", commands.SummonHandler(b))
 
 	if err = b.SetupBot(h, bot.NewListenerFunc(b.OnReady), handlers.MessageHandler(b)); err != nil {
 		slog.Error("Failed to setup bot", slog.Any("err", err))

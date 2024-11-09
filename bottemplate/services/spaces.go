@@ -15,6 +15,7 @@ import (
 type SpacesService struct {
 	client   *s3.Client
 	bucket   string
+	region   string
 	CardRoot string
 }
 
@@ -39,6 +40,7 @@ func NewSpacesService(spacesKey, spacesSecret, region, bucket, cardRoot string) 
 	return &SpacesService{
 		client:   client,
 		bucket:   bucket,
+		region:   region,
 		CardRoot: strings.TrimPrefix(cardRoot, "/"),
 	}
 }
@@ -93,4 +95,16 @@ func (s *SpacesService) DeleteCardImage(ctx context.Context, colID string, cardN
 	}
 
 	return nil
+}
+
+func (s *SpacesService) GetBucket() string {
+	return s.bucket
+}
+
+func (s *SpacesService) GetRegion() string {
+	return s.region
+}
+
+func (s *SpacesService) GetCardRoot() string {
+	return s.CardRoot
 }
