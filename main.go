@@ -12,7 +12,11 @@ import (
 	"github.com/disgoorg/bot-template/bottemplate"
 	"github.com/disgoorg/bot-template/bottemplate/commands"
 	"github.com/disgoorg/bot-template/bottemplate/components"
+	"github.com/disgoorg/bot-template/bottemplate/database"
+	"github.com/disgoorg/bot-template/bottemplate/database/repositories"
 	"github.com/disgoorg/bot-template/bottemplate/handlers"
+	"github.com/disgoorg/bot-template/bottemplate/logger"
+	"github.com/disgoorg/bot-template/bottemplate/services"
 	"github.com/disgoorg/disgo/bot"
 	"github.com/disgoorg/disgo/handler"
 )
@@ -23,27 +27,83 @@ var (
 )
 
 func main() {
+	// Initialize custom logger
+	customHandler := logger.NewHandler()
+	slog.SetDefault(slog.New(customHandler))
+
+	slog.Info("Starting GoHYE Discord Bot",
+		slog.String("version", version),
+		slog.String("commit", commit))
+
 	shouldSyncCommands := flag.Bool("sync-commands", false, "Whether to sync commands to discord")
 	path := flag.String("config", "config.toml", "path to config")
 	flag.Parse()
 
 	cfg, err := bottemplate.LoadConfig(*path)
 	if err != nil {
-		slog.Error("Failed to read config", slog.Any("err", err))
+		slog.Error("Failed to load configuration", slog.Any("error", err))
+		os.Exit(-1)
+	}
+	slog.Info("Configuration loaded successfully")
+
+	slog.Info("Initializing database connection...")
+	dbStartTime := time.Now()
+
+	// Create context with timeout for database connection
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// Convert bottemplate.DBConfig to database.DBConfig
+	dbConfig := database.DBConfig{
+		Host:     cfg.DB.Host,
+		Port:     cfg.DB.Port,
+		User:     cfg.DB.User,
+		Password: cfg.DB.Password,
+		Database: cfg.DB.Database,
+		PoolSize: cfg.DB.PoolSize,
+	}
+
+	db, err := database.New(ctx, dbConfig)
+	if err != nil {
+		slog.Error("Database connection failed",
+			slog.String("error", err.Error()),
+			slog.Duration("attempted_for", time.Since(dbStartTime)))
 		os.Exit(-1)
 	}
 
-	setupLogger(cfg.Log)
-	slog.Info("Starting bot-template...", slog.String("version", version), slog.String("commit", commit))
-	slog.Info("Syncing commands", slog.Bool("sync", *shouldSyncCommands))
+	slog.Info("Database connected successfully",
+		slog.String("database", cfg.DB.Database),
+		slog.Duration("took", time.Since(dbStartTime)))
+
+	defer db.Close()
 
 	b := bottemplate.New(*cfg, version, commit)
+	b.DB = db
+
+	// Initialize Spaces service
+	spacesService := services.NewSpacesService(
+		cfg.Spaces.Key,
+		cfg.Spaces.Secret,
+		cfg.Spaces.Region,
+		cfg.Spaces.Bucket,
+		cfg.Spaces.CardRoot, // Add this parameter
+	)
+	b.SpacesService = spacesService
+
+	// Initialize repositories
+	b.CardRepository = repositories.NewCardRepository(b.DB.BunDB(), spacesService)
+	b.UserCardRepository = repositories.NewUserCardRepository(b.DB.BunDB())
 
 	h := handler.New()
 	h.Command("/test", commands.TestHandler)
 	h.Autocomplete("/test", commands.TestAutocompleteHandler)
 	h.Command("/version", commands.VersionHandler(b))
 	h.Component("/test-button", components.TestComponent)
+	h.Command("/dbtest", commands.DBTestHandler(b))
+	h.Command("/usertest", commands.UserTestHandler(b))
+	h.Command("/usercardtest", commands.UserCardTestHandler(b))
+	h.Command("/migratecards", commands.MigrateCardsHandler(b))
+	h.Command("/deletecard", commands.DeleteCardHandler(b))
 
 	if err = b.SetupBot(h, bot.NewListenerFunc(b.OnReady), handlers.MessageHandler(b)); err != nil {
 		slog.Error("Failed to setup bot", slog.Any("err", err))
@@ -63,7 +123,7 @@ func main() {
 		}
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel = context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err = b.Client.OpenGateway(ctx); err != nil {
 		slog.Error("Failed to open gateway", slog.Any("err", err))
@@ -75,23 +135,4 @@ func main() {
 	signal.Notify(s, syscall.SIGINT, syscall.SIGTERM)
 	<-s
 	slog.Info("Shutting down bot...")
-}
-
-func setupLogger(cfg bottemplate.LogConfig) {
-	opts := &slog.HandlerOptions{
-		AddSource: cfg.AddSource,
-		Level:     cfg.Level,
-	}
-
-	var sHandler slog.Handler
-	switch cfg.Format {
-	case "json":
-		sHandler = slog.NewJSONHandler(os.Stdout, opts)
-	case "text":
-		sHandler = slog.NewTextHandler(os.Stdout, opts)
-	default:
-		slog.Error("Unknown log format", slog.String("format", cfg.Format))
-		os.Exit(-1)
-	}
-	slog.SetDefault(slog.New(sHandler))
 }

@@ -23,8 +23,16 @@ func LoadConfig(path string) (*Config, error) {
 }
 
 type Config struct {
-	Log LogConfig `toml:"log"`
-	Bot BotConfig `toml:"bot"`
+	Log    LogConfig `toml:"log"`
+	Bot    BotConfig `toml:"bot"`
+	DB     DBConfig  `toml:"db"`
+	Spaces struct {
+		Key      string `toml:"key"`
+		Secret   string `toml:"secret"`
+		Region   string `toml:"region"`
+		Bucket   string `toml:"bucket"`
+		CardRoot string `toml:"cardroot"` // Add this field
+	} `toml:"spaces"`
 }
 
 type BotConfig struct {
@@ -36,4 +44,13 @@ type LogConfig struct {
 	Level     slog.Level `toml:"level"`
 	Format    string     `toml:"format"`
 	AddSource bool       `toml:"add_source"`
+}
+
+type DBConfig struct {
+	Host     string `toml:"host"`
+	Port     int    `toml:"port"`
+	User     string `toml:"user"`
+	Password string `toml:"password"`
+	Database string `toml:"database"`
+	PoolSize int    `toml:"pool_size"`
 }

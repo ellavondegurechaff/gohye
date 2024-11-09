@@ -5,6 +5,9 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/disgoorg/bot-template/bottemplate/database"
+	"github.com/disgoorg/bot-template/bottemplate/database/repositories"
+	"github.com/disgoorg/bot-template/bottemplate/services"
 	"github.com/disgoorg/disgo"
 	"github.com/disgoorg/disgo/bot"
 	"github.com/disgoorg/disgo/cache"
@@ -24,11 +27,15 @@ func New(cfg Config, version string, commit string) *Bot {
 }
 
 type Bot struct {
-	Cfg       Config
-	Client    bot.Client
-	Paginator *paginator.Manager
-	Version   string
-	Commit    string
+	Cfg                Config
+	Client             bot.Client
+	Paginator          *paginator.Manager
+	Version            string
+	Commit             string
+	DB                 *database.DB
+	CardRepository     repositories.CardRepository
+	UserCardRepository repositories.UserCardRepository
+	SpacesService      *services.SpacesService
 }
 
 func (b *Bot) SetupBot(listeners ...bot.EventListener) error {
@@ -47,10 +54,16 @@ func (b *Bot) SetupBot(listeners ...bot.EventListener) error {
 }
 
 func (b *Bot) OnReady(_ *events.Ready) {
-	slog.Info("bot-template ready")
+	slog.Info("GoHYE Bot is now ready",
+		slog.String("version", b.Version),
+		slog.String("commit", b.Commit))
+
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if err := b.Client.SetPresence(ctx, gateway.WithListeningActivity("you"), gateway.WithOnlineStatus(discord.OnlineStatusOnline)); err != nil {
-		slog.Error("Failed to set presence", slog.Any("err", err))
+
+	if err := b.Client.SetPresence(ctx,
+		gateway.WithListeningActivity("commands"),
+		gateway.WithOnlineStatus(discord.OnlineStatusOnline)); err != nil {
+		slog.Error("Failed to set presence", slog.Any("error", err))
 	}
 }
