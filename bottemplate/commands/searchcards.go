@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/disgoorg/bot-template/bottemplate"
@@ -64,65 +65,167 @@ var SearchCards = discord.SlashCommandCreate{
 	},
 }
 
-const cardsPerPage = 10
+const (
+	cardsPerPage    = 10
+	searchTimeout   = 10 * time.Second
+	cacheExpiration = 5 * time.Minute
+)
+
+type searchCache struct {
+	mu    sync.RWMutex
+	cache map[string]*cacheEntry
+}
+
+type cacheEntry struct {
+	results    []*models.Card
+	totalCount int
+	timestamp  time.Time
+}
+
+var cardSearchCache = &searchCache{
+	cache: make(map[string]*cacheEntry),
+}
+
+func (sc *searchCache) get(key string) (*cacheEntry, bool) {
+	sc.mu.RLock()
+	defer sc.mu.RUnlock()
+
+	entry, exists := sc.cache[key]
+	if !exists {
+		return nil, false
+	}
+
+	// Check if cache entry has expired
+	if time.Since(entry.timestamp) > cacheExpiration {
+		delete(sc.cache, key)
+		return nil, false
+	}
+
+	return entry, true
+}
+
+func (sc *searchCache) set(key string, cards []*models.Card, totalCount int) {
+	sc.mu.Lock()
+	defer sc.mu.Unlock()
+
+	sc.cache[key] = &cacheEntry{
+		results:    cards,
+		totalCount: totalCount,
+		timestamp:  time.Now(),
+	}
+}
 
 func SearchCardsHandler(b *bottemplate.Bot) handler.CommandHandler {
 	return func(e *handler.CommandEvent) error {
 		// Extract search filters from command options
 		filters := repositories.SearchFilters{
-			Name:       e.SlashCommandInteractionData().String("name"),
+			Name:       strings.TrimSpace(e.SlashCommandInteractionData().String("name")),
 			ID:         int64(e.SlashCommandInteractionData().Int("id")),
 			Level:      int(e.SlashCommandInteractionData().Int("level")),
-			Collection: e.SlashCommandInteractionData().String("collection"),
+			Collection: strings.TrimSpace(e.SlashCommandInteractionData().String("collection")),
 			Type:       e.SlashCommandInteractionData().String("type"),
 			Animated:   e.SlashCommandInteractionData().Bool("animated"),
 		}
 
-		// Search cards with pagination
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		// Generate cache key
+		cacheKey := generateCacheKey(filters)
+
+		// Try to get results from cache first
+		if entry, exists := cardSearchCache.get(cacheKey); exists {
+			return createPaginator(b, e, entry.results, entry.totalCount, filters)
+		}
+
+		// Set timeout context
+		ctx, cancel := context.WithTimeout(context.Background(), searchTimeout)
 		defer cancel()
 
-		// Get total count first
-		cards, totalCount, err := b.CardRepository.Search(ctx, filters, 0, cardsPerPage)
-		if err != nil {
-			return sendErrorEmbed(e, "Search Failed", err)
+		// Use a channel for handling timeouts gracefully
+		resultChan := make(chan struct {
+			cards []*models.Card
+			count int
+			err   error
+		})
+
+		go func() {
+			cards, totalCount, err := b.CardRepository.Search(ctx, filters, 0, cardsPerPage)
+			resultChan <- struct {
+				cards []*models.Card
+				count int
+				err   error
+			}{cards, totalCount, err}
+		}()
+
+		// Wait for results or timeout
+		select {
+		case result := <-resultChan:
+			if result.err != nil {
+				return sendErrorEmbed(e, "Search Failed", result.err)
+			}
+
+			if len(result.cards) == 0 {
+				return sendNoResultsEmbed(e)
+			}
+
+			// Cache the results
+			cardSearchCache.set(cacheKey, result.cards, result.count)
+
+			return createPaginator(b, e, result.cards, result.count, filters)
+
+		case <-ctx.Done():
+			return sendErrorEmbed(e, "Search Timeout", fmt.Errorf("search took too long to complete"))
 		}
+	}
+}
 
-		if len(cards) == 0 {
-			return sendNoResultsEmbed(e)
-		}
+// Helper function to generate cache key
+func generateCacheKey(filters repositories.SearchFilters) string {
+	return fmt.Sprintf("%s:%d:%d:%s:%s:%v",
+		filters.Name,
+		filters.ID,
+		filters.Level,
+		filters.Collection,
+		filters.Type,
+		filters.Animated,
+	)
+}
 
-		// Calculate total pages
-		totalPages := int(math.Ceil(float64(totalCount) / float64(cardsPerPage)))
+// Separate paginator creation logic
+func createPaginator(b *bottemplate.Bot, e *handler.CommandEvent, initialCards []*models.Card, totalCount int, filters repositories.SearchFilters) error {
+	totalPages := int(math.Ceil(float64(totalCount) / float64(cardsPerPage)))
 
-		// Create paginator
-		err = b.Paginator.Create(e.Respond, paginator.Pages{
-			ID:      e.ID().String(),
-			Creator: e.User().ID,
-			PageFunc: func(page int, embed *discord.EmbedBuilder) {
-				// Fetch cards for current page
-				offset := page * cardsPerPage
-				pageCards, _, _ := b.CardRepository.Search(context.Background(), filters, offset, cardsPerPage)
-
-				// Build embed description
-				description := buildSearchDescription(pageCards, filters, page+1, totalCount, totalPages)
-
+	return b.Paginator.Create(e.Respond, paginator.Pages{
+		ID:      e.ID().String(),
+		Creator: e.User().ID,
+		PageFunc: func(page int, embed *discord.EmbedBuilder) {
+			// Try to get page from cache first
+			cacheKey := fmt.Sprintf("%s:page:%d", generateCacheKey(filters), page)
+			if entry, exists := cardSearchCache.get(cacheKey); exists {
+				description := buildSearchDescription(entry.results, filters, page+1, totalCount, totalPages)
 				embed.
 					SetTitle("🔍 Card Search Results").
 					SetDescription(description).
 					SetColor(0x00FF00).
 					SetFooter("Use the buttons below to navigate or refine your search", "")
-			},
-			Pages:      totalPages,
-			ExpireMode: paginator.ExpireModeAfterLastUsage,
-		}, false)
+				return
+			}
 
-		if err != nil {
-			return fmt.Errorf("failed to create paginator: %w", err)
-		}
+			// If not in cache, fetch from database
+			offset := page * cardsPerPage
+			pageCards, _, _ := b.CardRepository.Search(context.Background(), filters, offset, cardsPerPage)
 
-		return nil
-	}
+			// Cache the page results
+			cardSearchCache.set(cacheKey, pageCards, totalCount)
+
+			description := buildSearchDescription(pageCards, filters, page+1, totalCount, totalPages)
+			embed.
+				SetTitle("🔍 Card Search Results").
+				SetDescription(description).
+				SetColor(0x00FF00).
+				SetFooter("Use the buttons below to navigate or refine your search", "")
+		},
+		Pages:      totalPages,
+		ExpireMode: paginator.ExpireModeAfterLastUsage,
+	}, false)
 }
 
 func buildSearchDescription(cards []*models.Card, filters repositories.SearchFilters, currentPage, totalCount, totalPages int) string {
