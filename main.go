@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -95,19 +96,25 @@ func main() {
 	b.UserCardRepository = repositories.NewUserCardRepository(b.DB.BunDB())
 
 	h := handler.New()
-	h.Command("/test", commands.TestHandler)
+	h.Command("/test", handlers.WrapWithLogging("test", commands.TestHandler))
 	h.Autocomplete("/test", commands.TestAutocompleteHandler)
 	h.Command("/version", commands.VersionHandler(b))
 	h.Component("/test-button", components.TestComponent)
-	h.Command("/dbtest", commands.DBTestHandler(b))
-	h.Command("/usertest", commands.UserTestHandler(b))
-	h.Command("/usercardtest", commands.UserCardTestHandler(b))
-	h.Command("/migratecards", commands.MigrateCardsHandler(b))
-	h.Command("/deletecard", commands.DeleteCardHandler(b))
-	h.Command("/summon", commands.SummonHandler(b))
+	h.Command("/dbtest", handlers.WrapWithLogging("dbtest", commands.DBTestHandler(b)))
+	h.Command("/usertest", handlers.WrapWithLogging("usertest", commands.UserTestHandler(b)))
+	h.Command("/usercardtest", handlers.WrapWithLogging("usercardtest", commands.UserCardTestHandler(b)))
+	h.Command("/migratecards", handlers.WrapWithLogging("migratecards", commands.MigrateCardsHandler(b)))
+	h.Command("/deletecard", handlers.WrapWithLogging("deletecard", commands.DeleteCardHandler(b)))
+	h.Command("/summon", handlers.WrapWithLogging("summon", commands.SummonHandler(b)))
 
 	if err = b.SetupBot(h, bot.NewListenerFunc(b.OnReady), handlers.MessageHandler(b)); err != nil {
-		slog.Error("Failed to setup bot", slog.Any("err", err))
+		slog.Error("Failed to setup bot",
+			slog.String("type", "sys"),
+			slog.Any("error", err),
+			slog.String("error_details", fmt.Sprintf("%+v", err)),
+			slog.String("component", "bot_setup"),
+			slog.String("status", "failed"),
+		)
 		os.Exit(-1)
 	}
 
@@ -118,16 +125,31 @@ func main() {
 	}()
 
 	if *shouldSyncCommands {
-		slog.Info("Syncing commands", slog.Any("guild_ids", cfg.Bot.DevGuilds))
+		slog.Info("Syncing commands",
+			slog.String("type", "sys"),
+			slog.Any("guild_ids", cfg.Bot.DevGuilds),
+		)
 		if err = handler.SyncCommands(b.Client, commands.Commands, cfg.Bot.DevGuilds); err != nil {
-			slog.Error("Failed to sync commands", slog.Any("err", err))
+			slog.Error("Failed to sync commands",
+				slog.String("type", "sys"),
+				slog.Any("error", err),
+				slog.String("error_details", fmt.Sprintf("%+v", err)),
+				slog.String("component", "command_sync"),
+				slog.String("status", "failed"),
+			)
 		}
 	}
 
 	ctx, cancel = context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err = b.Client.OpenGateway(ctx); err != nil {
-		slog.Error("Failed to open gateway", slog.Any("err", err))
+		slog.Error("Failed to open gateway",
+			slog.String("type", "sys"),
+			slog.Any("error", err),
+			slog.String("error_details", fmt.Sprintf("%+v", err)),
+			slog.String("component", "gateway"),
+			slog.String("status", "failed"),
+		)
 		os.Exit(-1)
 	}
 

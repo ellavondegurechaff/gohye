@@ -7,10 +7,13 @@ import (
 	"net"
 	"time"
 
+	"log/slog"
+
+	"github.com/uptrace/bun"
+
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/uptrace/bun"
 	"github.com/uptrace/bun/dialect/pgdialect"
 	"github.com/uptrace/bun/driver/pgdriver"
 )
@@ -98,11 +101,25 @@ func (db *DB) ExecWithLog(ctx context.Context, sql string, args ...interface{}) 
 	duration := time.Since(start)
 
 	if err != nil {
-		fmt.Printf("[DB Error] Query failed (%.3fms): %v\n", float64(duration.Microseconds())/1000.0, err)
+		slog.Error("Query failed",
+			slog.String("type", "db"),
+			slog.String("operation", "exec"),
+			slog.String("query", sql),
+			slog.Any("args", args),
+			slog.Duration("took", duration),
+			slog.Any("error", err),
+		)
 		return result, err
 	}
 
-	fmt.Printf("[DB Success] Query executed (%.3fms): %s\n", float64(duration.Microseconds())/1000.0, sql)
+	slog.Info("Query executed",
+		slog.String("type", "db"),
+		slog.String("operation", "exec"),
+		slog.String("query", sql),
+		slog.Any("args", args),
+		slog.Duration("took", duration),
+		slog.Int64("affected_rows", result.RowsAffected()),
+	)
 	return result, nil
 }
 
@@ -112,11 +129,24 @@ func (db *DB) QueryWithLog(ctx context.Context, sql string, args ...interface{})
 	duration := time.Since(start)
 
 	if err != nil {
-		fmt.Printf("[DB Error] Query failed (%.3fms): %v\n", float64(duration.Microseconds())/1000.0, err)
+		slog.Error("Query failed",
+			slog.String("type", "db"),
+			slog.String("operation", "query"),
+			slog.String("query", sql),
+			slog.Any("args", args),
+			slog.Duration("took", duration),
+			slog.Any("error", err),
+		)
 		return rows, err
 	}
 
-	fmt.Printf("[DB Success] Query executed (%.3fms): %s\n", float64(duration.Microseconds())/1000.0, sql)
+	slog.Info("Query executed",
+		slog.String("type", "db"),
+		slog.String("operation", "query"),
+		slog.String("query", sql),
+		slog.Any("args", args),
+		slog.Duration("took", duration),
+	)
 	return rows, nil
 }
 
