@@ -43,9 +43,23 @@ func NewSpacesService(spacesKey, spacesSecret, region, bucket, cardRoot string) 
 	}
 }
 
-func (s *SpacesService) DeleteCardImage(ctx context.Context, colID string, cardName string, level int) error {
+func (s *SpacesService) DeleteCardImage(ctx context.Context, colID string, cardName string, level int, tags []string) error {
+	// Determine the group type from tags
+	var groupType string
+	for _, tag := range tags {
+		if tag == "girlgroups" || tag == "boygroups" {
+			groupType = tag
+			break
+		}
+	}
+
+	// If no valid group type found, return an error
+	if groupType == "" {
+		return fmt.Errorf("invalid card type: neither girlgroups nor boygroups tag found")
+	}
+
 	// Create paths for both versions of the image
-	legacyPath := fmt.Sprintf("%s/girlgroups/%s/%d_%s.jpg", s.CardRoot, colID, level, cardName)
+	legacyPath := fmt.Sprintf("%s/%s/%s/%d_%s.jpg", s.CardRoot, groupType, colID, level, cardName)
 	newPath := fmt.Sprintf("%s/%s.jpg", colID, cardName)
 
 	var errors []string

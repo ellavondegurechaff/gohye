@@ -185,7 +185,7 @@ func (r *cardRepository) SafeDelete(ctx context.Context, cardID int64) (*models.
 
 	// 4. If card was deleted successfully, delete the image from Spaces
 	if report.CardDeleted {
-		err = r.spacesService.DeleteCardImage(ctx, card.ColID, card.Name, card.Level)
+		err = r.spacesService.DeleteCardImage(ctx, card.ColID, card.Name, card.Level, card.Tags)
 		if err != nil {
 			// Log the error but don't fail the transaction
 			fmt.Printf("Warning: Failed to delete image for card %s: %v\n", card.Name, err)

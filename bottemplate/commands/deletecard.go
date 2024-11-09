@@ -28,6 +28,15 @@ var DeleteCard = discord.SlashCommandCreate{
 	},
 }
 
+func getGroupType(tags []string) string {
+	for _, tag := range tags {
+		if tag == "girlgroups" || tag == "boygroups" {
+			return tag
+		}
+	}
+	return "unknown"
+}
+
 func DeleteCardHandler(b *bottemplate.Bot) handler.CommandHandler {
 	return func(e *handler.CommandEvent) error {
 		cardID := int64(e.SlashCommandInteractionData().Int("card_id"))
@@ -94,8 +103,15 @@ func DeleteCardHandler(b *bottemplate.Bot) handler.CommandHandler {
 							Inline: &inlineTrue,
 						},
 						{
-							Name:   "Storage Cleanup",
-							Value:  fmt.Sprintf("Attempted to delete:\n• `%s/girlgroups/%s/%d_%s.jpg`\n• `%s/%s.jpg`", b.SpacesService.CardRoot, card.ColID, card.Level, card.Name, card.ColID, card.Name),
+							Name: "Storage Cleanup",
+							Value: fmt.Sprintf("Attempted to delete:\n• `%s/%s/%s/%d_%s.jpg`\n• `%s/%s.jpg`",
+								b.SpacesService.CardRoot,
+								getGroupType(card.Tags),
+								card.ColID,
+								card.Level,
+								card.Name,
+								card.ColID,
+								card.Name),
 							Inline: &inlineTrue,
 						},
 					},
