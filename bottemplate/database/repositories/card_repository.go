@@ -5,8 +5,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/disgoorg/bot-template/bottemplate/database/models"
 	"github.com/disgoorg/bot-template/bottemplate/services"
+
+	"github.com/disgoorg/bot-template/bottemplate/database/models"
 	"github.com/uptrace/bun"
 )
 
@@ -23,6 +24,7 @@ type CardRepository interface {
 	GetByLevel(ctx context.Context, level int) ([]*models.Card, error)
 	GetAnimated(ctx context.Context) ([]*models.Card, error)
 	SafeDelete(ctx context.Context, cardID int64) (*models.DeletionReport, error)
+	Search(ctx context.Context, filters SearchFilters, offset, limit int) ([]*models.Card, int, error)
 }
 
 type cardRepository struct {
@@ -198,4 +200,77 @@ func (r *cardRepository) SafeDelete(ctx context.Context, cardID int64) (*models.
 	}
 
 	return report, nil
+}
+
+func (r *cardRepository) Search(ctx context.Context, filters SearchFilters, offset, limit int) ([]*models.Card, int, error) {
+	fmt.Printf("\n=== Search Query Debug ===\n")
+	fmt.Printf("Filters: %+v\n", filters)
+	fmt.Printf("Offset: %d, Limit: %d\n", offset, limit)
+
+	// Create base queries
+	countQuery := r.db.NewSelect().Model((*models.Card)(nil))
+	var cards []*models.Card
+	query := r.db.NewSelect().Model(&cards)
+
+	// Build WHERE clause
+	var conditions []interface{}
+
+	if filters.Name != "" {
+		query = query.Where("LOWER(name) LIKE LOWER(?)", "%"+filters.Name+"%")
+		countQuery = countQuery.Where("LOWER(name) LIKE LOWER(?)", "%"+filters.Name+"%")
+		fmt.Printf("Added name filter: %s\n", filters.Name)
+	}
+	if filters.ID != 0 {
+		query = query.Where("id = ?", filters.ID)
+		countQuery = countQuery.Where("id = ?", filters.ID)
+	}
+	if filters.Level != 0 {
+		query = query.Where("level = ?", filters.Level)
+		countQuery = countQuery.Where("level = ?", filters.Level)
+	}
+	if filters.Collection != "" {
+		query = query.Where("LOWER(col_id) LIKE LOWER(?)", "%"+filters.Collection+"%")
+		countQuery = countQuery.Where("LOWER(col_id) LIKE LOWER(?)", "%"+filters.Collection+"%")
+	}
+	if filters.Type != "" {
+		query = query.Where("? = ANY(tags)", filters.Type)
+		countQuery = countQuery.Where("? = ANY(tags)", filters.Type)
+	}
+	if filters.Animated {
+		query = query.Where("animated = true")
+		countQuery = countQuery.Where("animated = true")
+	}
+
+	// Log the final queries
+	countSQL := countQuery.String()
+	fmt.Printf("\nCount Query SQL: %s\n", countSQL)
+	fmt.Printf("Count Query Args: %v\n", conditions)
+
+	// Get total count
+	count, err := countQuery.Count(ctx)
+	if err != nil {
+		fmt.Printf("Count Query Error: %v\n", err)
+		return nil, 0, fmt.Errorf("failed to count results: %w", err)
+	}
+	fmt.Printf("Total Count: %d\n", count)
+
+	// Apply pagination and ordering
+	query = query.Order("id ASC").
+		Limit(limit).
+		Offset(offset)
+
+	// Log the search query
+	searchSQL := query.String()
+	fmt.Printf("\nSearch Query SQL: %s\n", searchSQL)
+	fmt.Printf("Search Query Args: %v\n", conditions)
+
+	// Execute the query
+	if err := query.Scan(ctx); err != nil {
+		fmt.Printf("Search Query Error: %v\n", err)
+		return nil, 0, fmt.Errorf("failed to fetch results: %w", err)
+	}
+	fmt.Printf("Results Found: %d\n", len(cards))
+	fmt.Printf("=== End Search Debug ===\n\n")
+
+	return cards, count, nil
 }

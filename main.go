@@ -106,6 +106,7 @@ func main() {
 	h.Command("/migratecards", handlers.WrapWithLogging("migratecards", commands.MigrateCardsHandler(b)))
 	h.Command("/deletecard", handlers.WrapWithLogging("deletecard", commands.DeleteCardHandler(b)))
 	h.Command("/summon", handlers.WrapWithLogging("summon", commands.SummonHandler(b)))
+	h.Command("/searchcards", handlers.WrapWithLogging("searchcards", commands.SearchCardsHandler(b)))
 
 	if err = b.SetupBot(h, bot.NewListenerFunc(b.OnReady), handlers.MessageHandler(b)); err != nil {
 		slog.Error("Failed to setup bot",

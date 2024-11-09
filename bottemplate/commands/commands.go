@@ -10,4 +10,5 @@ var Commands = []discord.ApplicationCommandCreate{
 	usercardtest,
 	MigrateCards,
 	DeleteCard,
+	SearchCards,
 }
