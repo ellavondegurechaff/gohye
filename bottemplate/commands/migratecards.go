@@ -92,12 +92,9 @@ func MigrateCardsHandler(b *bottemplate.Bot) handler.CommandHandler {
 		startTime := time.Now()
 		logProgress("Starting migration process")
 
-		// Send initial message
-		err := e.CreateMessage(discord.MessageCreate{
-			Content: "🔄 Starting migration process...",
-		})
-		if err != nil {
-			return fmt.Errorf("failed to send initial message: %w", err)
+		// Defer the initial response
+		if err := e.DeferCreateMessage(false); err != nil {
+			return fmt.Errorf("failed to defer message: %w", err)
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
@@ -108,7 +105,10 @@ func MigrateCardsHandler(b *bottemplate.Bot) handler.CommandHandler {
 		if err := b.DB.InitializeSchema(ctx); err != nil {
 			errMsg := fmt.Sprintf("❌ Failed to initialize database schema: %v", err)
 			logProgress(errMsg)
-			return e.CreateMessage(discord.MessageCreate{Content: errMsg})
+			_, err := e.UpdateInteractionResponse(discord.MessageUpdate{
+				Content: &errMsg,
+			})
+			return err
 		}
 
 		// Initialize repositories using BunDB
@@ -120,7 +120,10 @@ func MigrateCardsHandler(b *bottemplate.Bot) handler.CommandHandler {
 		if err := readJSONFile("collections.json", &jsonCollections); err != nil {
 			errMsg := fmt.Sprintf("❌ %v", err)
 			logProgress(errMsg)
-			return e.CreateMessage(discord.MessageCreate{Content: errMsg})
+			_, err := e.UpdateInteractionResponse(discord.MessageUpdate{
+				Content: &errMsg,
+			})
+			return err
 		}
 
 		// Convert collections
@@ -143,7 +146,10 @@ func MigrateCardsHandler(b *bottemplate.Bot) handler.CommandHandler {
 		if err := collectionRepo.BulkCreate(ctx, collections); err != nil {
 			errMsg := fmt.Sprintf("❌ Failed to import collections: %v", err)
 			logProgress(errMsg)
-			return e.CreateMessage(discord.MessageCreate{Content: errMsg})
+			_, err := e.UpdateInteractionResponse(discord.MessageUpdate{
+				Content: &errMsg,
+			})
+			return err
 		}
 
 		// Read and process cards
@@ -151,7 +157,10 @@ func MigrateCardsHandler(b *bottemplate.Bot) handler.CommandHandler {
 		if err := readJSONFile("cards.json", &jsonCards); err != nil {
 			errMsg := fmt.Sprintf("❌ %v", err)
 			logProgress(errMsg)
-			return e.CreateMessage(discord.MessageCreate{Content: errMsg})
+			_, err := e.UpdateInteractionResponse(discord.MessageUpdate{
+				Content: &errMsg,
+			})
+			return err
 		}
 
 		// Convert cards using IDs directly from JSON
@@ -160,7 +169,6 @@ func MigrateCardsHandler(b *bottemplate.Bot) handler.CommandHandler {
 		processedIDs := make(map[int64]bool)
 
 		for _, jc := range jsonCards {
-			// Skip if we've already processed this ID
 			if processedIDs[jc.ID] {
 				logProgress(fmt.Sprintf("Warning: Duplicate ID found for card: %s (ID: %d)", jc.Name, jc.ID))
 				continue
@@ -181,7 +189,7 @@ func MigrateCardsHandler(b *bottemplate.Bot) handler.CommandHandler {
 			})
 		}
 
-		// Process in batches to avoid memory issues
+		// Process in batches
 		batchSize := 1000
 		totalImported := 0
 
@@ -196,14 +204,23 @@ func MigrateCardsHandler(b *bottemplate.Bot) handler.CommandHandler {
 			if err != nil {
 				errMsg := fmt.Sprintf("❌ Failed to import cards batch %d-%d: %v", i, end, err)
 				logProgress(errMsg)
-				return e.CreateMessage(discord.MessageCreate{Content: errMsg})
+				_, err := e.UpdateInteractionResponse(discord.MessageUpdate{
+					Content: &errMsg,
+				})
+				return err
 			}
 
 			totalImported += importedCount
-			logProgress(fmt.Sprintf("Progress: Imported %d/%d cards", totalImported, len(cards)))
+			progressMsg := fmt.Sprintf("🔄 Progress: Imported %d/%d cards", totalImported, len(cards))
+			_, err = e.UpdateInteractionResponse(discord.MessageUpdate{
+				Content: &progressMsg,
+			})
+			if err != nil {
+				return err
+			}
 		}
 
-		// Calculate duplicate statistics
+		// Calculate statistics and build final message
 		var duplicateNames int
 		duplicatesList := make([]string, 0)
 		for name, count := range nameCount {
@@ -213,10 +230,8 @@ func MigrateCardsHandler(b *bottemplate.Bot) handler.CommandHandler {
 			}
 		}
 
-		// Calculate duration
 		duration := time.Since(startTime)
 
-		// Build the success message
 		var messageBuilder strings.Builder
 		messageBuilder.WriteString("✅ Migration completed successfully!\n\n")
 		messageBuilder.WriteString("📊 Statistics:\n")
@@ -227,7 +242,6 @@ func MigrateCardsHandler(b *bottemplate.Bot) handler.CommandHandler {
 		messageBuilder.WriteString(fmt.Sprintf("  • Cards with duplicate names: %d\n", duplicateNames))
 		messageBuilder.WriteString(fmt.Sprintf("⏱️ Time taken: %v\n", duration.Round(time.Millisecond)))
 
-		// Add duplicate details if any exist
 		if duplicateNames > 0 {
 			messageBuilder.WriteString("\n📝 Cards with multiple versions:\n")
 			maxDuplicatesToShow := 10
@@ -244,38 +258,30 @@ func MigrateCardsHandler(b *bottemplate.Bot) handler.CommandHandler {
 		successMsg := messageBuilder.String()
 		logProgress(successMsg)
 
-		// Split message if it's too long for Discord
+		// Split and send message if needed
 		const maxMessageLength = 2000
 		if len(successMsg) > maxMessageLength {
-			// Send first part
-			err = e.CreateMessage(discord.MessageCreate{
-				Content: successMsg[:maxMessageLength],
-			})
-			if err != nil {
-				return err
-			}
-
-			// Send remaining parts
-			remaining := successMsg[maxMessageLength:]
-			for len(remaining) > 0 {
-				sendLength := maxMessageLength
-				if len(remaining) < maxMessageLength {
-					sendLength = len(remaining)
+			// Send parts
+			for i := 0; i < len(successMsg); i += maxMessageLength {
+				end := i + maxMessageLength
+				if end > len(successMsg) {
+					end = len(successMsg)
 				}
-				err = e.CreateMessage(discord.MessageCreate{
-					Content: remaining[:sendLength],
+				part := successMsg[i:end]
+				_, err := e.CreateFollowupMessage(discord.MessageCreate{
+					Content: part,
 				})
 				if err != nil {
 					return err
 				}
-				remaining = remaining[sendLength:]
 			}
 			return nil
 		}
 
-		// Send single message if not too long
-		return e.CreateMessage(discord.MessageCreate{
-			Content: successMsg,
+		// Send single message
+		_, err := e.UpdateInteractionResponse(discord.MessageUpdate{
+			Content: &successMsg,
 		})
+		return err
 	}
 }

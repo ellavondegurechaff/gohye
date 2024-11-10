@@ -1,38 +1,43 @@
+// models/user.go
 package models
 
 import (
-	"encoding/json"
 	"time"
 
 	"github.com/uptrace/bun"
 )
 
+type InventoryItemModel struct {
+	Time time.Time `json:"time"`
+	Col  string    `json:"col"`
+	ID   string    `json:"id"`
+}
+
 type User struct {
 	bun.BaseModel `bun:"table:users,alias:u"`
 
-	ID              int64           `bun:"id,pk,autoincrement"`
-	DiscordID       string          `bun:"discord_id,notnull,unique"`
-	Username        string          `bun:"username,notnull"`
-	Exp             int64           `bun:"exp,notnull,default:0"`
-	PromoExp        int64           `bun:"promo_exp,notnull,default:0"`
-	Joined          time.Time       `bun:"joined,notnull"`
-	LastQueriedCard json.RawMessage `bun:"last_queried_card,type:jsonb"`
-	LastKofiClaim   time.Time       `bun:"last_kofi_claim"`
+	ID              int64     `bun:"id,pk,autoincrement"`
+	DiscordID       string    `bun:"discord_id,notnull,unique"`
+	Username        string    `bun:"username,notnull"`
+	Exp             int64     `bun:"exp,notnull,default:0"`
+	PromoExp        int64     `bun:"promo_exp,notnull,default:0"`
+	Joined          time.Time `bun:"joined,notnull"`
+	LastQueriedCard Card      `bun:"last_queried_card,type:jsonb"`
+	LastKofiClaim   time.Time `bun:"last_kofi_claim"`
 
-	// Daily Stats
-	DailyStats DailyStats `bun:"daily_stats,type:jsonb"`
-
-	// Effect Use Count
-	EffectUseCount EffectUseCount `bun:"effect_use_count,type:jsonb"`
+	// Stats
+	DailyStats  GameStats   `bun:"daily_stats,type:jsonb"`
+	EffectStats MemoryStats `bun:"effect_stats,type:jsonb"`
+	UserStats   CoreStats   `bun:"user_stats,type:jsonb"`
 
 	// Arrays stored as JSONB
-	Cards         []string `bun:"cards,type:jsonb"`
-	Inventory     []string `bun:"inventory,type:jsonb"`
-	CompletedCols []string `bun:"completed_cols,type:jsonb"`
-	CloutedCols   []string `bun:"clouted_cols,type:jsonb"`
-	Achievements  []string `bun:"achievements,type:jsonb"`
-	Effects       []string `bun:"effects,type:jsonb"`
-	Wishlist      []string `bun:"wishlist,type:jsonb"`
+	Cards         []string             `bun:"cards,type:jsonb"`
+	Inventory     []InventoryItemModel `bun:"inventory,type:jsonb"`
+	CompletedCols []string             `bun:"completed_cols,type:jsonb"`
+	CloutedCols   []string             `bun:"clouted_cols,type:jsonb"`
+	Achievements  []string             `bun:"achievements,type:jsonb"`
+	Effects       []string             `bun:"effects,type:jsonb"`
+	Wishlist      []string             `bun:"wishlist,type:jsonb"`
 
 	// Timestamps
 	LastDaily    time.Time `bun:"last_daily,notnull"`
@@ -42,50 +47,35 @@ type User struct {
 	LastAnnounce time.Time `bun:"last_announce,notnull"`
 	LastMsg      string    `bun:"last_msg"`
 
-	// Notifications
-	DailyNotified bool `bun:"daily_notified,notnull,default:true"`
-	VoteNotified  bool `bun:"vote_notified,notnull,default:false"`
-
-	// Hero related
+	// Hero System
 	HeroSlots    []string  `bun:"hero_slots,type:jsonb"`
 	HeroCooldown []string  `bun:"hero_cooldown,type:jsonb"`
 	Hero         string    `bun:"hero"`
 	HeroChanged  time.Time `bun:"hero_changed"`
 	HeroSubmits  int       `bun:"hero_submits,notnull,default:0"`
 
-	// User status
+	// User Status
 	Roles []string `bun:"roles,type:jsonb"`
 	Ban   BanInfo  `bun:"ban,type:jsonb"`
-
-	// Stats
-	LastCard int64 `bun:"last_card,notnull,default:-1"`
-	XP       int64 `bun:"xp,notnull,default:0"`
-	Vials    int64 `bun:"vials,notnull,default:0"`
-	Lemons   int64 `bun:"lemons,notnull,default:0"`
-	Votes    int64 `bun:"votes,notnull,default:0"`
-
-	// Quests
-	DailyQuests []string `bun:"daily_quests,type:jsonb"`
-	QuestLines  []string `bun:"quest_lines,type:jsonb"`
-
-	// Streaks
-	Streaks Streaks `bun:"streaks,type:jsonb"`
-
-	// Preferences
-	Preferences Preferences `bun:"preferences,type:jsonb"`
 
 	// Premium
 	Premium        bool      `bun:"premium,notnull,default:false"`
 	PremiumExpires time.Time `bun:"premium_expires"`
 
+	// Preferences
+	Preferences *Preferences `bun:"preferences,type:jsonb"`
+
+	// Additional Fields
+	Votes int64 `bun:"votes,notnull,default:0"`
+
 	CreatedAt time.Time `bun:"created_at,notnull,default:current_timestamp"`
 	UpdatedAt time.Time `bun:"updated_at,notnull"`
 }
 
-type DailyStats struct {
+type GameStats struct {
 	Claims         int `json:"claims"`
-	PromoClaims    int `json:"promoclaims"`
-	TotalRegClaims int `json:"totalregclaims"`
+	PromoClaims    int `json:"promo_claims"`
+	TotalRegClaims int `json:"total_reg_claims"`
 	Bids           int `json:"bids"`
 	Aucs           int `json:"aucs"`
 	Liquify        int `json:"liquify"`
@@ -104,7 +94,7 @@ type DailyStats struct {
 	Store3         int `json:"store3"`
 }
 
-type EffectUseCount struct {
+type MemoryStats struct {
 	MemoryXmas int  `json:"memoryxmas"`
 	MemoryHall int  `json:"memoryhall"`
 	MemoryBday int  `json:"memorybday"`
@@ -115,6 +105,14 @@ type EffectUseCount struct {
 	ValSpace   bool `json:"valspace"`
 }
 
+type CoreStats struct {
+	LastCard int64 `json:"last_card"`
+	XP       int64 `json:"xp"`
+	Vials    int64 `json:"vials"`
+	Lemons   int64 `json:"lemons"`
+	Votes    int64 `json:"votes"`
+}
+
 type BanInfo struct {
 	Full    bool `json:"full"`
 	Embargo bool `json:"embargo"`
@@ -122,40 +120,42 @@ type BanInfo struct {
 	Tags    int  `json:"tags"`
 }
 
-type Streaks struct {
-	Votes struct {
-		TopGG int `json:"topgg"`
-		DBL   int `json:"dbl"`
-	} `json:"votes"`
-	Daily int `json:"daily"`
-	Kofi  int `json:"kofi"`
+type NotificationPrefs struct {
+	AucBidMe  bool `json:"aucbidme"`
+	AucOutBid bool `json:"aucoutbid"`
+	AucNewBid bool `json:"aucnewbid"`
+	AucEnd    bool `json:"aucend"`
+	Announce  bool `json:"announce"`
+	Daily     bool `json:"daily"`
+	Vote      bool `json:"vote"`
+	Completed bool `json:"completed"`
+	EffectEnd bool `json:"effectend"`
 }
 
-type Preferences struct {
-	Notifications struct {
-		AucBidMe  bool `json:"aucbidme"`
-		AucOutBid bool `json:"aucoutbid"`
-		AucNewBid bool `json:"aucnewbid"`
-		AucEnd    bool `json:"aucend"`
-		Announce  bool `json:"announce"`
-		Daily     bool `json:"daily"`
-		Vote      bool `json:"vote"`
-		Completed bool `json:"completed"`
-		EffectEnd bool `json:"effectend"`
-	} `json:"notifications"`
-	Interactions struct {
-		CanHas  bool `json:"canhas"`
-		CanDiff bool `json:"candiff"`
-		CanSell bool `json:"cansell"`
-	} `json:"interactions"`
-	Profile struct {
-		Bio         string `json:"bio"`
-		Title       string `json:"title"`
-		Color       string `json:"color"`
-		Card        string `json:"card"`
-		FavComplete string `json:"favcomplete"`
-		FavClout    string `json:"favclout"`
-		Image       string `json:"image"`
-		Reputation  int    `json:"reputation"`
-	} `json:"profile"`
+type InteractionPrefs struct {
+	CanHas  bool `json:"canhas"`
+	CanDiff bool `json:"candiff"`
+	CanSell bool `json:"cansell"`
+}
+
+type ProfilePrefs struct {
+	Bio         string `json:"bio"`
+	Title       string `json:"title"`
+	Color       string `json:"color"`
+	Card        string `json:"card"`
+	FavComplete string `json:"favcomplete"`
+	FavClout    string `json:"favclout"`
+	Image       string `json:"image"`
+	Reputation  int    `json:"reputation"`
+}
+
+type Streaks struct {
+	Votes VoteStreaks `json:"votes"`
+	Daily int         `json:"daily"`
+	Kofi  int         `json:"kofi"`
+}
+
+type VoteStreaks struct {
+	TopGG int `json:"topgg"`
+	DBL   int `json:"dbl"`
 }

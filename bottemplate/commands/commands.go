@@ -6,9 +6,9 @@ var Commands = []discord.ApplicationCommandCreate{
 	test,
 	version,
 	dbtest,
-	usertest,
-	usercardtest,
 	MigrateCards,
 	DeleteCard,
 	SearchCards,
+	AnalyzeUsers,
+	Init,
 }

@@ -1,3 +1,4 @@
+// models/user_card.go
 package models
 
 import (
@@ -10,8 +11,8 @@ type UserCard struct {
 	bun.BaseModel `bun:"table:user_cards,alias:uc"`
 
 	ID       int64     `bun:"id,pk,autoincrement"`
-	UserID   string    `bun:"user_id,notnull"` // Remove index tag
-	CardID   int64     `bun:"card_id,notnull"` // Remove index tag
+	UserID   string    `bun:"user_id,notnull"`
+	CardID   int64     `bun:"card_id,notnull"`
 	Favorite bool      `bun:"favorite,notnull,default:false"`
 	Locked   bool      `bun:"locked,notnull,default:false"`
 	Amount   int64     `bun:"amount,notnull,default:1"`

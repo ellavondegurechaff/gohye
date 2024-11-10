@@ -1,2 +1,7 @@
 .idea/
 config.toml
+# Ignore BSON files
+*.bson
+
+# Ignore JSON files
+*.json
