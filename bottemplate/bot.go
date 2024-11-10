@@ -7,6 +7,7 @@ import (
 
 	"github.com/disgoorg/bot-template/bottemplate/database"
 	"github.com/disgoorg/bot-template/bottemplate/database/repositories"
+	"github.com/disgoorg/bot-template/bottemplate/economy"
 	"github.com/disgoorg/bot-template/bottemplate/services"
 	"github.com/disgoorg/disgo"
 	"github.com/disgoorg/disgo/bot"
@@ -36,6 +37,7 @@ type Bot struct {
 	CardRepository     repositories.CardRepository
 	UserCardRepository repositories.UserCardRepository
 	SpacesService      *services.SpacesService
+	PriceCalculator    *economy.PriceCalculator
 }
 
 func (b *Bot) SetupBot(listeners ...bot.EventListener) error {
