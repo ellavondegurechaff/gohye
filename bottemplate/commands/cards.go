@@ -150,11 +150,18 @@ func formatCardsDescription(b *bottemplate.Bot, cards []*models.UserCard) string
 			animatedIcon = "✨"
 		}
 
-		description.WriteString(fmt.Sprintf("* %s %s %s%s [%s]\n",
+		// Add amount if more than 1
+		amountText := ""
+		if userCard.Amount > 1 {
+			amountText = fmt.Sprintf(" x%d", userCard.Amount)
+		}
+
+		description.WriteString(fmt.Sprintf("* %s %s %s%s%s [%s]\n",
 			starRating,
 			utils.FormatCardName(cardData.Name),
 			favoriteIcon,
 			animatedIcon,
+			amountText,
 			strings.Trim(utils.FormatCollectionName(cardData.ColID), "[]"),
 		))
 	}
