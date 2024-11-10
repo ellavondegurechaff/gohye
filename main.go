@@ -101,11 +101,11 @@ func main() {
 	h.Command("/version", commands.VersionHandler(b))
 	h.Component("/test-button", components.TestComponent)
 	h.Command("/dbtest", handlers.WrapWithLogging("dbtest", commands.DBTestHandler(b)))
-	h.Command("/migratecards", handlers.WrapWithLogging("migratecards", commands.MigrateCardsHandler(b)))
 	h.Command("/deletecard", handlers.WrapWithLogging("deletecard", commands.DeleteCardHandler(b)))
 	h.Command("/summon", handlers.WrapWithLogging("summon", commands.SummonHandler(b)))
 	h.Command("/searchcards", handlers.WrapWithLogging("searchcards", commands.SearchCardsHandler(b)))
 	h.Command("/init", handlers.WrapWithLogging("init", commands.InitHandler(b)))
+	h.Command("/cards", handlers.WrapWithLogging("cards", commands.CardsHandler(b)))
 
 	if err = b.SetupBot(h, bot.NewListenerFunc(b.OnReady), handlers.MessageHandler(b)); err != nil {
 		slog.Error("Failed to setup bot",

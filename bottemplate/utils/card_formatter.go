@@ -60,12 +60,12 @@ func GetCardDisplayInfo(cardName string, colID string, level int, groupType stri
 			level,
 			cardName,
 		),
-		Stars: getStarsDisplay(level),
+		Stars: GetStarsDisplay(level),
 	}
 }
 
-// getStarsDisplay returns stars based on level (1-5)
-func getStarsDisplay(level int) string {
+// GetStarsDisplay returns stars based on level (1-5)
+func GetStarsDisplay(level int) string {
 	if level < 1 || level > 5 {
 		return "✧"
 	}
