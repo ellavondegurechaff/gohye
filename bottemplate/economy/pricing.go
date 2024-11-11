@@ -33,7 +33,7 @@ const (
 
 	MinQueryBatchSize = 100
 	MaxRetries        = 3
-	MinPrice          = 0       // Minimum price floor
+	MinPrice          = 500     // Minimum price floor
 	MaxPrice          = 1000000 // Maximum price ceiling
 
 	InitialBasePrice  = 1000 // Base price for level 1 cards
