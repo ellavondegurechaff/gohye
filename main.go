@@ -52,8 +52,8 @@ func main() {
 	slog.Info("Initializing database connection...")
 	dbStartTime := time.Now()
 
-	// Create context with timeout for database connection
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	// Create context with longer timeout for database connection and initial setup
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 
 	// Convert bottemplate.DBConfig to database.DBConfig
@@ -99,7 +99,15 @@ func main() {
 
 	// Update the price calculator initialization with better configured values
 	priceCalc := economy.NewPriceCalculator(db, economy.PricingConfig{
-		BaseMultiplier:      1000,    // Base price multiplier for card levels
+		BasePrice:           1000,    // Base price for level 1 cards
+		LevelMultiplier:     1.5,     // 50% increase per level
+		ScarcityWeight:      0.8,     // Weight for scarcity impact
+		ActivityWeight:      0.5,     // Weight for activity impact
+		MinPrice:            100,     // Absolute minimum price
+		MaxPrice:            1000000, // Absolute maximum price
+		MinActiveOwners:     3,       // Minimum active owners for price calculation
+		MinTotalCopies:      1,       // Minimum total copies for price calculation
+		BaseMultiplier:      1000,    // Base price multiplier
 		ScarcityImpact:      0.01,    // 1% price reduction per copy
 		DistributionImpact:  0.05,    // 5% impact for distribution
 		HoardingThreshold:   0.2,     // 20% of supply triggers hoarding
@@ -107,56 +115,54 @@ func main() {
 		ActivityImpact:      0.05,    // 5% impact for activity
 		OwnershipImpact:     0.01,    // 1% impact per owner
 		RarityMultiplier:    0.5,     // 50% increase per rarity level
-		MinimumPrice:        100,     // Minimum card price
-		MaximumPrice:        1000000, // Maximum card price
 		PriceUpdateInterval: 1 * time.Hour,
 		InactivityThreshold: 7 * 24 * time.Hour, // 7 days for inactivity
 		CacheExpiration:     15 * time.Minute,
 	})
 
-	// Create context with timeout for initialization
-	initCtx, initCancel := context.WithTimeout(context.Background(), 5*time.Minute)
-	defer initCancel()
-
-	// Initialize the market history table
-	slog.Info("Initializing card market system...")
+	// Initialize prices if needed with a longer timeout
+	initCtx, initCancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	if err := priceCalc.InitializeCardPrices(initCtx); err != nil {
-		slog.Error("Failed to initialize card market system",
-			slog.String("error", err.Error()),
-			slog.String("component", "price_calculator"),
-			slog.String("status", "failed"))
+		initCancel()
+		slog.Error("Failed to initialize card prices",
+			slog.String("error", err.Error()))
 		os.Exit(-1)
 	}
+	initCancel()
 
-	// Get active cards and perform initial price calculation
-	activeCards, err := priceCalc.GetActiveCards(initCtx)
-	if err != nil {
-		slog.Error("Failed to get active cards",
-			slog.String("error", err.Error()),
-			slog.String("component", "price_calculator"),
-			slog.String("status", "failed"))
-		os.Exit(-1)
-	}
+	// Schedule price updates with a separate context
+	updateCtx, updateCancel := context.WithCancel(context.Background())
+	defer updateCancel()
 
+	go func() {
+		ticker := time.NewTicker(6 * time.Hour)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ticker.C:
+				// Create a new context for each update
+				ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+				if err := priceCalc.UpdateAllPrices(ctx); err != nil {
+					slog.Error("Failed to update prices",
+						slog.String("error", err.Error()))
+				}
+				cancel()
+			case <-updateCtx.Done():
+				return
+			}
+		}
+	}()
+
+	// Force initial price calculation for all cards
 	if *shouldCalculatePrices {
-		slog.Info("Starting initial price calculation",
-			slog.Int("active_cards", len(activeCards)),
-			slog.String("component", "price_calculator"))
-
-		// Perform initial price update for active cards
-		if err := priceCalc.UpdateAllPrices(initCtx); err != nil {
-			slog.Error("Failed to perform initial price calculation",
-				slog.String("error", err.Error()),
-				slog.String("component", "price_calculator"),
-				slog.String("status", "failed"))
+		slog.Info("Performing initial price calculation for all cards...")
+		if err := priceCalc.UpdateAllPrices(ctx); err != nil {
+			slog.Error("Failed to calculate initial prices",
+				slog.String("error", err.Error()))
 			os.Exit(-1)
 		}
-	} else {
-		slog.Info("Skipping initial price calculation (use --calculate-prices to enable)")
 	}
-
-	// Start the background price update job
-	priceCalc.StartPriceUpdateJob(context.Background())
 
 	slog.Info("Card market system initialized successfully",
 		slog.String("component", "price_calculator"),

@@ -11,7 +11,7 @@ type CardMarketHistory struct {
 
 	ID                 int64     `bun:"id,pk,autoincrement"`
 	CardID             int64     `bun:"card_id,notnull"`
-	Price              int64     `bun:"price,notnull"`
+	Price              int64     `bun:"price,notnull,default:0"` // Make sure this is properly defined
 	IsActive           bool      `bun:"is_active,notnull,default:false"`
 	ActiveOwners       int       `bun:"active_owners,notnull"`
 	TotalCopies        int       `bun:"total_copies,notnull"`

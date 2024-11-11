@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/disgoorg/bot-template/bottemplate"
-	"github.com/disgoorg/bot-template/bottemplate/database/models"
+	"github.com/disgoorg/bot-template/bottemplate/economy"
 	"github.com/disgoorg/bot-template/bottemplate/utils"
 	"github.com/disgoorg/disgo/discord"
 	"github.com/disgoorg/disgo/handler"
@@ -52,32 +52,37 @@ func PriceStatsHandler(b *bottemplate.Bot) handler.CommandHandler {
 }
 
 func handleCardByID(b *bottemplate.Bot, event *handler.CommandEvent, cardID int64) error {
-	ctx, cancel := context.WithTimeout(context.Background(), utils.MarketQueryTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	// Get the latest market history entry
-	var history models.CardMarketHistory
-	err := b.DB.BunDB().NewSelect().
-		Model(&history).
-		Where("card_id = ?", cardID).
-		Order("timestamp DESC").
-		Limit(1).
-		Scan(ctx)
-
-	if err != nil {
-		return utils.EH.CreateErrorEmbed(event, "Failed to fetch market data")
-	}
-
-	// Get the card details and stats
+	// Get the card details first
 	card, err := b.CardRepository.GetByID(ctx, cardID)
 	if err != nil {
 		return utils.EH.CreateError(event, "Card Not Found",
 			fmt.Sprintf("Card #%d does not exist", cardID))
 	}
 
-	stats, err := b.PriceCalculator.GetMarketStats(ctx, cardID, history.Price)
+	// Get current price and stats
+	price, err := b.PriceCalculator.GetLatestPrice(ctx, cardID)
+	if err != nil {
+		return utils.EH.CreateErrorEmbed(event, "Failed to fetch current price")
+	}
+
+	// Get market stats
+	marketStats, err := b.PriceCalculator.GetMarketStats(ctx, cardID, price)
 	if err != nil {
 		return utils.EH.CreateErrorEmbed(event, "Failed to fetch market statistics")
+	}
+
+	// Get card stats for market status
+	cardStatsMap, err := b.PriceCalculator.GetCardStats(ctx, []int64{cardID})
+	if err != nil {
+		return utils.EH.CreateErrorEmbed(event, "Failed to fetch card statistics")
+	}
+
+	cardStats, ok := cardStatsMap[cardID]
+	if !ok {
+		return utils.EH.CreateErrorEmbed(event, "Failed to fetch card data")
 	}
 
 	cardInfo := utils.GetCardDisplayInfo(
@@ -92,20 +97,16 @@ func handleCardByID(b *bottemplate.Bot, event *handler.CommandEvent, cardID int6
 		},
 	)
 
-	marketInfo := utils.FormatMarketInfo(history, utils.MarketStats{
-		MinPrice24h: stats.MinPrice24h,
-		MaxPrice24h: stats.MaxPrice24h,
-		AvgPrice24h: stats.AvgPrice24h,
-	})
-
-	timestamp := fmt.Sprintf("<t:%d:R>", time.Now().Unix())
-	inlineTrue := true
-
-	// Format market status
+	// Get market status
 	marketStatus := utils.ActiveMarketStatus
-	if !history.IsActive {
+	if cardStats.ActiveOwners < economy.MinimumActiveOwners {
 		marketStatus = utils.InactiveMarketStatus
 	}
+
+	// Generate star display based on card level
+	stars := strings.Repeat("⭐", card.Level)
+
+	timestamp := fmt.Sprintf("<t:%d:R>", time.Now().Unix())
 
 	return event.CreateMessage(discord.MessageCreate{
 		Embeds: []discord.Embed{{
@@ -113,25 +114,30 @@ func handleCardByID(b *bottemplate.Bot, event *handler.CommandEvent, cardID int6
 			Description: fmt.Sprintf("```md\n"+
 				"# Market Information\n"+
 				"* Collection: %s\n"+
-				"* Rarity: %s\n"+
+				"* Level: %s\n"+
 				"* Current Price: %d 💰\n"+
 				"* 24h Change: %.2f%%\n"+
 				"* Status: %s\n"+
+				"* Total Owners: %d\n"+
+				"* Active Owners: %d\n"+
+				"\n"+
+				"# 24h Price Range\n"+
+				"* Minimum: %d 💰\n"+
+				"* Maximum: %d 💰\n"+
+				"* Average: %.0f 💰\n"+
 				"```",
 				cardInfo.FormattedCollection,
-				getRarityName(card.Level),
-				history.Price,
-				history.PriceChangePercent,
+				stars,
+				price,
+				marketStats.PriceChangePercent,
 				marketStatus,
+				cardStats.UniqueOwners,
+				cardStats.ActiveOwners,
+				marketStats.MinPrice24h,
+				marketStats.MaxPrice24h,
+				marketStats.AvgPrice24h,
 			),
 			Color: getColorByLevel(card.Level),
-			Fields: []discord.EmbedField{
-				{
-					Name:   "📈 24h Price Range",
-					Value:  marketInfo.PriceRange,
-					Inline: &inlineTrue,
-				},
-			},
 			Thumbnail: &discord.EmbedResource{
 				URL: cardInfo.ImageURL,
 			},
@@ -181,24 +187,72 @@ func PriceDetailsHandler(b *bottemplate.Bot) handler.ComponentHandler {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
-		// Get the latest market history entry
-		var history models.CardMarketHistory
-		err = b.DB.BunDB().NewSelect().
-			Model(&history).
-			Where("card_id = ?", cardID).
-			Order("timestamp DESC").
-			Limit(1).
-			Scan(ctx)
-
+		// Get current price and factors
+		price, err := b.PriceCalculator.CalculateCardPrice(ctx, cardID)
 		if err != nil {
 			return event.CreateMessage(discord.MessageCreate{
 				Embeds: []discord.Embed{{
 					Title:       "❌ Error",
-					Description: "Failed to fetch market data",
+					Description: "Failed to calculate card price",
 					Color:       0xFF0000,
 				}},
 				Flags: discord.MessageFlagEphemeral,
 			})
+		}
+
+		// Get card stats
+		stats, err := b.PriceCalculator.GetCardStats(ctx, []int64{cardID})
+		if err != nil {
+			return event.CreateMessage(discord.MessageCreate{
+				Embeds: []discord.Embed{{
+					Title:       "❌ Error",
+					Description: "Failed to fetch card statistics",
+					Color:       0xFF0000,
+				}},
+				Flags: discord.MessageFlagEphemeral,
+			})
+		}
+
+		cardStats := stats[cardID]
+		factors := b.PriceCalculator.CalculatePriceFactors(cardStats)
+
+		// Check if card is inactive (no owners/activity)
+		isInactive := cardStats.UniqueOwners == 0 || cardStats.ActiveOwners == 0
+
+		// Format price factors with N/A handling
+		priceFactors := fmt.Sprintf("```ansi\n"+
+			"# Price Factors\n"+
+			"* Current Price: %d 💰\n"+
+			"* Scarcity: %s\n"+
+			"* Distribution: %s\n"+
+			"* Hoarding: %s\n"+
+			"* Activity: %s\n"+
+			"```",
+			price,
+			formatFactor(factors.ScarcityFactor, isInactive),
+			formatFactor(factors.DistributionFactor, isInactive),
+			formatFactor(factors.HoardingFactor, isInactive),
+			formatFactor(factors.ActivityFactor, isInactive),
+		)
+
+		// Format distribution stats
+		distribution := fmt.Sprintf("```ansi\n"+
+			"# Card Distribution\n"+
+			"* Unique Owners: %d\n"+
+			"* Active Owners: %d\n"+
+			"* Max Per User: %d\n"+
+			"* Avg Per User: %.2f\n"+
+			"```",
+			cardStats.UniqueOwners,
+			cardStats.ActiveOwners,
+			cardStats.MaxCopiesPerUser,
+			cardStats.AvgCopiesPerUser,
+		)
+
+		// Format price explanation for inactive cards
+		explanation := factors.Reason
+		if isInactive {
+			explanation = "Card is currently inactive due to insufficient owners or activity"
 		}
 
 		card, err := b.CardRepository.GetByID(ctx, cardID)
@@ -227,40 +281,6 @@ func PriceDetailsHandler(b *bottemplate.Bot) handler.ComponentHandler {
 
 		inlineFalse := false
 
-		// Format price factors
-		priceFactors := fmt.Sprintf("```md\n"+
-			"# Price Factors\n"+
-			"* Current Price: %d 💰\n"+
-			"* Scarcity: %.2fx\n"+
-			"* Distribution: %.2fx\n"+
-			"* Hoarding: %.2fx\n"+
-			"* Activity: %.2fx\n"+
-			"```",
-			history.Price,
-			history.ScarcityFactor,
-			history.DistributionFactor,
-			history.HoardingFactor,
-			history.ActivityFactor,
-		)
-
-		// Format distribution stats
-		distribution := fmt.Sprintf("```md\n"+
-			"# Card Distribution\n"+
-			"* Total Copies: %d\n"+
-			"* Active Copies: %d\n"+
-			"* Unique Owners: %d\n"+
-			"* Active Owners: %d\n"+
-			"* Max Per User: %d\n"+
-			"* Avg Per User: %.2f\n"+
-			"```",
-			history.TotalCopies,
-			history.ActiveCopies,
-			history.UniqueOwners,
-			history.ActiveOwners,
-			history.MaxCopiesPerUser,
-			history.AvgCopiesPerUser,
-		)
-
 		return event.CreateMessage(discord.MessageCreate{
 			Embeds: []discord.Embed{{
 				Title: fmt.Sprintf("%s %s - Detailed Information", cardInfo.Stars, cardInfo.FormattedName),
@@ -278,7 +298,7 @@ func PriceDetailsHandler(b *bottemplate.Bot) handler.ComponentHandler {
 					},
 					{
 						Name:   "💡 Price Explanation",
-						Value:  fmt.Sprintf("```%s```", history.PriceReason),
+						Value:  fmt.Sprintf("```%s```", explanation),
 						Inline: &inlineFalse,
 					},
 				},
@@ -289,6 +309,14 @@ func PriceDetailsHandler(b *bottemplate.Bot) handler.ComponentHandler {
 			Flags: discord.MessageFlagEphemeral,
 		})
 	}
+}
+
+// Helper function to format factor values
+func formatFactor(factor float64, isInactive bool) string {
+	if isInactive {
+		return "N/A"
+	}
+	return fmt.Sprintf("%.2fx", factor)
 }
 
 func handleCardByName(b *bottemplate.Bot, event *handler.CommandEvent, cardName string) error {
