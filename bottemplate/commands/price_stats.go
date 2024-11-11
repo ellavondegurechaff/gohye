@@ -187,13 +187,13 @@ func PriceDetailsHandler(b *bottemplate.Bot) handler.ComponentHandler {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
-		// Get current price and factors
-		price, err := b.PriceCalculator.CalculateCardPrice(ctx, cardID)
+		// Get current price using the same method as price-stats
+		price, err := b.PriceCalculator.GetLatestPrice(ctx, cardID)
 		if err != nil {
 			return event.CreateMessage(discord.MessageCreate{
 				Embeds: []discord.Embed{{
 					Title:       "❌ Error",
-					Description: "Failed to calculate card price",
+					Description: "Failed to fetch current price",
 					Color:       0xFF0000,
 				}},
 				Flags: discord.MessageFlagEphemeral,

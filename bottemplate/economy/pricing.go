@@ -24,7 +24,7 @@ const (
 	numWorkers   = 3
 	queryTimeout = 60 * time.Second
 
-	MinimumActiveOwners = 3
+	MinimumActiveOwners = 1
 	MinimumTotalCopies  = 1
 
 	maxConcurrentBatches = 5
