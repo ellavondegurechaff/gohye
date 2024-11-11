@@ -166,17 +166,25 @@ func main() {
 	b.PriceCalculator = priceCalc
 
 	h := handler.New()
+
+	// Group related command handlers
+	// System commands
+	h.Command("/version", commands.VersionHandler(b))
 	h.Command("/test", handlers.WrapWithLogging("test", commands.TestHandler))
 	h.Autocomplete("/test", commands.TestAutocompleteHandler)
-	h.Command("/version", commands.VersionHandler(b))
 	h.Component("/test-button", components.TestComponent)
+
+	// Database/Admin commands
 	h.Command("/dbtest", handlers.WrapWithLogging("dbtest", commands.DBTestHandler(b)))
 	h.Command("/deletecard", handlers.WrapWithLogging("deletecard", commands.DeleteCardHandler(b)))
+	h.Command("/init", handlers.WrapWithLogging("init", commands.InitHandler(b)))
+
+	// Card-related commands
 	h.Command("/summon", handlers.WrapWithLogging("summon", commands.SummonHandler(b)))
 	h.Command("/searchcards", handlers.WrapWithLogging("searchcards", commands.SearchCardsHandler(b)))
-	h.Command("/init", handlers.WrapWithLogging("init", commands.InitHandler(b)))
 	h.Command("/cards", handlers.WrapWithLogging("cards", commands.CardsHandler(b)))
 	h.Command("/price-stats", handlers.WrapWithLogging("price-stats", commands.PriceStatsHandler(b)))
+	h.Component("/details/", handlers.WrapComponentWithLogging("price-details", commands.PriceDetailsHandler(b)))
 
 	if err = b.SetupBot(h, bot.NewListenerFunc(b.OnReady), handlers.MessageHandler(b)); err != nil {
 		slog.Error("Failed to setup bot",
