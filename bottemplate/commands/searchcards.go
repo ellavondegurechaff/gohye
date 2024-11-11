@@ -76,10 +76,15 @@ func (sc *searchCache) set(key string, cards []*models.Card, totalCount int) {
 
 func SearchCardsHandler(b *bottemplate.Bot) handler.CommandHandler {
 	return func(event *handler.CommandEvent) error {
+		// Get search parameters
+		name := strings.TrimSpace(event.SlashCommandInteractionData().String("name"))
+		collection := strings.TrimSpace(event.SlashCommandInteractionData().String("collection"))
+		level := int(event.SlashCommandInteractionData().Int("level"))
+
 		filters := utils.FilterInfo{
-			Name:       strings.TrimSpace(event.SlashCommandInteractionData().String("name")),
-			Level:      int(event.SlashCommandInteractionData().Int("level")),
-			Collection: strings.TrimSpace(event.SlashCommandInteractionData().String("collection")),
+			Name:       name,
+			Level:      level,
+			Collection: collection,
 			Animated:   event.SlashCommandInteractionData().Bool("animated"),
 		}
 
@@ -130,6 +135,11 @@ func SearchCardsHandler(b *bottemplate.Bot) handler.CommandHandler {
 				return utils.EH.UpdateInteractionResponse(event, "No Results Found", "No cards match your search criteria")
 			}
 
+			// Sort results by relevance if name filter is present
+			if repoFilters.Name != "" {
+				sortCardsByRelevance(result.cards, repoFilters.Name)
+			}
+
 			// Cache the results
 			cardSearchCache.set(cacheKey, result.cards, result.count)
 
@@ -141,7 +151,6 @@ func SearchCardsHandler(b *bottemplate.Bot) handler.CommandHandler {
 	}
 }
 
-// Helper function to generate cache key
 func generateCacheKey(filters repositories.SearchFilters) string {
 	return fmt.Sprintf("%s:%d:%d:%s:%s:%v",
 		filters.Name,
@@ -153,14 +162,24 @@ func generateCacheKey(filters repositories.SearchFilters) string {
 	)
 }
 
-// Separate paginator creation logic
 func createPaginator(b *bottemplate.Bot, e *handler.CommandEvent, initialCards []*models.Card, totalCount int, filters repositories.SearchFilters) error {
-	totalPages := int(math.Ceil(float64(totalCount) / float64(utils.CardsPerPage)))
+	// Ensure totalCount is at least the length of initial cards
+	if totalCount < len(initialCards) {
+		totalCount = len(initialCards)
+	}
+
+	// Calculate total pages, ensuring at least 1 page if there are results
+	totalPages := int(math.Max(1, math.Ceil(float64(totalCount)/float64(utils.CardsPerPage))))
 
 	return b.Paginator.Create(e.Respond, paginator.Pages{
 		ID:      e.ID().String(),
 		Creator: e.User().ID,
 		PageFunc: func(page int, embed *discord.EmbedBuilder) {
+			// Ensure page number is valid
+			if page >= totalPages {
+				page = totalPages - 1
+			}
+
 			// Try to get page from cache first
 			cacheKey := fmt.Sprintf("%s:page:%d", generateCacheKey(filters), page)
 			if entry, exists := cardSearchCache.get(cacheKey); exists {
@@ -176,6 +195,11 @@ func createPaginator(b *bottemplate.Bot, e *handler.CommandEvent, initialCards [
 			// If not in cache, fetch from database
 			offset := page * utils.CardsPerPage
 			pageCards, _, _ := b.CardRepository.Search(context.Background(), filters, offset, utils.CardsPerPage)
+
+			// Sort results by relevance if name filter is present
+			if filters.Name != "" {
+				sortCardsByRelevance(pageCards, filters.Name)
+			}
 
 			// Cache the page results
 			cardSearchCache.set(cacheKey, pageCards, totalCount)
@@ -221,18 +245,22 @@ func buildSearchDescription(cards []*models.Card, filters repositories.SearchFil
 	}
 
 	description.WriteString("## Cards\n")
-	for _, card := range cards {
-		animatedIcon := ""
-		if card.Animated {
-			animatedIcon = "✨"
-		}
+	if len(cards) == 0 {
+		description.WriteString("* No cards found matching your search criteria\n")
+	} else {
+		for _, card := range cards {
+			animatedIcon := ""
+			if card.Animated {
+				animatedIcon = "✨"
+			}
 
-		description.WriteString(fmt.Sprintf("* %s %s%s [%s]\n",
-			strings.Repeat("⭐", card.Level),
-			utils.FormatCardName(card.Name),
-			animatedIcon,
-			strings.Trim(utils.FormatCollectionName(card.ColID), "[]"),
-		))
+			description.WriteString(fmt.Sprintf("* %s %s%s [%s]\n",
+				strings.Repeat("⭐", card.Level),
+				utils.FormatCardName(card.Name),
+				animatedIcon,
+				strings.Trim(utils.FormatCollectionName(card.ColID), "[]"),
+			))
+		}
 	}
 
 	description.WriteString("```")
@@ -259,4 +287,11 @@ func formatCardType(cardType string) string {
 	default:
 		return cardType
 	}
+}
+
+// New function to sort cards by relevance
+func sortCardsByRelevance(cards []*models.Card, searchTerm string) {
+	sortedCards := utils.WeightedSearch(cards, searchTerm, utils.SearchModePartial)
+	// Replace contents of original slice
+	copy(cards, sortedCards)
 }

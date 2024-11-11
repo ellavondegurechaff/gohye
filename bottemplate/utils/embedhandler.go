@@ -44,3 +44,13 @@ func (eh *EmbedHandler) UpdateInteractionResponse(event *handler.CommandEvent, t
 	})
 	return err
 }
+
+func (h *EmbedHandler) CreateError(event *handler.CommandEvent, title, description string) error {
+	return event.CreateMessage(discord.MessageCreate{
+		Embeds: []discord.Embed{{
+			Title:       "❌ " + title,
+			Description: fmt.Sprintf("```diff\n- %s\n```", description),
+			Color:       0xFF0000,
+		}},
+	})
+}
