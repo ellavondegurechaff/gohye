@@ -2,8 +2,11 @@ package auction
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base32"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -16,6 +19,8 @@ const (
 	MinBidIncrement = 100
 	MaxAuctionTime  = 24 * time.Hour
 	MinAuctionTime  = 1 * time.Hour
+	IDLength        = 4
+	maxRetries      = 5
 )
 
 type Manager struct {
@@ -26,6 +31,7 @@ type Manager struct {
 	minBidIncrement int64
 	maxAuctionTime  time.Duration
 	cleanupTicker   *time.Ticker
+	usedIDs         sync.Map
 }
 
 func NewManager(repo repositories.AuctionRepository) *Manager {
@@ -71,6 +77,12 @@ func (m *Manager) CreateAuction(ctx context.Context, cardID int64, sellerID stri
 		return nil, fmt.Errorf("auction duration must be at least %v", MinAuctionTime)
 	}
 
+	// Generate unique auction ID
+	auctionID, err := m.generateAuctionID()
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate auction ID: %w", err)
+	}
+
 	auction := &models.Auction{
 		CardID:       cardID,
 		SellerID:     sellerID,
@@ -80,6 +92,7 @@ func (m *Manager) CreateAuction(ctx context.Context, cardID int64, sellerID stri
 		Status:       models.AuctionStatusActive,
 		StartTime:    time.Now(),
 		EndTime:      time.Now().Add(duration),
+		AuctionID:    auctionID,
 	}
 
 	if err := m.repo.Create(ctx, auction); err != nil {
@@ -196,6 +209,9 @@ func (m *Manager) completeAuction(ctx context.Context, auctionID int64) error {
 		slog.Int64("auction_id", auctionID),
 		slog.String("winner_id", auction.TopBidderID),
 		slog.Int64("final_price", auction.CurrentPrice))
+
+	// Clean up the used ID
+	m.usedIDs.Delete(auction.AuctionID)
 
 	return nil
 }
@@ -326,4 +342,28 @@ func (m *Manager) Shutdown() {
 	if m.cleanupTicker != nil {
 		m.cleanupTicker.Stop()
 	}
+}
+
+// Generate a unique 4-character auction ID
+func (m *Manager) generateAuctionID() (string, error) {
+	for i := 0; i < maxRetries; i++ {
+		// Generate 3 random bytes (24 bits)
+		bytes := make([]byte, 3)
+		if _, err := rand.Read(bytes); err != nil {
+			return "", fmt.Errorf("failed to generate random bytes: %w", err)
+		}
+
+		// Encode using base32 (5 bits per character)
+		encoded := base32.StdEncoding.EncodeToString(bytes)
+
+		// Take first 4 characters and convert to uppercase
+		id := strings.ToUpper(encoded[:IDLength])
+
+		// Check if ID is already in use
+		if _, exists := m.usedIDs.LoadOrStore(id, true); !exists {
+			return id, nil
+		}
+	}
+
+	return "", fmt.Errorf("failed to generate unique auction ID after %d attempts", maxRetries)
 }

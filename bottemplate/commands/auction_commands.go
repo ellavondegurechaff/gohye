@@ -160,8 +160,7 @@ func (h *AuctionHandler) HandleList(event *handler.CommandEvent) error {
 	}
 
 	var description strings.Builder
-	description.WriteString("```md\n")
-	description.WriteString("# Active Auctions\n\n")
+	description.WriteString("```ansi\n")
 
 	for _, auction := range auctions {
 		card, err := h.cardRepo.GetByID(ctx, auction.CardID)
@@ -169,31 +168,52 @@ func (h *AuctionHandler) HandleList(event *handler.CommandEvent) error {
 			continue
 		}
 
-		// Format time remaining
 		timeLeft := time.Until(auction.EndTime).Round(time.Second)
+		hours := int(timeLeft.Hours())
+		minutes := int(timeLeft.Minutes()) % 60
 
-		description.WriteString(fmt.Sprintf("## Auction #%d\n", auction.ID))
-		description.WriteString(fmt.Sprintf("* Card: %s %s [%s]\n",
-			strings.Repeat("⭐", card.Level),
-			utils.FormatCardName(card.Name),
-			strings.Trim(utils.FormatCollectionName(card.ColID), "[]")))
-		description.WriteString(fmt.Sprintf("* Current Bid: %d 💰\n", auction.CurrentPrice))
-		description.WriteString(fmt.Sprintf("* Seller: <@%s>\n", auction.SellerID))
-		if auction.TopBidderID != "" {
-			description.WriteString(fmt.Sprintf("* Top Bidder: <@%s>\n", auction.TopBidderID))
+		// Format time remaining
+		var timeStr string
+		if hours > 0 {
+			timeStr = fmt.Sprintf("%dh %dm", hours, minutes)
+		} else {
+			timeStr = fmt.Sprintf("%dm", minutes)
 		}
-		description.WriteString(fmt.Sprintf("* Time Left: %s\n\n", formatDuration(timeLeft)))
+
+		// Format auction entry using card formatter
+		formattedName := utils.FormatCardName(card.Name)
+		formattedCollection := utils.FormatCollectionName(card.ColID)
+		stars := utils.GetStarsDisplay(card.Level)
+
+		description.WriteString(fmt.Sprintf("### %s\n", auction.AuctionID))
+		description.WriteString(fmt.Sprintf("> \x1b[32mCheer Up %s\x1b[0m [%s] %s\n",
+			formattedName,
+			stars,
+			formattedCollection))
+		description.WriteString(fmt.Sprintf("> 💰 Current Bid: %d\n", auction.CurrentPrice))
+		description.WriteString(fmt.Sprintf("> ⏳ Ends in: %s\n", timeStr))
+		description.WriteString("\n")
 	}
 
+	description.WriteString("-------------------\n")
 	description.WriteString("```")
 
 	embed := discord.NewEmbedBuilder().
-		SetTitle("🏷️ Auction House").
+		SetTitle("Auction House").
 		SetDescription(description.String()).
-		SetColor(0x2B2D31).
+		SetColor(0x2b2d31).
 		SetFooter(fmt.Sprintf("Total Active Auctions: %d", len(auctions)), "")
 
+	components := []discord.ContainerComponent{
+		discord.NewActionRow(
+			discord.NewPrimaryButton("◀ Previous", "auction:prev_page"),
+			discord.NewPrimaryButton("Next ▶", "auction:next_page"),
+			discord.NewSecondaryButton("🔄 Refresh", "auction:refresh"),
+		),
+	}
+
 	return event.CreateMessage(discord.MessageCreate{
-		Embeds: []discord.Embed{embed.Build()},
+		Embeds:     []discord.Embed{embed.Build()},
+		Components: components,
 	})
 }

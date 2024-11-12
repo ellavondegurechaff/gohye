@@ -18,6 +18,7 @@ type Auction struct {
 	bun.BaseModel `bun:"table:auctions,alias:a"`
 
 	ID           int64         `bun:"id,pk,autoincrement"`
+	AuctionID    string        `bun:"auction_id,notnull,unique"`
 	CardID       int64         `bun:"card_id,notnull"`
 	SellerID     string        `bun:"seller_id,notnull"`
 	StartPrice   int64         `bun:"start_price,notnull"`

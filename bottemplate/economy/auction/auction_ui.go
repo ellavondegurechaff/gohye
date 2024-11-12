@@ -28,7 +28,8 @@ func NewAuctionUI(client bot.Client, cardRepo repositories.CardRepository, manag
 func (ui *AuctionUI) CreateAuctionEmbed(auction *models.Auction, card *models.Card) discord.Embed {
 	builder := discord.NewEmbedBuilder().
 		SetTitle(fmt.Sprintf("Auction #%d: %s", auction.ID, card.Name)).
-		SetDescription(fmt.Sprintf("```md\n## Auction Details\n* Seller: <@%s>\n* Current Price: %d 💰\n* Min Increment: %d 💰\n* Card Level: %s\n* Collection: %s\n```",
+		SetDescription(fmt.Sprintf("```md\n## Auction Details\n* Auction ID: %s\n* Seller: <@%s>\n* Current Price: %d 💰\n* Min Increment: %d 💰\n* Card Level: %s\n* Collection: %s\n```",
+			auction.AuctionID,
 			auction.SellerID,
 			auction.CurrentPrice,
 			auction.MinIncrement,
