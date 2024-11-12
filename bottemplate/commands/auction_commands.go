@@ -186,7 +186,7 @@ func (h *AuctionHandler) HandleList(event *handler.CommandEvent) error {
 		stars := utils.GetStarsDisplay(card.Level)
 
 		description.WriteString(fmt.Sprintf("### %s\n", auction.AuctionID))
-		description.WriteString(fmt.Sprintf("> \x1b[32mCheer Up %s\x1b[0m [%s] %s\n",
+		description.WriteString(fmt.Sprintf("> \x1b[32m%s\x1b[0m [%s] %s\n",
 			formattedName,
 			stars,
 			formattedCollection))
