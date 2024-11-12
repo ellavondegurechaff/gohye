@@ -25,6 +25,7 @@ func New(cfg Config, version string, commit string) *Bot {
 		Paginator: paginator.New(),
 		Version:   version,
 		Commit:    commit,
+		StartTime: time.Now(),
 	}
 }
 
@@ -40,6 +41,7 @@ type Bot struct {
 	SpacesService      *services.SpacesService
 	PriceCalculator    *economy.PriceCalculator
 	AuctionManager     *auction.Manager
+	StartTime          time.Time
 }
 
 func (b *Bot) SetupBot(listeners ...bot.EventListener) error {

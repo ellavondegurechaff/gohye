@@ -197,6 +197,7 @@ func main() {
 	h.Command("/cards", handlers.WrapWithLogging("cards", commands.CardsHandler(b)))
 	h.Command("/price-stats", handlers.WrapWithLogging("price-stats", commands.PriceStatsHandler(b)))
 	h.Component("/details/", handlers.WrapComponentWithLogging("price-details", commands.PriceDetailsHandler(b)))
+	h.Command("/metrics", handlers.WrapWithLogging("metrics", commands.MetricsHandler(b)))
 
 	// Auction-related commands
 	auctionHandler := commands.NewAuctionHandler(b.AuctionManager, b.Client, b.CardRepository)
