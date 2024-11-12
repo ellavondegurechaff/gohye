@@ -12,4 +12,5 @@ var Commands = []discord.ApplicationCommandCreate{
 	Init,
 	Cards,
 	priceStats,
+	AuctionCommand,
 }

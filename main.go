@@ -16,6 +16,7 @@ import (
 	"github.com/disgoorg/bot-template/bottemplate/database"
 	"github.com/disgoorg/bot-template/bottemplate/database/repositories"
 	"github.com/disgoorg/bot-template/bottemplate/economy"
+	"github.com/disgoorg/bot-template/bottemplate/economy/auction"
 	"github.com/disgoorg/bot-template/bottemplate/handlers"
 	"github.com/disgoorg/bot-template/bottemplate/logger"
 	"github.com/disgoorg/bot-template/bottemplate/services"
@@ -92,6 +93,11 @@ func main() {
 		cfg.Spaces.CardRoot, // Add this parameter
 	)
 	b.SpacesService = spacesService
+
+	//Initialize Auction Manager
+	auctionRepo := repositories.NewAuctionRepository(b.DB.BunDB()) // Create the repository
+	b.AuctionManager = auction.NewManager(auctionRepo)             // Create the manager
+	b.AuctionManager.SetClient(b.Client)
 
 	// Initialize repositories
 	b.CardRepository = repositories.NewCardRepository(b.DB.BunDB(), spacesService)
@@ -191,6 +197,10 @@ func main() {
 	h.Command("/cards", handlers.WrapWithLogging("cards", commands.CardsHandler(b)))
 	h.Command("/price-stats", handlers.WrapWithLogging("price-stats", commands.PriceStatsHandler(b)))
 	h.Component("/details/", handlers.WrapComponentWithLogging("price-details", commands.PriceDetailsHandler(b)))
+
+	// Auction-related commands
+	auctionHandler := commands.NewAuctionHandler(b.AuctionManager, b.Client, b.CardRepository)
+	auctionHandler.Register(h)
 
 	if err = b.SetupBot(h, bot.NewListenerFunc(b.OnReady), handlers.MessageHandler(b)); err != nil {
 		slog.Error("Failed to setup bot",
