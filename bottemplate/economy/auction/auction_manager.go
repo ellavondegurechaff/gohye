@@ -25,6 +25,7 @@ type Manager struct {
 	client          bot.Client
 	minBidIncrement int64
 	maxAuctionTime  time.Duration
+	cleanupTicker   *time.Ticker
 }
 
 func NewManager(repo repositories.AuctionRepository) *Manager {
@@ -33,6 +34,7 @@ func NewManager(repo repositories.AuctionRepository) *Manager {
 		minBidIncrement: MinBidIncrement,
 		maxAuctionTime:  MaxAuctionTime,
 		notifier:        NewAuctionNotifier(),
+		cleanupTicker:   time.NewTicker(1 * time.Minute),
 	}
 
 	// Initialize table with a timeout context
@@ -43,6 +45,9 @@ func NewManager(repo repositories.AuctionRepository) *Manager {
 		slog.Error("Failed to initialize auctions table",
 			slog.String("error", err.Error()))
 	}
+
+	// Start the cleanup ticker
+	go m.startCleanupTicker()
 
 	return m
 }
@@ -157,7 +162,9 @@ func (m *Manager) scheduleAuctionEnd(auctionID int64, duration time.Duration) {
 	defer cancel()
 
 	if err := m.completeAuction(ctx, auctionID); err != nil {
-		// Log error and attempt recovery
+		slog.Error("Failed to complete auction",
+			slog.String("error", err.Error()),
+			slog.Int64("auction_id", auctionID))
 	}
 }
 
@@ -171,12 +178,24 @@ func (m *Manager) completeAuction(ctx context.Context, auctionID int64) error {
 		return nil // Already completed or cancelled
 	}
 
+	// Update auction status to completed
+	auction.Status = models.AuctionStatusCompleted
+
+	// Update the auction in the database
 	if err := m.repo.CompleteAuction(ctx, auctionID); err != nil {
 		return fmt.Errorf("failed to complete auction: %w", err)
 	}
 
+	// Remove from active auctions map
 	m.activeAuctions.Delete(auctionID)
+
+	// Notify users about auction completion
 	m.notifier.NotifyEnd(auctionID, auction.TopBidderID, auction.CurrentPrice)
+
+	slog.Info("Auction completed successfully",
+		slog.Int64("auction_id", auctionID),
+		slog.String("winner_id", auction.TopBidderID),
+		slog.Int64("final_price", auction.CurrentPrice))
 
 	return nil
 }
@@ -268,4 +287,43 @@ func (m *Manager) GetAllActiveAuctions(ctx context.Context) ([]*models.Auction, 
 	}
 
 	return activeAuctions, nil
+}
+
+func (m *Manager) startCleanupTicker() {
+	for range m.cleanupTicker.C {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+
+		// Get all active auctions
+		auctions, err := m.repo.GetActive(ctx)
+		if err != nil {
+			slog.Error("Failed to get active auctions during cleanup",
+				slog.String("error", err.Error()))
+			cancel()
+			continue
+		}
+
+		now := time.Now()
+		for _, auction := range auctions {
+			// Check if auction has ended
+			if now.After(auction.EndTime) {
+				if err := m.completeAuction(ctx, auction.ID); err != nil {
+					slog.Error("Failed to complete expired auction",
+						slog.Int64("auction_id", auction.ID),
+						slog.String("error", err.Error()))
+				} else {
+					slog.Info("Successfully completed expired auction",
+						slog.Int64("auction_id", auction.ID))
+				}
+			}
+		}
+
+		cancel()
+	}
+}
+
+// Add cleanup when shutting down
+func (m *Manager) Shutdown() {
+	if m.cleanupTicker != nil {
+		m.cleanupTicker.Stop()
+	}
 }

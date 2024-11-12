@@ -3,6 +3,7 @@ package repositories
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/disgoorg/bot-template/bottemplate/database/models"
@@ -130,16 +131,41 @@ func (r *auctionRepository) UpdateBid(ctx context.Context, auctionID int64, bidd
 }
 
 func (r *auctionRepository) CompleteAuction(ctx context.Context, auctionID int64) error {
-	_, err := r.db.NewUpdate().
+	// First verify the auction exists and is active
+	auction := new(models.Auction)
+	err := r.db.NewSelect().
+		Model(auction).
+		Where("id = ? AND status = ?", auctionID, models.AuctionStatusActive).
+		Scan(ctx)
+
+	if err != nil {
+		return fmt.Errorf("failed to verify auction status: %w", err)
+	}
+
+	// Update the auction status
+	result, err := r.db.NewUpdate().
 		Model((*models.Auction)(nil)).
 		Set("status = ?", models.AuctionStatusCompleted).
 		Set("updated_at = ?", time.Now()).
-		Where("id = ? AND status = ?", auctionID, models.AuctionStatusActive).
+		Where("id = ?", auctionID).
+		Where("status = ?", models.AuctionStatusActive).
 		Exec(ctx)
 
 	if err != nil {
 		return fmt.Errorf("failed to complete auction: %w", err)
 	}
+
+	// Verify the update was successful
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		return fmt.Errorf("auction %d was not updated - may already be completed or cancelled", auctionID)
+	}
+
+	slog.Info("Auction completed successfully",
+		slog.Int64("auction_id", auctionID),
+		slog.String("old_status", string(auction.Status)),
+		slog.String("new_status", string(models.AuctionStatusCompleted)))
+
 	return nil
 }
 
