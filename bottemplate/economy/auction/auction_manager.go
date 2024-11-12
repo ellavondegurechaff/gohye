@@ -40,7 +40,7 @@ func NewManager(repo repositories.AuctionRepository) *Manager {
 		minBidIncrement: MinBidIncrement,
 		maxAuctionTime:  MaxAuctionTime,
 		notifier:        NewAuctionNotifier(),
-		cleanupTicker:   time.NewTicker(1 * time.Minute),
+		cleanupTicker:   time.NewTicker(15 * time.Second),
 	}
 
 	// Initialize table with a timeout context
@@ -309,27 +309,32 @@ func (m *Manager) startCleanupTicker() {
 	for range m.cleanupTicker.C {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 
-		// Get all active auctions
-		auctions, err := m.repo.GetActive(ctx)
+		// Get expired auctions
+		expiredAuctions, err := m.repo.GetExpiredAuctions(ctx)
 		if err != nil {
-			slog.Error("Failed to get active auctions during cleanup",
+			slog.Error("Failed to get expired auctions during cleanup",
 				slog.String("error", err.Error()))
 			cancel()
 			continue
 		}
 
-		now := time.Now()
-		for _, auction := range auctions {
-			// Check if auction has ended
-			if now.After(auction.EndTime) {
+		// Process each expired auction
+		for _, auction := range expiredAuctions {
+			// Double check if it's really expired and active
+			if auction.Status == models.AuctionStatusActive && time.Now().After(auction.EndTime) {
 				if err := m.completeAuction(ctx, auction.ID); err != nil {
 					slog.Error("Failed to complete expired auction",
 						slog.Int64("auction_id", auction.ID),
 						slog.String("error", err.Error()))
-				} else {
-					slog.Info("Successfully completed expired auction",
-						slog.Int64("auction_id", auction.ID))
+					continue
 				}
+
+				// Remove from active auctions map
+				m.activeAuctions.Delete(auction.ID)
+
+				slog.Info("Completed expired auction during cleanup",
+					slog.Int64("auction_id", auction.ID),
+					slog.Time("end_time", auction.EndTime))
 			}
 		}
 

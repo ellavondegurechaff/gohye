@@ -131,19 +131,31 @@ func (r *auctionRepository) UpdateBid(ctx context.Context, auctionID int64, bidd
 }
 
 func (r *auctionRepository) CompleteAuction(ctx context.Context, auctionID int64) error {
-	// First verify the auction exists and is active
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to start transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	// Lock the auction record for update
 	auction := new(models.Auction)
-	err := r.db.NewSelect().
+	err = tx.NewSelect().
 		Model(auction).
-		Where("id = ? AND status = ?", auctionID, models.AuctionStatusActive).
+		Where("id = ?", auctionID).
+		For("UPDATE").
 		Scan(ctx)
 
 	if err != nil {
-		return fmt.Errorf("failed to verify auction status: %w", err)
+		return fmt.Errorf("failed to get auction for update: %w", err)
 	}
 
-	// Update the auction status
-	result, err := r.db.NewUpdate().
+	// Only update if the auction is still active
+	if auction.Status != models.AuctionStatusActive {
+		return fmt.Errorf("auction %d is not active (current status: %s)", auctionID, auction.Status)
+	}
+
+	// Update the auction status with retry logic
+	result, err := tx.NewUpdate().
 		Model((*models.Auction)(nil)).
 		Set("status = ?", models.AuctionStatusCompleted).
 		Set("updated_at = ?", time.Now()).
@@ -155,10 +167,17 @@ func (r *auctionRepository) CompleteAuction(ctx context.Context, auctionID int64
 		return fmt.Errorf("failed to complete auction: %w", err)
 	}
 
-	// Verify the update was successful
-	rows, _ := result.RowsAffected()
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to get affected rows: %w", err)
+	}
+
 	if rows == 0 {
 		return fmt.Errorf("auction %d was not updated - may already be completed or cancelled", auctionID)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
 	}
 
 	slog.Info("Auction completed successfully",
@@ -215,19 +234,50 @@ func (r *auctionRepository) CancelAuction(ctx context.Context, auctionID int64) 
 }
 
 func (r *auctionRepository) GetExpiredAuctions(ctx context.Context) ([]*models.Auction, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to start transaction: %w", err)
+	}
+	defer tx.Rollback()
+
 	var auctions []*models.Auction
-	err := r.db.NewSelect().
+	err = tx.NewSelect().
 		Model(&auctions).
-		Where("status = ? AND end_time <= ?",
-			models.AuctionStatusActive,
-			time.Now(),
-		).
+		Where("status = ?", models.AuctionStatusActive).
+		Where("end_time <= ?", time.Now()).
+		For("UPDATE SKIP LOCKED"). // Skip locked records to prevent conflicts
 		Order("end_time ASC").
 		Scan(ctx)
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to get expired auctions: %w", err)
 	}
+
+	if len(auctions) > 0 {
+		// Bulk update all found auctions to completed status
+		ids := make([]int64, len(auctions))
+		for i, auction := range auctions {
+			ids[i] = auction.ID
+		}
+
+		_, err = tx.NewUpdate().
+			Model((*models.Auction)(nil)).
+			Set("status = ?", models.AuctionStatusCompleted).
+			Set("updated_at = ?", time.Now()).
+			Where("id IN (?)", bun.In(ids)).
+			Where("status = ?", models.AuctionStatusActive).
+			Where("end_time <= ?", time.Now()).
+			Exec(ctx)
+
+		if err != nil {
+			return nil, fmt.Errorf("failed to bulk update expired auctions: %w", err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
 	return auctions, nil
 }
 
