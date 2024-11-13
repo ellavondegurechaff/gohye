@@ -17,6 +17,7 @@ import (
 	"github.com/disgoorg/bot-template/bottemplate/database/repositories"
 	"github.com/disgoorg/bot-template/bottemplate/economy"
 	"github.com/disgoorg/bot-template/bottemplate/economy/auction"
+	"github.com/disgoorg/bot-template/bottemplate/economy/claim"
 	"github.com/disgoorg/bot-template/bottemplate/handlers"
 	"github.com/disgoorg/bot-template/bottemplate/logger"
 	"github.com/disgoorg/bot-template/bottemplate/services"
@@ -79,6 +80,16 @@ func main() {
 		slog.String("database", cfg.DB.Database),
 		slog.Duration("took", time.Since(dbStartTime)))
 
+	// Add automatic schema initialization
+	slog.Info("Initializing database schema...")
+	if err := db.InitializeSchema(ctx); err != nil {
+		slog.Error("Failed to initialize database schema",
+			slog.String("error", err.Error()),
+			slog.Duration("attempted_for", time.Since(dbStartTime)))
+		os.Exit(-1)
+	}
+	slog.Info("Database schema initialized successfully")
+
 	defer db.Close()
 
 	b := bottemplate.New(*cfg, version, commit)
@@ -102,6 +113,7 @@ func main() {
 	// Initialize repositories
 	b.CardRepository = repositories.NewCardRepository(b.DB.BunDB(), spacesService)
 	b.UserCardRepository = repositories.NewUserCardRepository(b.DB.BunDB())
+	b.ClaimRepository = repositories.NewClaimRepository(b.DB.BunDB())
 
 	// Update the price calculator initialization with better configured values
 	priceCalc := economy.NewPriceCalculator(db, economy.PricingConfig{
@@ -177,6 +189,10 @@ func main() {
 	// Add price calculator to bot
 	b.PriceCalculator = priceCalc
 
+	// Initialize ClaimManager
+	b.ClaimManager = claim.NewManager(time.Second * 5) // 5 second cooldown between claims
+	b.ClaimManager.StartCleanupRoutine(context.Background())
+
 	h := handler.New()
 
 	// Group related command handlers
@@ -197,7 +213,9 @@ func main() {
 	h.Command("/cards", handlers.WrapWithLogging("cards", commands.CardsHandler(b)))
 	h.Command("/price-stats", handlers.WrapWithLogging("price-stats", commands.PriceStatsHandler(b)))
 	h.Component("/details/", handlers.WrapComponentWithLogging("price-details", commands.PriceDetailsHandler(b)))
+	h.Component("/claim/", handlers.WrapComponentWithLogging("claim", commands.ClaimButtonHandler(b)))
 	h.Command("/metrics", handlers.WrapWithLogging("metrics", commands.MetricsHandler(b)))
+	h.Command("/claim", handlers.WrapWithLogging("claim", commands.ClaimHandler(b)))
 
 	// Auction-related commands
 	auctionHandler := commands.NewAuctionHandler(b.AuctionManager, b.Client, b.CardRepository)

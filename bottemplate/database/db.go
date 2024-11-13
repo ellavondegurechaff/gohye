@@ -9,6 +9,7 @@ import (
 
 	"log/slog"
 
+	"github.com/disgoorg/bot-template/bottemplate/database/models"
 	"github.com/uptrace/bun"
 
 	"github.com/jackc/pgx/v5"
@@ -224,63 +225,32 @@ func (db *DB) Close() {
 
 // InitializeSchema creates all required database tables and indexes
 func (db *DB) InitializeSchema(ctx context.Context) error {
-	// Create collections table
-	_, err := db.ExecWithLog(ctx, `
-		CREATE TABLE IF NOT EXISTS collections (
-			id TEXT PRIMARY KEY,
-			name TEXT NOT NULL,
-			origin TEXT,
-			aliases JSONB,
-			promo BOOLEAN NOT NULL DEFAULT false,
-			compressed BOOLEAN NOT NULL DEFAULT false,
-			tags JSONB,
-			created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			updated_at TIMESTAMP NOT NULL
-		);
-	`)
-	if err != nil {
-		return fmt.Errorf("failed to create collections table: %w", err)
+	// Create tables in the correct order to handle foreign key constraints
+	tables := []interface{}{
+		(*models.Collection)(nil),
+		(*models.Card)(nil),
+		(*models.User)(nil),
+		(*models.UserCard)(nil),
+		(*models.UserQuest)(nil),
+		(*models.UserSlot)(nil),
+		(*models.UserStats)(nil),
+		(*models.UserEffect)(nil),
+		(*models.Claim)(nil),
 	}
 
-	// Create cards table
-	_, err = db.ExecWithLog(ctx, `
-		CREATE TABLE IF NOT EXISTS cards (
-			id BIGSERIAL PRIMARY KEY,
-			name TEXT NOT NULL,
-			level INTEGER NOT NULL,
-			animated BOOLEAN NOT NULL,
-			col_id TEXT NOT NULL REFERENCES collections(id),
-			tags JSONB,
-			created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			updated_at TIMESTAMP NOT NULL
-		);
-	`)
-	if err != nil {
-		return fmt.Errorf("failed to create cards table: %w", err)
+	// Create tables using Bun
+	for _, model := range tables {
+		query := db.bunDB.NewCreateTable().
+			Model(model).
+			IfNotExists()
+
+		_, err := query.Exec(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to create table: %w", err)
+		}
 	}
 
-	// Create user_cards table with all fields
-	_, err = db.ExecWithLog(ctx, `
-		CREATE TABLE IF NOT EXISTS user_cards (
-			id BIGSERIAL PRIMARY KEY,
-			user_id TEXT NOT NULL,
-			card_id BIGINT NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
-			favorite BOOLEAN NOT NULL DEFAULT false,
-			locked BOOLEAN NOT NULL DEFAULT false,
-			amount BIGINT NOT NULL DEFAULT 1,
-			rating BIGINT NOT NULL DEFAULT 0,
-			obtained TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			exp BIGINT NOT NULL DEFAULT 0,
-			mark TEXT DEFAULT '',
-			created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			updated_at TIMESTAMP NOT NULL,
-		);
-	`)
-	if err != nil {
-		return fmt.Errorf("failed to create user_cards table: %w", err)
-	}
-
-	// Create all required indexes
+	// Create indexes
 	indexes := []string{
 		"CREATE INDEX IF NOT EXISTS idx_cards_col_id ON cards(col_id);",
 		"CREATE INDEX IF NOT EXISTS idx_cards_name ON cards(name);",
@@ -295,153 +265,6 @@ func (db *DB) InitializeSchema(ctx context.Context) error {
 		if _, err := db.ExecWithLog(ctx, idx); err != nil {
 			return fmt.Errorf("failed to create index: %w", err)
 		}
-	}
-
-	// Create user_quests table
-	_, err = db.ExecWithLog(ctx, `
-		CREATE TABLE IF NOT EXISTS user_quests (
-			id BIGSERIAL PRIMARY KEY,
-			user_id TEXT NOT NULL,
-			quest_id TEXT NOT NULL,
-			type TEXT NOT NULL,
-			completed BOOLEAN NOT NULL DEFAULT false,
-			created_at TIMESTAMP NOT NULL,
-			expires_at TIMESTAMP NOT NULL,
-			updated_at TIMESTAMP NOT NULL,
-			UNIQUE(user_id, quest_id)
-		);
-		CREATE INDEX IF NOT EXISTS idx_user_quests_user_id ON user_quests(user_id);
-		CREATE INDEX IF NOT EXISTS idx_user_quests_type ON user_quests(type);
-	`)
-	if err != nil {
-		return fmt.Errorf("failed to create user_quests table: %w", err)
-	}
-
-	// Create user_slots table
-	_, err = db.ExecWithLog(ctx, `
-		CREATE TABLE IF NOT EXISTS user_slots (
-			id BIGSERIAL PRIMARY KEY,
-			discord_id TEXT NOT NULL,
-			effect_name TEXT,
-			slot_expires TIMESTAMP,
-			cooldown TIMESTAMP,
-			is_active BOOLEAN NOT NULL DEFAULT true,
-			created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			updated_at TIMESTAMP NOT NULL,
-			UNIQUE(discord_id, effect_name)
-		);
-		CREATE INDEX IF NOT EXISTS idx_user_slots_discord_id ON user_slots(discord_id);
-	`)
-	if err != nil {
-		return fmt.Errorf("failed to create user_slots table: %w", err)
-	}
-
-	// Create user_stats table
-	_, err = db.ExecWithLog(ctx, `
-		CREATE TABLE IF NOT EXISTS user_stats (
-			id BIGSERIAL PRIMARY KEY,
-			discord_id TEXT NOT NULL UNIQUE,
-			username TEXT NOT NULL,
-			last_daily TIMESTAMP,
-			-- Core Stats
-			claims BIGINT NOT NULL DEFAULT 0,
-			promo_claims BIGINT NOT NULL DEFAULT 0,
-			total_reg_claims BIGINT NOT NULL DEFAULT 0,
-			train BIGINT NOT NULL DEFAULT 0,
-			work BIGINT NOT NULL DEFAULT 0,
-			-- Other fields omitted for brevity, add all fields from the struct
-			created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			updated_at TIMESTAMP NOT NULL
-		);
-		CREATE INDEX IF NOT EXISTS idx_user_stats_discord_id ON user_stats(discord_id);
-		CREATE INDEX IF NOT EXISTS idx_user_stats_last_daily ON user_stats(last_daily);
-	`)
-	if err != nil {
-		return fmt.Errorf("failed to create user_stats table: %w", err)
-	}
-
-	// Create users table
-	_, err = db.ExecWithLog(ctx, `
-		CREATE TABLE IF NOT EXISTS users (
-			id BIGSERIAL PRIMARY KEY,
-			discord_id TEXT NOT NULL UNIQUE,
-			username TEXT NOT NULL,
-			exp BIGINT NOT NULL DEFAULT 0,
-			promo_exp BIGINT NOT NULL DEFAULT 0,
-			joined TIMESTAMP NOT NULL,
-			last_queried_card JSONB,
-			last_kofi_claim TIMESTAMP,
-
-			-- Stats stored as JSONB
-			daily_stats JSONB NOT NULL DEFAULT '{}',
-			effect_stats JSONB NOT NULL DEFAULT '{}',
-			user_stats JSONB NOT NULL DEFAULT '{}',
-
-			-- Arrays stored as JSONB
-			cards JSONB NOT NULL DEFAULT '[]',
-			inventory JSONB NOT NULL DEFAULT '[]',
-			completed_cols JSONB NOT NULL DEFAULT '[]',
-			clouted_cols JSONB NOT NULL DEFAULT '[]',
-			achievements JSONB NOT NULL DEFAULT '[]',
-			effects JSONB NOT NULL DEFAULT '[]',
-			wishlist JSONB NOT NULL DEFAULT '[]',
-
-			-- Timestamps
-			last_daily TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			last_train TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			last_work TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			last_vote TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			last_announce TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			last_msg TEXT,
-
-			-- Hero System
-			hero_slots JSONB NOT NULL DEFAULT '[]',
-			hero_cooldown JSONB NOT NULL DEFAULT '[]',
-			hero TEXT,
-			hero_changed TIMESTAMP,
-			hero_submits INTEGER NOT NULL DEFAULT 0,
-
-			-- User Status
-			roles JSONB NOT NULL DEFAULT '[]',
-			ban JSONB NOT NULL DEFAULT '{}',
-
-			-- Premium
-			premium BOOLEAN NOT NULL DEFAULT false,
-			premium_expires TIMESTAMP,
-
-			created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			updated_at TIMESTAMP NOT NULL,
-
-			CONSTRAINT users_discord_id_unique UNIQUE (discord_id)
-		);
-		CREATE INDEX IF NOT EXISTS idx_users_discord_id ON users(discord_id);
-		CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
-		CREATE INDEX IF NOT EXISTS idx_users_exp ON users(exp);
-		CREATE INDEX IF NOT EXISTS idx_users_premium ON users(premium);
-	`)
-	if err != nil {
-		return fmt.Errorf("failed to create users table: %w", err)
-	}
-
-	// Create user_effects table
-	_, err = db.ExecWithLog(ctx, `
-		CREATE TABLE IF NOT EXISTS user_effects (
-			id BIGSERIAL PRIMARY KEY,
-			user_id TEXT NOT NULL,
-			effect_id TEXT NOT NULL,
-			uses INTEGER NOT NULL DEFAULT 0,
-			cooldown_ends TIMESTAMP,
-			expires TIMESTAMP,
-			notified BOOLEAN NOT NULL DEFAULT true,
-			created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			updated_at TIMESTAMP NOT NULL,
-			UNIQUE(user_id, effect_id)
-		);
-		CREATE INDEX IF NOT EXISTS idx_user_effects_user_id ON user_effects(user_id);
-		CREATE INDEX IF NOT EXISTS idx_user_effects_effect_id ON user_effects(effect_id);
-	`)
-	if err != nil {
-		return fmt.Errorf("failed to create user_effects table: %w", err)
 	}
 
 	return nil

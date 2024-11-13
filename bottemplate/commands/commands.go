@@ -14,4 +14,5 @@ var Commands = []discord.ApplicationCommandCreate{
 	priceStats,
 	AuctionCommand,
 	metrics,
+	Claim,
 }

@@ -67,7 +67,7 @@ func InitHandler(b *bottemplate.Bot) handler.CommandHandler {
 						{
 							Name: "Tables Created",
 							Value: "• collections\n• cards\n• user_cards\n• user_quests\n" +
-								"• user_slots\n• user_stats\n• users\n• user_effects",
+								"• user_slots\n• user_stats\n• users\n• user_effects\n• claims",
 							Inline: &inlineTrue,
 						},
 						{

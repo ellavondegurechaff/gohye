@@ -9,6 +9,7 @@ import (
 	"github.com/disgoorg/bot-template/bottemplate/database/repositories"
 	"github.com/disgoorg/bot-template/bottemplate/economy"
 	"github.com/disgoorg/bot-template/bottemplate/economy/auction"
+	"github.com/disgoorg/bot-template/bottemplate/economy/claim"
 	"github.com/disgoorg/bot-template/bottemplate/services"
 	"github.com/disgoorg/disgo"
 	"github.com/disgoorg/disgo/bot"
@@ -41,6 +42,8 @@ type Bot struct {
 	SpacesService      *services.SpacesService
 	PriceCalculator    *economy.PriceCalculator
 	AuctionManager     *auction.Manager
+	ClaimManager       *claim.Manager
+	ClaimRepository    repositories.ClaimRepository
 	StartTime          time.Time
 }
 
