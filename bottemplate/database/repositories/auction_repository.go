@@ -22,6 +22,7 @@ type AuctionRepository interface {
 	CancelAuction(ctx context.Context, auctionID int64) error
 	GetExpiredAuctions(ctx context.Context) ([]*models.Auction, error)
 	UpdateAuctionMessage(ctx context.Context, auctionID int64, messageID string) error
+	GetByAuctionID(ctx context.Context, auctionID string) (*models.Auction, error)
 }
 
 type auctionRepository struct {
@@ -53,7 +54,7 @@ func (r *auctionRepository) GetByID(ctx context.Context, id int64) (*models.Auct
 	auction := new(models.Auction)
 	err := r.db.NewSelect().
 		Model(auction).
-		Where("id = ?", id).
+		Where("id = ? AND status = ?", id, models.AuctionStatusActive).
 		Scan(ctx)
 
 	if err != nil {
@@ -293,4 +294,17 @@ func (r *auctionRepository) UpdateAuctionMessage(ctx context.Context, auctionID 
 		return fmt.Errorf("failed to update auction message: %w", err)
 	}
 	return nil
+}
+
+func (r *auctionRepository) GetByAuctionID(ctx context.Context, auctionID string) (*models.Auction, error) {
+	auction := new(models.Auction)
+	err := r.db.NewSelect().
+		Model(auction).
+		Where("auction_id = ? AND status = ?", auctionID, models.AuctionStatusActive).
+		Scan(ctx)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to get auction: %w", err)
+	}
+	return auction, nil
 }

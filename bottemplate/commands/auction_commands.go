@@ -3,9 +3,11 @@ package commands
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/disgoorg/bot-template/bottemplate/database/models"
 	"github.com/disgoorg/bot-template/bottemplate/database/repositories"
 	"github.com/disgoorg/bot-template/bottemplate/economy/auction"
 	"github.com/disgoorg/bot-template/bottemplate/utils"
@@ -46,9 +48,9 @@ var AuctionCommand = discord.SlashCommandCreate{
 			Name:        "bid",
 			Description: "Place a bid on an auction",
 			Options: []discord.ApplicationCommandOption{
-				discord.ApplicationCommandOptionInt{
+				discord.ApplicationCommandOptionString{
 					Name:        "auction_id",
-					Description: "The ID of the auction",
+					Description: "The ID of the auction (e.g. 123 or ABC4)",
 					Required:    true,
 				},
 				discord.ApplicationCommandOptionInt{
@@ -110,11 +112,33 @@ func (h *AuctionHandler) HandleCreate(event *handler.CommandEvent) error {
 
 func (h *AuctionHandler) HandleBid(event *handler.CommandEvent) error {
 	data := event.SlashCommandInteractionData()
-	auctionID := int64(data.Int("auction_id"))
+	auctionIDStr := data.String("auction_id")
 	amount := int64(data.Int("amount"))
 
 	ctx := context.Background()
-	err := h.manager.PlaceBid(ctx, auctionID, event.User().ID.String(), amount)
+
+	var auction *models.Auction
+	var err error
+
+	// Try to get auction by alphanumeric ID first
+	auction, err = h.manager.GetAuctionByAuctionID(ctx, auctionIDStr)
+	if err != nil {
+		// If not found, try parsing as numeric ID
+
+		numericID, parseErr := strconv.ParseInt(auctionIDStr, 10, 64)
+		if parseErr == nil {
+			auction, err = h.manager.GetByID(ctx, numericID)
+		}
+
+		if err != nil {
+			return event.CreateMessage(discord.MessageCreate{
+				Content: fmt.Sprintf("Failed to find auction: %s", err),
+				Flags:   discord.MessageFlagEphemeral,
+			})
+		}
+	}
+
+	err = h.manager.PlaceBid(ctx, auction.ID, event.User().ID.String(), amount)
 	if err != nil {
 		return event.CreateMessage(discord.MessageCreate{
 			Content: fmt.Sprintf("Failed to place bid: %s", err),
@@ -123,7 +147,7 @@ func (h *AuctionHandler) HandleBid(event *handler.CommandEvent) error {
 	}
 
 	return event.CreateMessage(discord.MessageCreate{
-		Content: fmt.Sprintf("Successfully placed bid of %d 💰", amount),
+		Content: fmt.Sprintf("Successfully placed bid of %d 💰 on auction %s", amount, auction.AuctionID),
 		Flags:   discord.MessageFlagEphemeral,
 	})
 }

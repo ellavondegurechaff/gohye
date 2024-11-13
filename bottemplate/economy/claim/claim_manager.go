@@ -14,6 +14,7 @@ type Manager struct {
 	maxClaims       int32    // Changed to int32 for atomic operations
 	cooldownPeriod  time.Duration
 	lockDuration    time.Duration // Added as configurable parameter
+	sessionTimeout  time.Duration
 }
 
 func NewManager(cooldownPeriod time.Duration) *Manager {
@@ -21,6 +22,7 @@ func NewManager(cooldownPeriod time.Duration) *Manager {
 		maxClaims:      3,
 		cooldownPeriod: cooldownPeriod,
 		lockDuration:   30 * time.Second,
+		sessionTimeout: 30 * time.Second,
 	}
 }
 
@@ -96,8 +98,21 @@ func (m *Manager) getUsedClaims(userID string) int {
 
 func (m *Manager) cleanupExpiredLocks() {
 	now := time.Now()
+
+	// Cleanup active claim locks
 	m.activeClaimLock.Range(func(key, value interface{}) bool {
 		if now.After(value.(time.Time)) {
+			m.activeClaimLock.Delete(key)
+			m.activeUsers.Delete(key)
+		}
+		return true
+	})
+
+	// Cleanup active sessions
+	m.activeUsers.Range(func(key, value interface{}) bool {
+		sessionStart := value.(time.Time)
+		if now.Sub(sessionStart) > m.sessionTimeout {
+			m.activeUsers.Delete(key)
 			m.activeClaimLock.Delete(key)
 		}
 		return true
@@ -105,7 +120,7 @@ func (m *Manager) cleanupExpiredLocks() {
 }
 
 func (m *Manager) StartCleanupRoutine(ctx context.Context) {
-	ticker := time.NewTicker(5 * time.Minute)
+	ticker := time.NewTicker(30 * time.Second)
 	go func() {
 		defer ticker.Stop()
 		for {

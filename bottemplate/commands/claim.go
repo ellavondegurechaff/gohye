@@ -46,6 +46,10 @@ func ClaimHandler(b *bottemplate.Bot) handler.CommandHandler {
 	return func(e *handler.CommandEvent) error {
 		userID := e.User().ID.String()
 
+		// Add timeout context for the entire claim operation
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
 		// Check for existing session first
 		if b.ClaimManager.HasActiveSession(userID) {
 			return utils.EH.CreateError(e, "Error",
@@ -71,9 +75,7 @@ func ClaimHandler(b *bottemplate.Bot) handler.CommandHandler {
 			return fmt.Errorf("failed to defer message: %w", err)
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-
+		// Use the timeout context for database operations
 		cards, err := b.CardRepository.GetAll(ctx)
 		if err != nil {
 			b.ClaimManager.ReleaseClaim(userID) // Release lock on error

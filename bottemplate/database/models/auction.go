@@ -47,6 +47,7 @@ type AuctionBid struct {
 	BidderID  string    `bun:"bidder_id,notnull"`
 	Amount    int64     `bun:"amount,notnull"`
 	Timestamp time.Time `bun:"timestamp,notnull"`
-
 	CreatedAt time.Time `bun:"created_at,notnull"`
+
+	Auction *Auction `bun:"rel:belongs-to,join:auction_id=id"`
 }

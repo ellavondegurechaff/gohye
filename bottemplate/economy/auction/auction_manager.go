@@ -275,13 +275,49 @@ func (m *Manager) RecoverActiveAuctions(ctx context.Context) error {
 
 // Add this function to initialize the table
 func (m *Manager) InitializeTable(ctx context.Context) error {
-	_, err := m.repo.DB().NewCreateTable().
+	db := m.repo.DB()
+
+	// Create auctions table
+	_, err := db.NewCreateTable().
 		Model((*models.Auction)(nil)).
 		IfNotExists().
 		Exec(ctx)
 
 	if err != nil {
 		return fmt.Errorf("failed to create auctions table: %w", err)
+	}
+
+	// Create auction_bids table
+	_, err = db.NewCreateTable().
+		Model((*models.AuctionBid)(nil)).
+		IfNotExists().
+		Exec(ctx)
+
+	if err != nil {
+		return fmt.Errorf("failed to create auction_bids table: %w", err)
+	}
+
+	// Create indexes for auction_bids table
+	_, err = db.NewCreateIndex().
+		Model((*models.AuctionBid)(nil)).
+		Index("idx_auction_bids_auction_id").
+		Column("auction_id").
+		IfNotExists().
+		Exec(ctx)
+
+	if err != nil {
+		return fmt.Errorf("failed to create auction_id index: %w", err)
+	}
+
+	_, err = db.NewCreateIndex().
+		Model((*models.AuctionBid)(nil)).
+		Index("idx_auction_bids_bidder_id").
+		Column("bidder_id").
+		IfNotExists().
+		Exec(ctx)
+
+	if err != nil {
+		return fmt.Errorf("failed to create bidder_id index: %w", err)
 	}
 
 	return nil
@@ -371,4 +407,20 @@ func (m *Manager) generateAuctionID() (string, error) {
 	}
 
 	return "", fmt.Errorf("failed to generate unique auction ID after %d attempts", maxRetries)
+}
+
+func (m *Manager) GetAuctionByAuctionID(ctx context.Context, auctionID string) (*models.Auction, error) {
+	auction, err := m.repo.GetByAuctionID(ctx, auctionID)
+	if err != nil {
+		return nil, fmt.Errorf("auction not found: %w", err)
+	}
+	return auction, nil
+}
+
+func (m *Manager) GetByID(ctx context.Context, id int64) (*models.Auction, error) {
+	auction, err := m.repo.GetByID(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("auction not found: %w", err)
+	}
+	return auction, nil
 }
