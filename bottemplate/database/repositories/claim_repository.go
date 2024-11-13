@@ -74,22 +74,42 @@ func (r *claimRepository) CreateClaimTx(ctx context.Context, tx bun.Tx, cardID i
 		return nil, err
 	}
 
-	// Create UserCard entry first
-	userCard := &models.UserCard{
-		UserID:    userID,
-		CardID:    cardID,
-		Amount:    1,
-		Obtained:  time.Now(),
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
-	}
+	// First try to update existing UserCard
+	result, err := tx.NewUpdate().
+		Model((*models.UserCard)(nil)).
+		Set("amount = amount + 1").
+		Set("updated_at = ?", time.Now()).
+		Where("user_id = ? AND card_id = ?", userID, cardID).
+		Exec(ctx)
 
-	_, err := tx.NewInsert().Model(userCard).Exec(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	// Then create claim record for cooldown tracking
+	// If no rows were affected, create new UserCard
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return nil, err
+	}
+
+	if rowsAffected == 0 {
+		// Create new UserCard entry for first-time acquisition
+		userCard := &models.UserCard{
+			UserID:    userID,
+			CardID:    cardID,
+			Amount:    1,
+			Obtained:  time.Now(),
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
+		}
+
+		_, err = tx.NewInsert().Model(userCard).Exec(ctx)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// Create claim record for cooldown tracking
 	claim := &models.Claim{
 		CardID:    cardID,
 		UserID:    userID,

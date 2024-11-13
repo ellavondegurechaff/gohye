@@ -15,4 +15,5 @@ var Commands = []discord.ApplicationCommandCreate{
 	AuctionCommand,
 	metrics,
 	Claim,
+	FixDuplicates,
 }

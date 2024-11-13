@@ -2,6 +2,9 @@ package repositories
 
 import (
 	"context"
+	"database/sql"
+	"errors"
+	"fmt"
 	"time"
 
 	"github.com/disgoorg/bot-template/bottemplate/database/models"
@@ -18,6 +21,7 @@ type UserCardRepository interface {
 	UpdateAmount(ctx context.Context, id int64, amount int64) error
 	UpdateExp(ctx context.Context, id int64, exp int64) error
 	GetFavorites(ctx context.Context, userID string) ([]*models.UserCard, error)
+	GetUserCard(ctx context.Context, userID string, cardID int64) (*models.UserCard, error)
 }
 
 type userCardRepository struct {
@@ -108,4 +112,21 @@ func (r *userCardRepository) GetFavorites(ctx context.Context, userID string) ([
 		Order("obtained DESC").
 		Scan(ctx)
 	return userCards, err
+}
+
+func (r *userCardRepository) GetUserCard(ctx context.Context, userID string, cardID int64) (*models.UserCard, error) {
+	userCard := new(models.UserCard)
+	err := r.db.NewSelect().
+		Model(userCard).
+		Where("user_id = ? AND card_id = ?", userID, cardID).
+		Scan(ctx)
+
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, err
+		}
+		return nil, fmt.Errorf("failed to get user card: %w", err)
+	}
+
+	return userCard, nil
 }

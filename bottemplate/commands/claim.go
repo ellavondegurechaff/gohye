@@ -2,6 +2,8 @@ package commands
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"log"
 	"math/rand"
@@ -92,14 +94,19 @@ func ClaimHandler(b *bottemplate.Bot) handler.CommandHandler {
 		embed := createClaimEmbed(randomCard, b)
 		components := createClaimComponents(randomCard.ID)
 
-		_, err = e.UpdateInteractionResponse(discord.MessageUpdate{
+		// After sending the message, register the message ownership
+		resp, err := e.UpdateInteractionResponse(discord.MessageUpdate{
 			Embeds:     &[]discord.Embed{embed},
 			Components: &[]discord.ContainerComponent{components},
 		})
 		if err != nil {
-			b.ClaimManager.ReleaseClaim(userID) // Release lock on error
+			b.ClaimManager.ReleaseClaim(userID)
+			return err
 		}
-		return err
+
+		// Register the message owner
+		b.ClaimManager.RegisterMessageOwner(resp.ID.String(), userID)
+		return nil
 	}
 }
 
@@ -215,6 +222,18 @@ func ClaimButtonHandler(b *bottemplate.Bot) handler.ComponentHandler {
 		}
 
 		userID := e.User().ID.String()
+		messageID := e.Message.ID.String()
+
+		// Check if this user owns this specific claim message
+		if !b.ClaimManager.IsMessageOwner(messageID, userID) {
+			return e.CreateMessage(discord.MessageCreate{
+				Embeds: []discord.Embed{{
+					Description: "This claim session belongs to another user.",
+					Color:       utils.ErrorColor,
+				}},
+				Flags: discord.MessageFlagEphemeral,
+			})
+		}
 
 		// Don't try to acquire a new lock for button interactions
 		// Instead, verify the user has an active session
@@ -256,20 +275,9 @@ func ClaimButtonHandler(b *bottemplate.Bot) handler.ComponentHandler {
 
 func handleClaim(e *handler.ComponentEvent, b *bottemplate.Bot, cardIDStr string) error {
 	userID := e.User().ID.String()
-	defer b.ClaimManager.ReleaseClaim(userID) // Release lock after claim is processed
+	defer b.ClaimManager.ReleaseClaim(userID)
 
 	log.Printf("[DEBUG] [CLAIM] Attempting to claim card: %s", cardIDStr)
-
-	if b.ClaimManager == nil {
-		log.Printf("[ERROR] [CLAIM] ClaimManager not initialized")
-		return e.UpdateMessage(discord.MessageUpdate{
-			Embeds: &[]discord.Embed{{
-				Description: "Claim system not properly initialized",
-				Color:       utils.ErrorColor,
-			}},
-			Components: &[]discord.ContainerComponent{},
-		})
-	}
 
 	cardID, err := strconv.ParseInt(cardIDStr, 10, 64)
 	if err != nil {
@@ -295,20 +303,95 @@ func handleClaim(e *handler.ComponentEvent, b *bottemplate.Bot, cardIDStr string
 	}
 
 	ctx := context.Background()
-	claim, err := b.ClaimRepository.CreateClaim(ctx, cardID, userID)
-	if err != nil {
-		log.Printf("[ERROR] [CLAIM] Failed to create claim: %v", err)
+
+	// First, check if user already has this card
+	userCard, err := b.UserCardRepository.GetUserCard(ctx, userID, cardID)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		log.Printf("[ERROR] [CLAIM] Failed to check existing card: %v", err)
 		return e.UpdateMessage(discord.MessageUpdate{
 			Embeds: &[]discord.Embed{{
-				Description: "Failed to claim card",
+				Description: "Failed to process claim",
 				Color:       utils.ErrorColor,
 			}},
 			Components: &[]discord.ContainerComponent{},
 		})
 	}
 
-	// After creating the claim, fetch the card details
-	card, err := b.CardRepository.GetByID(ctx, claim.CardID)
+	// Start transaction
+	tx, err := b.DB.BunDB().BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	var amount int64
+	if userCard != nil {
+		// Update existing card
+		amount = userCard.Amount + 1
+		_, err = tx.NewUpdate().
+			Model((*models.UserCard)(nil)).
+			Set("amount = ?", amount).
+			Set("updated_at = ?", time.Now()).
+			Where("user_id = ? AND card_id = ?", userID, cardID).
+			Exec(ctx)
+	} else {
+		// Create new card entry
+		amount = 1
+		userCard = &models.UserCard{
+			UserID:    userID,
+			CardID:    cardID,
+			Amount:    1,
+			Obtained:  time.Now(),
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
+		}
+		_, err = tx.NewInsert().Model(userCard).Exec(ctx)
+	}
+
+	if err != nil {
+		log.Printf("[ERROR] [CLAIM] Failed to update user card: %v", err)
+		return e.UpdateMessage(discord.MessageUpdate{
+			Embeds: &[]discord.Embed{{
+				Description: "Failed to process claim",
+				Color:       utils.ErrorColor,
+			}},
+			Components: &[]discord.ContainerComponent{},
+		})
+	}
+
+	// Create claim record
+	claim := &models.Claim{
+		CardID:    cardID,
+		UserID:    userID,
+		ClaimedAt: time.Now(),
+		Expires:   time.Now().Add(24 * time.Hour),
+	}
+
+	_, err = tx.NewInsert().Model(claim).Exec(ctx)
+	if err != nil {
+		log.Printf("[ERROR] [CLAIM] Failed to create claim record: %v", err)
+		return e.UpdateMessage(discord.MessageUpdate{
+			Embeds: &[]discord.Embed{{
+				Description: "Failed to process claim",
+				Color:       utils.ErrorColor,
+			}},
+			Components: &[]discord.ContainerComponent{},
+		})
+	}
+
+	if err := tx.Commit(); err != nil {
+		log.Printf("[ERROR] [CLAIM] Failed to commit transaction: %v", err)
+		return e.UpdateMessage(discord.MessageUpdate{
+			Embeds: &[]discord.Embed{{
+				Description: "Failed to process claim",
+				Color:       utils.ErrorColor,
+			}},
+			Components: &[]discord.ContainerComponent{},
+		})
+	}
+
+	// After successful claim, fetch the card details
+	card, err := b.CardRepository.GetByID(ctx, cardID)
 	if err != nil {
 		log.Printf("[ERROR] [CLAIM] Failed to fetch card details: %v", err)
 		return e.UpdateMessage(discord.MessageUpdate{
@@ -320,7 +403,7 @@ func handleClaim(e *handler.ComponentEvent, b *bottemplate.Bot, cardIDStr string
 		})
 	}
 
-	log.Printf("[INFO] [CLAIM] Successfully claimed card #%d for user %s", claim.CardID, userID)
+	log.Printf("[INFO] [CLAIM] Successfully claimed card #%d for user %s (Total: %d)", cardID, userID, amount)
 	b.ClaimManager.SetClaimCooldown(userID)
 
 	// Update the original message to show it's been claimed
@@ -334,6 +417,7 @@ func handleClaim(e *handler.ComponentEvent, b *bottemplate.Bot, cardIDStr string
 				"* Collection: %s\n"+
 				"* Level: %s\n"+
 				"* ID: #%d\n"+
+				"* Amount: %dx\n"+ // Added amount display
 				"%s\n"+
 				"```\n"+
 				"> ✨ Successfully added to your collection!",
@@ -343,6 +427,7 @@ func handleClaim(e *handler.ComponentEvent, b *bottemplate.Bot, cardIDStr string
 				utils.FormatCollectionName(card.ColID),
 				utils.GetStarsDisplay(card.Level),
 				card.ID,
+				amount,
 				utils.GetAnimatedTag(card.Animated)),
 			Color: utils.SuccessColor,
 			Image: &discord.EmbedResource{

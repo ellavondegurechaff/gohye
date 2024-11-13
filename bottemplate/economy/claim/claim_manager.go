@@ -11,6 +11,8 @@ type Manager struct {
 	activeClaimLock sync.Map // Changed to sync.Map for better concurrent access
 	claimCooldowns  sync.Map
 	activeUsers     sync.Map // Add this to track users with active claim sessions
+	claimOwners     sync.Map
+	messageOwners   sync.Map // Add this to track which message belongs to which user
 	maxClaims       int32    // Changed to int32 for atomic operations
 	cooldownPeriod  time.Duration
 	lockDuration    time.Duration // Added as configurable parameter
@@ -61,6 +63,14 @@ func (m *Manager) LockClaim(userID string) bool {
 func (m *Manager) ReleaseClaim(userID string) {
 	m.activeClaimLock.Delete(userID)
 	m.activeUsers.Delete(userID)
+	m.claimOwners.Delete(userID)
+	// Clean up message ownership entries for this user
+	m.messageOwners.Range(func(key, value interface{}) bool {
+		if value.(string) == userID {
+			m.messageOwners.Delete(key)
+		}
+		return true
+	})
 }
 
 func (m *Manager) SetClaimCooldown(userID string) {
@@ -104,6 +114,7 @@ func (m *Manager) cleanupExpiredLocks() {
 		if now.After(value.(time.Time)) {
 			m.activeClaimLock.Delete(key)
 			m.activeUsers.Delete(key)
+			m.claimOwners.Delete(key)
 		}
 		return true
 	})
@@ -114,6 +125,16 @@ func (m *Manager) cleanupExpiredLocks() {
 		if now.Sub(sessionStart) > m.sessionTimeout {
 			m.activeUsers.Delete(key)
 			m.activeClaimLock.Delete(key)
+			m.claimOwners.Delete(key)
+		}
+		return true
+	})
+
+	// Also cleanup message owners for expired sessions
+	m.messageOwners.Range(func(key, value interface{}) bool {
+		userID := value.(string)
+		if _, exists := m.activeUsers.Load(userID); !exists {
+			m.messageOwners.Delete(key)
 		}
 		return true
 	})
@@ -132,4 +153,22 @@ func (m *Manager) StartCleanupRoutine(ctx context.Context) {
 			}
 		}
 	}()
+}
+
+func (m *Manager) IsClaimOwner(userID string) bool {
+	if owner, exists := m.claimOwners.Load(userID); exists {
+		return owner.(string) == userID
+	}
+	return false
+}
+
+func (m *Manager) RegisterMessageOwner(messageID string, userID string) {
+	m.messageOwners.Store(messageID, userID)
+}
+
+func (m *Manager) IsMessageOwner(messageID string, userID string) bool {
+	if owner, exists := m.messageOwners.Load(messageID); exists {
+		return owner.(string) == userID
+	}
+	return false
 }
