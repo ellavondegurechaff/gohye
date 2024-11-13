@@ -111,26 +111,44 @@ func ClaimHandler(b *bottemplate.Bot) handler.CommandHandler {
 }
 
 func selectRandomCard(cards []*models.Card) *models.Card {
+	// Updated weights to make higher levels much rarer and exclude level 5
 	weights := map[int]int{
-		1: 50, // Common
-		2: 25, // Uncommon
-		3: 15, // Rare
-		4: 7,  // Epic
-		5: 3,  // Legendary
+		1: 70, // Common (70% chance)
+		2: 20, // Uncommon (20% chance)
+		3: 7,  // Rare (7% chance)
+		4: 3,  // Epic (3% chance)
+		// Level 5 removed completely
 	}
 
-	totalWeight := 0
+	// Filter out level 5 cards and organize by rarity
+	var eligibleCards []*models.Card
 	cardsByRarity := make(map[int][]*models.Card)
 
 	for _, card := range cards {
-		totalWeight += weights[card.Level]
-		cardsByRarity[card.Level] = append(cardsByRarity[card.Level], card)
+		if card.Level < 5 { // Exclude level 5 cards
+			eligibleCards = append(eligibleCards, card)
+			cardsByRarity[card.Level] = append(cardsByRarity[card.Level], card)
+		}
 	}
 
+	if len(eligibleCards) == 0 {
+		return nil
+	}
+
+	// Calculate total weight for eligible cards
+	totalWeight := 0
+	for rarity, weight := range weights {
+		if len(cardsByRarity[rarity]) > 0 {
+			totalWeight += weight
+		}
+	}
+
+	// Roll for rarity
 	roll := rand.Intn(totalWeight)
 	currentWeight := 0
 
-	for rarity := 1; rarity <= 5; rarity++ {
+	// Select rarity based on weights
+	for rarity := 1; rarity <= 4; rarity++ {
 		currentWeight += weights[rarity]
 		if roll < currentWeight && len(cardsByRarity[rarity]) > 0 {
 			cards := cardsByRarity[rarity]
@@ -138,8 +156,24 @@ func selectRandomCard(cards []*models.Card) *models.Card {
 		}
 	}
 
-	// Fallback to random card if something goes wrong
-	return cards[rand.Intn(len(cards))]
+	// Fallback to a random eligible card if something goes wrong
+	return eligibleCards[rand.Intn(len(eligibleCards))]
+}
+
+// Update getRarityMessage to be simpler
+func getRarityMessage(level int) string {
+	switch level {
+	case 1:
+		return "⭐"
+	case 2:
+		return "⭐⭐"
+	case 3:
+		return "⭐⭐⭐"
+	case 4:
+		return "⭐⭐⭐⭐"
+	default:
+		return "⭐"
+	}
 }
 
 func createClaimComponents(cardID int64) discord.ContainerComponent {
@@ -159,8 +193,7 @@ func createClaimEmbed(card *models.Card, b *bottemplate.Bot) discord.Embed {
 			"* Level: %s\n"+
 			"* ID: #%d\n"+
 			"%s\n"+
-			"```\n"+
-			"> Quick! Claim this card before someone else does!",
+			"```",
 			utils.FormatCollectionName(card.ColID),
 			utils.GetStarsDisplay(card.Level),
 			card.ID,
@@ -411,24 +444,24 @@ func handleClaim(e *handler.ComponentEvent, b *bottemplate.Bot, cardIDStr string
 	return e.UpdateMessage(discord.MessageUpdate{
 		Embeds: &[]discord.Embed{{
 			Title: utils.FormatCardName(card.Name),
-			Description: fmt.Sprintf("``%s`` ``%s`` has been claimed by <@%s>!\n\n"+
+			Description: fmt.Sprintf("🎉 **CLAIMED!** 🎉\n\n"+
 				"```md\n"+
 				"# Card Information\n"+
 				"* Collection: %s\n"+
 				"* Level: %s\n"+
 				"* ID: #%d\n"+
-				"* Amount: %dx\n"+ // Added amount display
+				"* Amount: %dx\n"+
 				"%s\n"+
 				"```\n"+
-				"> ✨ Successfully added to your collection!",
-				utils.FormatCollectionName(card.ColID),
-				utils.GetStarsDisplay(card.Level),
-				userID,
+				"> 🏆 Congratulations <@%s>!\n"+
+				"> 📈 You now have %dx of this card in your collection!",
 				utils.FormatCollectionName(card.ColID),
 				utils.GetStarsDisplay(card.Level),
 				card.ID,
 				amount,
-				utils.GetAnimatedTag(card.Animated)),
+				utils.GetAnimatedTag(card.Animated),
+				userID,
+				amount),
 			Color: utils.SuccessColor,
 			Image: &discord.EmbedResource{
 				URL: getCardImageURL(card, b),
@@ -440,9 +473,9 @@ func handleClaim(e *handler.ComponentEvent, b *bottemplate.Bot, cardIDStr string
 		}},
 		Components: &[]discord.ContainerComponent{
 			discord.NewActionRow(
-				discord.NewPrimaryButton("✨ Claim", fmt.Sprintf("/claim/%d", cardID)).WithDisabled(true),
-				discord.NewSecondaryButton("🎲 Reroll", "/claim/reroll").WithDisabled(true),
-				discord.NewDangerButton("❌ Cancel", "/claim/cancel").WithDisabled(true),
+				discord.NewPrimaryButton("✨ Claimed!", fmt.Sprintf("/claim/%d", cardID)).WithDisabled(true),
+				discord.NewSecondaryButton("🎲 Rerolled", "/claim/reroll").WithDisabled(true),
+				discord.NewDangerButton("❌ Cancelled", "/claim/cancel").WithDisabled(true),
 			),
 		},
 	})
