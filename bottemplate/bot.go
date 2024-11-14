@@ -37,6 +37,7 @@ type Bot struct {
 	Version            string
 	Commit             string
 	DB                 *database.DB
+	UserRepository     repositories.UserRepository
 	CardRepository     repositories.CardRepository
 	UserCardRepository repositories.UserCardRepository
 	SpacesService      *services.SpacesService

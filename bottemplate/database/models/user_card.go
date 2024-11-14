@@ -14,7 +14,7 @@ type UserCard struct {
 	UserID    string    `bun:"user_id,notnull"`
 	CardID    int64     `bun:"card_id,notnull"`
 	Level     int       `bun:"level,notnull,default:1"`
-	Balance   int64     `bun:"balance,notnull,default:0"`
+	Exp       int64     `bun:"exp,notnull,default:0"`
 	Amount    int64     `bun:"amount,notnull,default:1"`
 	Favorite  bool      `bun:"favorite,notnull,default:false"`
 	Locked    bool      `bun:"locked,notnull,default:false"`

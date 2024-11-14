@@ -19,7 +19,7 @@ type User struct {
 	ID              int64     `bun:"id,pk,autoincrement"`
 	DiscordID       string    `bun:"discord_id,notnull,unique"`
 	Username        string    `bun:"username,notnull"`
-	Exp             int64     `bun:"exp,notnull,default:0"`
+	Balance         int64     `bun:"balance,notnull,default:0"`
 	PromoExp        int64     `bun:"promo_exp,notnull,default:0"`
 	Joined          time.Time `bun:"joined,notnull"`
 	LastQueriedCard Card      `bun:"last_queried_card,type:jsonb"`

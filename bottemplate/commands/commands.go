@@ -17,4 +17,6 @@ var Commands = []discord.ApplicationCommandCreate{
 	Claim,
 	FixDuplicates,
 	LevelUp,
+	Balance,
+	AnalyzeEconomy,
 }

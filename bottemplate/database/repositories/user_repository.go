@@ -13,9 +13,10 @@ type UserRepository interface {
 	GetByDiscordID(ctx context.Context, discordID string) (*models.User, error)
 	Update(ctx context.Context, user *models.User) error
 	Delete(ctx context.Context, discordID string) error
-	UpdateExp(ctx context.Context, discordID string, exp int64) error
+	UpdateBalance(ctx context.Context, discordID string, balance int64) error
 	UpdateLastDaily(ctx context.Context, discordID string) error
 	GetTopUsers(ctx context.Context, limit int) ([]*models.User, error)
+	GetUsers(ctx context.Context) ([]*models.User, error)
 }
 
 type userRepository struct {
@@ -59,10 +60,10 @@ func (r *userRepository) Delete(ctx context.Context, discordID string) error {
 	return err
 }
 
-func (r *userRepository) UpdateExp(ctx context.Context, discordID string, exp int64) error {
+func (r *userRepository) UpdateBalance(ctx context.Context, discordID string, balance int64) error {
 	_, err := r.db.NewUpdate().
 		Model((*models.User)(nil)).
-		Set("exp = exp + ?", exp).
+		Set("balance = balance + ?", balance).
 		Set("updated_at = ?", time.Now()).
 		Where("discord_id = ?", discordID).
 		Exec(ctx)
@@ -83,8 +84,22 @@ func (r *userRepository) GetTopUsers(ctx context.Context, limit int) ([]*models.
 	var users []*models.User
 	err := r.db.NewSelect().
 		Model(&users).
-		OrderExpr("exp DESC").
+		OrderExpr("balance DESC").
 		Limit(limit).
 		Scan(ctx)
 	return users, err
+}
+
+func (r *userRepository) GetUsers(ctx context.Context) ([]*models.User, error) {
+	var users []*models.User
+	err := r.db.NewSelect().
+		Model(&users).
+		Order("balance DESC").
+		Scan(ctx)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return users, nil
 }

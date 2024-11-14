@@ -135,6 +135,7 @@ func NewPriceCalculator(db *database.DB, config PricingConfig) *PriceCalculator 
 }
 
 func (pc *PriceCalculator) CalculateCardPrice(ctx context.Context, cardID int64) (int64, error) {
+	// Get card details
 	var card models.Card
 	err := pc.db.BunDB().NewSelect().
 		Model(&card).
@@ -144,15 +145,28 @@ func (pc *PriceCalculator) CalculateCardPrice(ctx context.Context, cardID int64)
 		return 0, fmt.Errorf("failed to get card: %w", err)
 	}
 
+	log.Printf("[GoHYE] [%s] [DEBUG] [MARKET] Found card %d with level %d",
+		time.Now().Format("15:04:05"), cardID, card.Level)
+
+	// Get active owners count
 	activeOwners, err := pc.getActiveOwnersCount(ctx, cardID)
 	if err != nil {
 		return 0, err
 	}
 
-	basePrice := pc.calculateBasePrice(card.Level)
+	log.Printf("[GoHYE] [%s] [DEBUG] [MARKET] Card %d has %d active owners",
+		time.Now().Format("15:04:05"), cardID, activeOwners)
+
+	// Calculate price components
+	basePrice := pc.calculateBasePrice(card)
 	ownershipModifier := pc.calculateOwnershipModifier(activeOwners)
 	rarityModifier := pc.calculateRarityModifier(card.Level)
+
+	// Calculate final price
 	finalPrice := int64(float64(basePrice) * ownershipModifier * rarityModifier)
+
+	log.Printf("[GoHYE] [%s] [DEBUG] [MARKET] Card %d price calculation: base=%d, ownership=%.2f, rarity=%.2f, final=%d",
+		time.Now().Format("15:04:05"), cardID, basePrice, ownershipModifier, rarityModifier, finalPrice)
 
 	return pc.applyPriceLimits(finalPrice), nil
 }
@@ -168,16 +182,25 @@ func (pc *PriceCalculator) getActiveOwnersCount(ctx context.Context, cardID int6
 	return int(count), err
 }
 
-func (pc *PriceCalculator) calculateBasePrice(level int) int64 {
-	return int64(math.Pow(float64(level), 2) * pc.config.BaseMultiplier)
+func (pc *PriceCalculator) calculateBasePrice(card models.Card) int64 {
+	// Base price calculation with level scaling
+	basePrice := InitialBasePrice * int64(math.Pow(LevelMultiplier, float64(card.Level-1)))
+	return max(basePrice, MinPrice)
 }
 
 func (pc *PriceCalculator) calculateOwnershipModifier(activeOwners int) float64 {
-	return math.Max(0.1, 1.0-(float64(activeOwners)*pc.config.OwnershipImpact))
+	if activeOwners < MinimumActiveOwners {
+		return 1.0
+	}
+
+	// Inverse logarithmic scaling for scarcity
+	scarcityMod := 2.0 - math.Log10(float64(activeOwners)+1)/2.0
+	return math.Max(1.0, scarcityMod)
 }
 
 func (pc *PriceCalculator) calculateRarityModifier(level int) float64 {
-	return 1.0 + (float64(level) * pc.config.RarityMultiplier)
+	// Exponential scaling for rarity
+	return math.Pow(1.5, float64(level-1))
 }
 
 func (pc *PriceCalculator) applyPriceLimits(price int64) int64 {
@@ -1048,4 +1071,87 @@ func (pc *PriceCalculator) GetCardStats(ctx context.Context, cardIDs []int64) (m
 
 func (pc *PriceCalculator) CalculatePriceFactors(stats CardStats) PriceFactors {
 	return pc.calculatePriceFactors(stats)
+}
+
+// BatchCalculateCardPrices calculates prices for multiple cards efficiently
+func (pc *PriceCalculator) BatchCalculateCardPrices(ctx context.Context, cardIDs []int64) (map[int64]int64, error) {
+	prices := make(map[int64]int64, len(cardIDs))
+
+	// Get card details in bulk
+	var cards []models.Card
+	err := pc.db.BunDB().NewSelect().
+		Model(&cards).
+		Where("id IN (?)", bun.In(cardIDs)).
+		Scan(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get cards: %w", err)
+	}
+
+	// Get market stats in bulk
+	stats, err := pc.getCardStats(ctx, cardIDs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get card stats: %w", err)
+	}
+
+	for _, card := range cards {
+		cardStats := stats[card.ID]
+
+		// Pass the entire card object to calculateBasePrice
+		basePrice := pc.calculateBasePrice(card)
+
+		// Enhanced market modifiers
+		marketMod := 1.0
+		if cardStats.TotalCopies > 0 {
+			scarcityMod := math.Max(0.5, 2.0-float64(cardStats.TotalCopies)/1000.0)
+
+			activityMod := 1.0
+			if cardStats.ActiveOwners > 0 {
+				activityMod = 1.0 + float64(cardStats.ActiveOwners)/100.0
+			}
+
+			marketMod = scarcityMod * activityMod
+		}
+
+		finalPrice := int64(float64(basePrice) * marketMod)
+		finalPrice = max(MinPrice, min(MaxPrice, finalPrice))
+
+		prices[card.ID] = finalPrice
+
+		log.Printf("[GoHYE] [MARKET] Card %d price calculated: base=%d, market_mod=%.2f, final=%d",
+			card.ID, basePrice, marketMod, finalPrice)
+	}
+
+	return prices, nil
+}
+
+func (pc *PriceCalculator) getBatchActiveOwnersCount(ctx context.Context, cardIDs []int64) (map[int64]int, error) {
+	type result struct {
+		CardID      int64 `bun:"card_id"`
+		ActiveCount int   `bun:"active_count"`
+	}
+
+	var results []result
+	err := pc.db.BunDB().NewSelect().
+		TableExpr("user_cards uc").
+		ColumnExpr("uc.card_id, COUNT(DISTINCT uc.user_id) as active_count").
+		Join("JOIN users u ON uc.user_id = u.discord_id").
+		Where("uc.card_id IN (?)", bun.In(cardIDs)).
+		Where("u.last_daily > ?", time.Now().Add(-pc.config.InactivityThreshold)).
+		GroupExpr("uc.card_id").
+		Scan(ctx, &results)
+
+	if err != nil {
+		return nil, err
+	}
+
+	counts := make(map[int64]int, len(cardIDs))
+	for _, r := range results {
+		counts[r.CardID] = r.ActiveCount
+	}
+
+	return counts, nil
+}
+
+func (pc *PriceCalculator) GetDB() *database.DB {
+	return pc.db
 }

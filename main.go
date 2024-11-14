@@ -111,15 +111,17 @@ func main() {
 	b.AuctionManager.SetClient(b.Client)
 
 	// Initialize repositories
-	b.CardRepository = repositories.NewCardRepository(b.DB.BunDB(), spacesService)
+	b.UserRepository = repositories.NewUserRepository(b.DB.BunDB())
 	b.UserCardRepository = repositories.NewUserCardRepository(b.DB.BunDB())
+	b.CardRepository = repositories.NewCardRepository(b.DB.BunDB(), spacesService)
 	b.ClaimRepository = repositories.NewClaimRepository(b.DB.BunDB())
 
 	// Update the price calculator initialization with better configured values
 	priceCalc := economy.NewPriceCalculator(db, economy.PricingConfig{
-		BasePrice:           1000,    // Base price for level 1 cards
-		LevelMultiplier:     1.5,     // 50% increase per level
-		ScarcityWeight:      0.8,     // Weight for scarcity impact
+		BasePrice:       1000, // Base price for level 1 cards
+		LevelMultiplier: 1.5,  // 50% increase per level
+		ScarcityWeight:  0.8,  // Weight for scarcity impact
+
 		ActivityWeight:      0.5,     // Weight for activity impact
 		MinPrice:            100,     // Absolute minimum price
 		MaxPrice:            1000000, // Absolute maximum price
@@ -218,7 +220,10 @@ func main() {
 	h.Command("/claim", handlers.WrapWithLogging("claim", commands.ClaimHandler(b)))
 	h.Command("/fixduplicates", handlers.WrapWithLogging("fixduplicates", commands.FixDuplicatesHandler(b)))
 	h.Command("/levelup", handlers.WrapWithLogging("levelup", commands.LevelUpHandler(b)))
+	h.Command("/analyze-economy", handlers.WrapWithLogging("analyze-economy", commands.AnalyzeEconomyHandler(b)))
 
+	//User-Related Commands
+	h.Command("/balance", handlers.WrapWithLogging("balance", commands.BalanceHandler(b)))
 	// Auction-related commands
 	auctionHandler := commands.NewAuctionHandler(b.AuctionManager, b.Client, b.CardRepository)
 	auctionHandler.Register(h)
