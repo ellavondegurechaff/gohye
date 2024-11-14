@@ -2,6 +2,7 @@ package repositories
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"strings"
 	"sync"
@@ -33,6 +34,10 @@ type CardRepository interface {
 	GetAnimated(ctx context.Context) ([]*models.Card, error)
 	SafeDelete(ctx context.Context, cardID int64) (*models.DeletionReport, error)
 	Search(ctx context.Context, filters SearchFilters, offset, limit int) ([]*models.Card, int, error)
+	UpdateUserCard(ctx context.Context, userCard *models.UserCard) error
+	DeleteUserCard(ctx context.Context, id int64) error
+	GetUserCard(ctx context.Context, userID string, cardID int64) (*models.UserCard, error)
+	GetAllByUserID(ctx context.Context, userID string) ([]*models.UserCard, error)
 }
 
 type cardRepository struct {
@@ -570,4 +575,76 @@ func (r *cardRepository) invalidateCache(cardID int64) {
 		return true
 	})
 	fmt.Printf("Invalidated cache for card ID: %d\n", cardID)
+}
+
+func (r *cardRepository) UpdateUserCard(ctx context.Context, userCard *models.UserCard) error {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	defer cancel()
+
+	userCard.UpdatedAt = time.Now()
+	_, err := r.db.NewUpdate().
+		Model(userCard).
+		WherePK().
+		Exec(ctx)
+
+	if err == nil {
+		r.invalidateCache(userCard.CardID)
+	}
+
+	return err
+}
+
+func (r *cardRepository) DeleteUserCard(ctx context.Context, id int64) error {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	defer cancel()
+
+	_, err := r.db.NewDelete().
+		Model((*models.UserCard)(nil)).
+		Where("id = ?", id).
+		Exec(ctx)
+
+	return err
+}
+
+func (r *cardRepository) GetUserCard(ctx context.Context, userID string, cardID int64) (*models.UserCard, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	defer cancel()
+
+	userCard := new(models.UserCard)
+	err := r.db.NewRaw(`
+		SELECT * FROM user_cards 
+		WHERE user_id = ? AND card_id = ? 
+		LIMIT 1
+	`, userID, cardID).Scan(ctx, userCard)
+
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, fmt.Errorf("you don't own card #%d", cardID)
+		}
+		return nil, fmt.Errorf("database error: %v", err)
+	}
+
+	return userCard, nil
+}
+
+func (r *cardRepository) GetAllByUserID(ctx context.Context, userID string) ([]*models.UserCard, error) {
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	defer cancel()
+
+	userCards := make([]*models.UserCard, 0)
+
+	err := r.db.NewSelect().
+		Model(&userCards).
+		TableExpr("user_cards").
+		ColumnExpr("user_cards.*").
+		Where("user_id = ?", userID).
+		Order("level DESC, id ASC").
+		Scan(ctx)
+
+	if err != nil {
+		fmt.Printf("Database error: %v\n", err)
+		return nil, fmt.Errorf("failed to fetch user cards: %w", err)
+	}
+
+	return userCards, nil
 }

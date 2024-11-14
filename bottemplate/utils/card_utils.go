@@ -37,3 +37,13 @@ func GetAnimatedTag(animated bool) string {
 	}
 	return ""
 }
+
+// GetGroupType returns the group type based on card tags
+func GetGroupType(tags []string) string {
+	for _, tag := range tags {
+		if tag == "girlgroups" || tag == "boygroups" {
+			return tag
+		}
+	}
+	return "soloist"
+}

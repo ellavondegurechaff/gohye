@@ -217,6 +217,7 @@ func main() {
 	h.Command("/metrics", handlers.WrapWithLogging("metrics", commands.MetricsHandler(b)))
 	h.Command("/claim", handlers.WrapWithLogging("claim", commands.ClaimHandler(b)))
 	h.Command("/fixduplicates", handlers.WrapWithLogging("fixduplicates", commands.FixDuplicatesHandler(b)))
+	h.Command("/levelup", handlers.WrapWithLogging("levelup", commands.LevelUpHandler(b)))
 
 	// Auction-related commands
 	auctionHandler := commands.NewAuctionHandler(b.AuctionManager, b.Client, b.CardRepository)
