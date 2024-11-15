@@ -3,10 +3,12 @@ package commands
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/disgoorg/bot-template/bottemplate"
+	"github.com/disgoorg/bot-template/bottemplate/database/models"
 	"github.com/disgoorg/bot-template/bottemplate/utils"
 	"github.com/disgoorg/disgo/discord"
 	"github.com/disgoorg/disgo/handler"
@@ -16,9 +18,9 @@ var Summon = discord.SlashCommandCreate{
 	Name:        "summon",
 	Description: "✨ Summon a card from your collection",
 	Options: []discord.ApplicationCommandOption{
-		discord.ApplicationCommandOptionInt{
-			Name:        "card_id",
-			Description: "The ID of the card to summon",
+		discord.ApplicationCommandOptionString{
+			Name:        "query",
+			Description: "Card ID or name to summon",
 			Required:    true,
 		},
 	},
@@ -26,90 +28,117 @@ var Summon = discord.SlashCommandCreate{
 
 func SummonHandler(b *bottemplate.Bot) handler.CommandHandler {
 	return func(e *handler.CommandEvent) error {
-		cardID := int64(e.SlashCommandInteractionData().Int("card_id"))
+		query := e.SlashCommandInteractionData().String("query")
 
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
-		card, err := b.CardRepository.GetByID(ctx, cardID)
+		// Try parsing as ID first
+		if cardID, err := strconv.ParseInt(query, 10, 64); err == nil {
+			card, err := b.CardRepository.GetByID(ctx, cardID)
+			if err == nil {
+				return displayCard(e, card, b)
+			}
+		}
+
+		// If not ID or card not found, search by name
+		cards, err := b.CardRepository.GetAll(ctx)
 		if err != nil {
 			return e.CreateMessage(discord.MessageCreate{
 				Embeds: []discord.Embed{
 					{
+						Title:       "❌ Error",
+						Description: "Failed to search for cards",
+						Color:       utils.ErrorColor,
+					},
+				},
+			})
+		}
+
+		// Use weighted search to find the best match
+		searchResults := utils.WeightedSearch(cards, query, utils.SearchModeExact)
+		if len(searchResults) == 0 {
+			return e.CreateMessage(discord.MessageCreate{
+				Embeds: []discord.Embed{
+					{
 						Title:       "❌ Card Not Found",
-						Description: fmt.Sprintf("```diff\n- Card #%d does not exist in the collection\n```", cardID),
-						Color:       0xFF0000,
+						Description: fmt.Sprintf("```diff\n- No cards found matching '%s'\n```", query),
+						Color:       utils.ErrorColor,
 						Footer: &discord.EmbedFooter{
-							Text: "Try /searchcards to find valid card IDs",
+							Text: "Try /searchcards to find valid cards",
 						},
 					},
 				},
 			})
 		}
 
-		cardInfo := utils.GetCardDisplayInfo(
-			card.Name,
-			card.ColID,
-			card.Level,
-			getGroupType(card.Tags),
-			utils.SpacesConfig{
-				Bucket:   b.SpacesService.GetBucket(),
-				Region:   b.SpacesService.GetRegion(),
-				CardRoot: b.SpacesService.GetCardRoot(),
-			},
-		)
-
-		// Get current timestamp in Unix format for Discord timestamp
-		timestamp := fmt.Sprintf("<t:%d:R>", time.Now().Unix())
-
-		return e.CreateMessage(discord.MessageCreate{
-			Embeds: []discord.Embed{
-				{
-					Title: fmt.Sprintf("%s %s", cardInfo.Stars, cardInfo.FormattedName),
-					Color: getColorByLevel(card.Level),
-					Description: fmt.Sprintf("```md\n"+
-						"# Card Information\n"+
-						"* Collection: %s\n"+
-						"* Rarity: %s\n"+
-						"* ID: #%d\n"+
-						"%s\n"+
-						"```\n"+
-						"> %s\n\n"+
-						"*Use `/inventory` to view your collection*",
-						cardInfo.FormattedCollection,
-						getRarityName(card.Level),
-						card.ID,
-						getAnimatedTag(card.Animated),
-						getCardQuote(card.Level),
-					),
-					Image: &discord.EmbedResource{
-						URL: cardInfo.ImageURL,
-					},
-					Thumbnail: &discord.EmbedResource{
-						URL: getCollectionIcon(card.ColID),
-					},
-					Footer: &discord.EmbedFooter{
-						Text:    fmt.Sprintf("Summoned by %s • %s", e.User().Username, timestamp),
-						IconURL: e.User().EffectiveAvatarURL(),
-					},
-					Fields: []discord.EmbedField{
-						{
-							Name:   "📊 Stats",
-							Value:  fmt.Sprintf("```\nPower Level: %s\nType: %s\n```", getCardPowerLevel(card.Level), formatTags(card.Tags)),
-							Inline: &[]bool{true}[0],
-						},
-					},
-				},
-			},
-			Components: []discord.ContainerComponent{
-				discord.NewActionRow(
-					discord.NewPrimaryButton("💖 Favorite", fmt.Sprintf("favorite:%d", card.ID)),
-					discord.NewSecondaryButton("🔍 Details", fmt.Sprintf("details:%d", card.ID)),
-					discord.NewDangerButton("💫 Trade", fmt.Sprintf("trade:%d", card.ID)),
-				),
-			},
-		})
+		// Use the best match
+		return displayCard(e, searchResults[0], b)
 	}
+}
+
+// displayCard handles the card display logic
+func displayCard(e *handler.CommandEvent, card *models.Card, b *bottemplate.Bot) error {
+	fmt.Printf("Card data:\n%+v\n", card)
+
+	config := utils.SpacesConfig{
+		Bucket:   b.SpacesService.GetBucket(),
+		Region:   b.SpacesService.GetRegion(),
+		CardRoot: b.SpacesService.GetCardRoot(),
+		GetImageURL: func(cardName string, colID string, level int, groupType string) string {
+			return b.SpacesService.GetCardImageURL(cardName, colID, level, groupType)
+		},
+	}
+
+	fmt.Printf("SpacesConfig:\n%+v\n", config)
+
+	cardInfo := utils.GetCardDisplayInfo(
+		card.Name,
+		card.ColID,
+		card.Level,
+		utils.GetGroupType(card.Tags),
+		config,
+	)
+
+	fmt.Printf("CardInfo:\n%+v\n", cardInfo)
+
+	timestamp := fmt.Sprintf("<t:%d:R>", time.Now().Unix())
+
+	// Create embed with image
+	embed := discord.Embed{
+		Title: cardInfo.FormattedName,
+		Color: utils.GetColorByLevel(card.Level),
+		Description: fmt.Sprintf("```md\n"+
+			"# Card Information\n"+
+			"* Collection: %s\n"+
+			"* Level: %s\n"+
+			"* ID: #%d\n"+
+			"%s\n"+
+			"```\n"+
+			"> %s\n\n"+
+			"Use `/inventory` to view your collection",
+			cardInfo.FormattedCollection,
+			strings.Repeat("⭐", card.Level),
+			card.ID,
+			utils.GetAnimatedTag(card.Animated),
+			getCardQuote(card.Level)),
+		Image: &discord.EmbedResource{
+			URL: cardInfo.ImageURL,
+		},
+		Footer: &discord.EmbedFooter{
+			Text:    fmt.Sprintf("Summoned by %s • %s", e.User().Username, timestamp),
+			IconURL: e.User().EffectiveAvatarURL(),
+		},
+	}
+
+	fmt.Printf("Final embed:\nTitle: %s\nDescription: %s\nImage URL: %s\n",
+		embed.Title,
+		embed.Description,
+		embed.Image.URL)
+
+	return e.CreateMessage(discord.MessageCreate{
+		Embeds: []discord.Embed{embed},
+	})
 }
 
 // Helper functions for card formatting and display

@@ -38,6 +38,7 @@ type CardRepository interface {
 	DeleteUserCard(ctx context.Context, id int64) error
 	GetUserCard(ctx context.Context, userID string, cardID int64) (*models.UserCard, error)
 	GetAllByUserID(ctx context.Context, userID string) ([]*models.UserCard, error)
+	GetByIDs(ctx context.Context, ids []int64) ([]*models.Card, error)
 }
 
 type cardRepository struct {
@@ -73,20 +74,11 @@ func (r *cardRepository) GetByID(ctx context.Context, id int64) (*models.Card, e
 	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 
-	// Check cache first
-	if cached, ok := r.getFromCache(fmt.Sprintf("card:%d", id)); ok {
-		return cached.(*models.Card), nil
-	}
-
 	card := new(models.Card)
 	err := r.db.NewSelect().
 		Model(card).
 		Where("id = ?", id).
 		Scan(ctx)
-
-	if err == nil {
-		r.setCache(fmt.Sprintf("card:%d", id), card, cacheExpiration)
-	}
 
 	return card, err
 }
@@ -647,4 +639,18 @@ func (r *cardRepository) GetAllByUserID(ctx context.Context, userID string) ([]*
 	}
 
 	return userCards, nil
+}
+
+func (r *cardRepository) GetByIDs(ctx context.Context, ids []int64) ([]*models.Card, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+
+	var cards []*models.Card
+	err := r.db.NewSelect().
+		Model(&cards).
+		Where("id IN (?)", bun.In(ids)).
+		Scan(ctx)
+
+	return cards, err
 }

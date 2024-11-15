@@ -1,7 +1,6 @@
 package utils
 
 import (
-	"fmt"
 	"strings"
 	"unicode"
 )
@@ -51,16 +50,8 @@ func GetCardDisplayInfo(cardName string, colID string, level int, groupType stri
 	return CardDisplayInfo{
 		FormattedName:       FormatCardName(cardName),
 		FormattedCollection: FormatCollectionName(colID),
-		ImageURL: fmt.Sprintf("https://%s.%s.digitaloceanspaces.com/%s/%s/%s/%d_%s.jpg",
-			spacesConfig.Bucket,
-			spacesConfig.Region,
-			spacesConfig.CardRoot,
-			groupType,
-			colID,
-			level,
-			cardName,
-		),
-		Stars: GetStarsDisplay(level),
+		ImageURL:            spacesConfig.GetImageURL(cardName, colID, level, groupType),
+		Stars:               GetStarsDisplay(level),
 	}
 }
 
@@ -86,7 +77,8 @@ func formatTags(groupType string) string {
 
 // SpacesConfig holds the configuration for DigitalOcean Spaces
 type SpacesConfig struct {
-	Bucket   string
-	Region   string
-	CardRoot string
+	Bucket      string
+	Region      string
+	CardRoot    string
+	GetImageURL func(cardName string, colID string, level int, groupType string) string
 }
