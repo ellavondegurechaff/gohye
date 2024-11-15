@@ -39,6 +39,9 @@ func getCardImageURL(card *models.Card, bot *bottemplate.Bot) string {
 			Bucket:   bot.SpacesService.GetBucket(),
 			Region:   bot.SpacesService.GetRegion(),
 			CardRoot: bot.SpacesService.GetCardRoot(),
+			GetImageURL: func(cardName string, colID string, level int, groupType string) string {
+				return bot.SpacesService.GetCardImageURL(cardName, colID, level, groupType)
+			},
 		},
 	)
 	return cardInfo.ImageURL
