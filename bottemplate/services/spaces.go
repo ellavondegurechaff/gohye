@@ -2,8 +2,11 @@
 package services
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"path"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -12,6 +15,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/disgoorg/bot-template/bottemplate/database/models"
 )
 
 type PathType string
@@ -285,4 +290,366 @@ func (s *SpacesService) DeleteCardImage(ctx context.Context, colID string, cardN
 	}
 
 	return nil
+}
+
+// ImageOperation represents the type of image operation
+type ImageOperation string
+
+const (
+	ImageOperationUpload ImageOperation = "upload"
+	ImageOperationUpdate ImageOperation = "update"
+	ImageOperationSync   ImageOperation = "sync"
+	ImageOperationVerify ImageOperation = "verify"
+)
+
+// ImageManagementResult represents the result of an image management operation
+type ImageManagementResult struct {
+	Operation    ImageOperation
+	Success      bool
+	CardName     string
+	CollectionID string
+	Level        int
+	URL          string
+	ErrorMessage string
+}
+
+// Add this helper function at the top level
+func getImageNameFromPath(path string) string {
+	parts := strings.Split(path, "/")
+	if len(parts) == 0 {
+		return ""
+	}
+	filename := parts[len(parts)-1]
+	// Remove level number and .jpg extension
+	if idx := strings.Index(filename, "_"); idx != -1 {
+		return strings.TrimSuffix(filename[idx+1:], ".jpg")
+	}
+	return ""
+}
+
+// WordSimilarity represents detailed similarity metrics between words
+type WordSimilarity struct {
+	Distance     int
+	ExactMatch   bool
+	Ratio        float32
+	CommonPrefix int
+	CommonSuffix int
+}
+
+func calculateWordSimilarity(s1, s2 string) WordSimilarity {
+	// Early exact match check
+	if s1 == s2 {
+		return WordSimilarity{
+			Distance:     0,
+			ExactMatch:   true,
+			Ratio:        1.0,
+			CommonPrefix: len(s1),
+			CommonSuffix: len(s1),
+		}
+	}
+
+	// Case-insensitive comparison
+	s1Lower := strings.ToLower(s1)
+	s2Lower := strings.ToLower(s2)
+
+	if s1Lower == s2Lower {
+		return WordSimilarity{
+			Distance:     0,
+			ExactMatch:   true,
+			Ratio:        0.95, // Slightly lower score for case-insensitive match
+			CommonPrefix: len(s1),
+			CommonSuffix: len(s1),
+		}
+	}
+
+	// Calculate common prefix and suffix
+	prefix := commonPrefixLength(s1Lower, s2Lower)
+	suffix := commonSuffixLength(s1Lower[prefix:], s2Lower[prefix:])
+
+	// If strings are very different in length, early exit
+	lenDiff := abs(len(s1) - len(s2))
+	if lenDiff > 5 { // Threshold for length difference
+		return WordSimilarity{
+			Distance:     lenDiff,
+			ExactMatch:   false,
+			Ratio:        0,
+			CommonPrefix: prefix,
+			CommonSuffix: suffix,
+		}
+	}
+
+	// Optimize Levenshtein calculation for similar length strings
+	distance := optimizedLevenshteinDistance(s1Lower, s2Lower, prefix, suffix)
+	maxLen := float32(max(len(s1), len(s2)))
+	ratio := 1.0 - (float32(distance) / maxLen)
+
+	return WordSimilarity{
+		Distance:     distance,
+		ExactMatch:   false,
+		Ratio:        ratio,
+		CommonPrefix: prefix,
+		CommonSuffix: suffix,
+	}
+}
+
+func optimizedLevenshteinDistance(s1, s2 string, prefix, suffix int) int {
+	// Skip common prefix and suffix
+	s1 = s1[prefix : len(s1)-suffix]
+	s2 = s2[prefix : len(s2)-suffix]
+
+	// Early exits
+	if len(s1) == 0 {
+		return len(s2)
+	}
+	if len(s2) == 0 {
+		return len(s1)
+	}
+
+	// Use shorter string as s1 to minimize memory
+	if len(s1) > len(s2) {
+		s1, s2 = s2, s1
+	}
+
+	// Preallocate rows with capacity
+	current := make([]int, len(s2)+1)
+	previous := make([]int, len(s2)+1)
+
+	// Initialize first row
+	for i := range previous {
+		previous[i] = i
+	}
+
+	// Main computation loop with optimizations
+	for i := 1; i <= len(s1); i++ {
+		current[0] = i
+		for j := 1; j <= len(s2); j++ {
+			if s1[i-1] == s2[j-1] {
+				current[j] = previous[j-1]
+			} else {
+				// Optimized min calculation
+				minVal := previous[j]
+				if current[j-1] < minVal {
+					minVal = current[j-1]
+				}
+				if previous[j-1] < minVal {
+					minVal = previous[j-1]
+				}
+				current[j] = 1 + minVal
+			}
+		}
+		// Swap slices
+		previous, current = current, previous
+	}
+
+	return previous[len(s2)]
+}
+
+// Helper functions
+func commonPrefixLength(s1, s2 string) int {
+	maxLen := min(len(s1), len(s2))
+	for i := 0; i < maxLen; i++ {
+		if s1[i] != s2[i] {
+			return i
+		}
+	}
+	return maxLen
+}
+
+func commonSuffixLength(s1, s2 string) int {
+	maxLen := min(len(s1), len(s2))
+	for i := 0; i < maxLen; i++ {
+		if s1[len(s1)-1-i] != s2[len(s2)-1-i] {
+			return i
+		}
+	}
+	return maxLen
+}
+
+func abs(n int) int {
+	if n < 0 {
+		return -n
+	}
+	return n
+}
+
+// Update the calculateNameSimilarity function to use the new word similarity
+func calculateNameSimilarity(s1, s2 string) float32 {
+	similarity := calculateWordSimilarity(s1, s2)
+
+	// If exact match or case-insensitive match
+	if similarity.ExactMatch {
+		return similarity.Ratio
+	}
+
+	// If strings have significant common parts
+	if similarity.CommonPrefix > 3 || similarity.CommonSuffix > 3 {
+		return similarity.Ratio * 1.1 // Boost score for significant common parts
+	}
+
+	// Regular similarity score
+	return similarity.Ratio
+}
+
+// ManageCardImage handles various image operations for cards
+func (s *SpacesService) ManageCardImage(ctx context.Context, operation ImageOperation, cardID int64, imageData []byte, card *models.Card) (*ImageManagementResult, error) {
+	result := &ImageManagementResult{
+		Operation:    operation,
+		CardName:     card.Name,
+		CollectionID: card.ColID,
+		Level:        card.Level,
+	}
+
+	groupType := "girlgroups"
+	for _, tag := range card.Tags {
+		if tag == "boygroups" {
+			groupType = "boygroups"
+			break
+		}
+	}
+
+	// Try all possible path patterns
+	possiblePaths := []string{
+		// Standard cards path
+		fmt.Sprintf("cards/%s/%s/%d_%s.jpg",
+			groupType, card.ColID, card.Level, card.Name),
+		// Promo path
+		fmt.Sprintf("promo/%s/%s/%d_%s.jpg",
+			groupType, card.ColID, card.Level, card.Name),
+	}
+
+	var foundPath string
+	var err error
+
+	// Try each path until we find one that exists
+	for _, path := range possiblePaths {
+		_, err = s.client.HeadObject(ctx, &s3.HeadObjectInput{
+			Bucket: aws.String(s.bucket),
+			Key:    aws.String(path),
+		})
+		if err == nil {
+			foundPath = path
+			break
+		}
+	}
+
+	switch operation {
+	case ImageOperationUpload, ImageOperationUpdate:
+		// For uploads/updates, use the standard cards path
+		foundPath = possiblePaths[0]
+		input := &s3.PutObjectInput{
+			Bucket:       aws.String(s.bucket),
+			Key:          aws.String(foundPath),
+			Body:         bytes.NewReader(imageData),
+			ContentType:  aws.String("image/jpeg"),
+			CacheControl: aws.String("public, max-age=31536000"),
+			ACL:          types.ObjectCannedACLPublicRead,
+		}
+
+		_, err := s.client.PutObject(ctx, input)
+		if err != nil {
+			result.Success = false
+			result.ErrorMessage = fmt.Sprintf("Failed to upload image: %v", err)
+			return result, err
+		}
+
+	case ImageOperationVerify:
+		// First list all objects in the collection directory
+		searchPattern := fmt.Sprintf("cards/%s/%s/", groupType, card.ColID)
+		listInput := &s3.ListObjectsV2Input{
+			Bucket: aws.String(s.bucket),
+			Prefix: aws.String(searchPattern),
+		}
+
+		output, err := s.client.ListObjectsV2(ctx, listInput)
+		if err != nil {
+			result.Success = false
+			result.ErrorMessage = fmt.Sprintf("Failed to search for images: %v", err)
+			return result, err
+		}
+
+		// Look for exact match first, then similar names
+		var exactMatch string
+		var similarMatches []struct {
+			path  string
+			name  string
+			score float32
+		}
+
+		targetName := strings.ToLower(strings.TrimSuffix(card.Name, ".jpg"))
+
+		for _, obj := range output.Contents {
+			if obj.Key == nil {
+				continue
+			}
+
+			imageName := getImageNameFromPath(*obj.Key)
+			if imageName == "" {
+				continue
+			}
+
+			// Check if this is a level match
+			objBase := path.Base(*obj.Key)
+			if !strings.HasPrefix(objBase, fmt.Sprintf("%d_", card.Level)) {
+				continue
+			}
+
+			// Compare names
+			imageNameLower := strings.ToLower(imageName)
+
+			// First try exact match
+			if imageNameLower == targetName {
+				exactMatch = *obj.Key
+				break
+			}
+
+			// If not exact match, calculate similarity
+			score := calculateNameSimilarity(targetName, imageNameLower)
+			if score >= 0.8 { // Increased threshold for more accurate matching
+				similarMatches = append(similarMatches, struct {
+					path  string
+					name  string
+					score float32
+				}{
+					path:  *obj.Key,
+					name:  imageName,
+					score: score,
+				})
+			}
+		}
+
+		if exactMatch != "" {
+			foundPath = exactMatch
+			result.Success = true
+		} else if len(similarMatches) > 0 {
+			// Sort matches by score (highest first)
+			sort.Slice(similarMatches, func(i, j int) bool {
+				return similarMatches[i].score > similarMatches[j].score
+			})
+
+			// Use the best match
+			bestMatch := similarMatches[0]
+			result.Success = false
+			result.ErrorMessage = fmt.Sprintf("Similar card found!\nDatabase name: %s\nFound image: %s\nPath: %s\nMatch confidence: %.1f%%\n\nDid you mean this card?",
+				card.Name,
+				bestMatch.name,
+				bestMatch.path,
+				bestMatch.score*100,
+			)
+			result.URL = fmt.Sprintf("https://%s.%s.digitaloceanspaces.com/%s", s.bucket, s.region, bestMatch.path)
+			return result, nil
+		} else {
+			result.Success = false
+			result.ErrorMessage = fmt.Sprintf("No matching images found for card: %s\nSearched in: %s",
+				card.Name,
+				searchPattern,
+			)
+			return result, nil
+		}
+	}
+
+	// Set success result
+	result.Success = true
+	result.URL = fmt.Sprintf("https://%s.%s.digitaloceanspaces.com/%s", s.bucket, s.region, foundPath)
+
+	return result, nil
 }

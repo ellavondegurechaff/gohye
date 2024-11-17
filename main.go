@@ -221,7 +221,7 @@ func main() {
 	h.Command("/fixduplicates", handlers.WrapWithLogging("fixduplicates", commands.FixDuplicatesHandler(b)))
 	h.Command("/levelup", handlers.WrapWithLogging("levelup", commands.LevelUpHandler(b)))
 	h.Command("/analyze-economy", handlers.WrapWithLogging("analyze-economy", commands.AnalyzeEconomyHandler(b)))
-
+	h.Command("/manage-images", handlers.WrapWithLogging("manage-images", commands.ManageImagesHandler(b)))
 	//User-Related Commands
 	h.Command("/balance", handlers.WrapWithLogging("balance", commands.BalanceHandler(b)))
 	// Auction-related commands

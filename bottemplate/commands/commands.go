@@ -19,4 +19,5 @@ var Commands = []discord.ApplicationCommandCreate{
 	LevelUp,
 	Balance,
 	AnalyzeEconomy,
+	ManageImages,
 }
