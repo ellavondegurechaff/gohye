@@ -115,6 +115,7 @@ func main() {
 	b.UserCardRepository = repositories.NewUserCardRepository(b.DB.BunDB())
 	b.CardRepository = repositories.NewCardRepository(b.DB.BunDB(), spacesService)
 	b.ClaimRepository = repositories.NewClaimRepository(b.DB.BunDB())
+	b.CollectionRepository = repositories.NewCollectionRepository(b.DB.BunDB())
 
 	// Update the price calculator initialization with better configured values
 	priceCalc := economy.NewPriceCalculator(db, economy.PricingConfig{
@@ -222,6 +223,7 @@ func main() {
 	h.Command("/levelup", handlers.WrapWithLogging("levelup", commands.LevelUpHandler(b)))
 	h.Command("/analyze-economy", handlers.WrapWithLogging("analyze-economy", commands.AnalyzeEconomyHandler(b)))
 	h.Command("/manage-images", handlers.WrapWithLogging("manage-images", commands.ManageImagesHandler(b)))
+	h.Autocomplete("/manage-images", commands.ManageImagesAutocomplete(b))
 	//User-Related Commands
 	h.Command("/balance", handlers.WrapWithLogging("balance", commands.BalanceHandler(b)))
 	// Auction-related commands

@@ -15,6 +15,7 @@ type CollectionRepository interface {
 	Update(ctx context.Context, collection *models.Collection) error
 	Delete(ctx context.Context, id string) error
 	BulkCreate(ctx context.Context, collections []*models.Collection) error
+	SearchCollections(ctx context.Context, search string) ([]*models.Collection, error)
 }
 
 type collectionRepository struct {
@@ -79,4 +80,38 @@ func (r *collectionRepository) BulkCreate(ctx context.Context, collections []*mo
 		Exec(ctx)
 
 	return err
+}
+
+func (r *collectionRepository) SearchCollections(ctx context.Context, search string) ([]*models.Collection, error) {
+	var collections []*models.Collection
+	query := r.db.NewSelect().
+		Model(&collections)
+
+	if search != "" {
+		// First add the WHERE clause for filtering with improved matching
+		query = query.Where(`
+			LOWER(id) LIKE LOWER(?) OR 
+			LOWER(name) LIKE LOWER(?) OR
+			LOWER(id) = LOWER(?) OR 
+			LOWER(name) = LOWER(?)`,
+			"%"+search+"%", "%"+search+"%",
+			search, search)
+
+		// Use OrderExpr instead of Order for SQL expressions
+		query = query.OrderExpr(`CASE 
+			WHEN LOWER(id) = LOWER(?) THEN 0
+			WHEN LOWER(name) = LOWER(?) THEN 1
+			WHEN LOWER(id) LIKE LOWER(?) THEN 2
+			WHEN LOWER(name) LIKE LOWER(?) THEN 3
+			ELSE 4 
+		END ASC`, search, search, "%"+search+"%", "%"+search+"%")
+	}
+
+	// Add final ordering and limit
+	err := query.
+		Order("name ASC").
+		Limit(25).
+		Scan(ctx)
+
+	return collections, err
 }

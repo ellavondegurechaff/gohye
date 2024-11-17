@@ -300,6 +300,7 @@ const (
 	ImageOperationUpdate ImageOperation = "update"
 	ImageOperationSync   ImageOperation = "sync"
 	ImageOperationVerify ImageOperation = "verify"
+	DeleteOperation      ImageOperation = "delete"
 )
 
 // ImageManagementResult represents the result of an image management operation
@@ -311,6 +312,7 @@ type ImageManagementResult struct {
 	Level        int
 	URL          string
 	ErrorMessage string
+	Stats        map[string]interface{}
 }
 
 // Add this helper function at the top level
@@ -652,4 +654,39 @@ func (s *SpacesService) ManageCardImage(ctx context.Context, operation ImageOper
 	result.URL = fmt.Sprintf("https://%s.%s.digitaloceanspaces.com/%s", s.bucket, s.region, foundPath)
 
 	return result, nil
+}
+
+func (s *SpacesService) DeleteObject(ctx context.Context, path string) error {
+	input := &s3.DeleteObjectInput{
+		Bucket: aws.String(s.bucket),
+		Key:    aws.String(path),
+	}
+
+	_, err := s.client.DeleteObject(ctx, input)
+	if err != nil {
+		return fmt.Errorf("failed to delete object %s: %w", path, err)
+	}
+
+	// Wait for deletion to complete
+	waiter := s3.NewObjectNotExistsWaiter(s.client)
+	err = waiter.Wait(ctx, &s3.HeadObjectInput{
+		Bucket: aws.String(s.bucket),
+		Key:    aws.String(path),
+	}, 30*time.Second)
+
+	if err != nil {
+		return fmt.Errorf("error waiting for object deletion %s: %w", path, err)
+	}
+
+	// Remove from cache if exists
+	s.pathCache.mu.Lock()
+	for k, v := range s.pathCache.paths {
+		if strings.Contains(path, v.ColID) {
+			delete(s.pathCache.paths, k)
+			break
+		}
+	}
+	s.pathCache.mu.Unlock()
+
+	return nil
 }

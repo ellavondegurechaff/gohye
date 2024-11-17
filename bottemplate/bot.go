@@ -31,21 +31,22 @@ func New(cfg Config, version string, commit string) *Bot {
 }
 
 type Bot struct {
-	Cfg                Config
-	Client             bot.Client
-	Paginator          *paginator.Manager
-	Version            string
-	Commit             string
-	DB                 *database.DB
-	UserRepository     repositories.UserRepository
-	CardRepository     repositories.CardRepository
-	UserCardRepository repositories.UserCardRepository
-	SpacesService      *services.SpacesService
-	PriceCalculator    *economy.PriceCalculator
-	AuctionManager     *auction.Manager
-	ClaimManager       *claim.Manager
-	ClaimRepository    repositories.ClaimRepository
-	StartTime          time.Time
+	Cfg                  Config
+	Client               bot.Client
+	Paginator            *paginator.Manager
+	Version              string
+	Commit               string
+	DB                   *database.DB
+	UserRepository       repositories.UserRepository
+	CardRepository       repositories.CardRepository
+	CollectionRepository repositories.CollectionRepository
+	UserCardRepository   repositories.UserCardRepository
+	SpacesService        *services.SpacesService
+	PriceCalculator      *economy.PriceCalculator
+	AuctionManager       *auction.Manager
+	ClaimManager         *claim.Manager
+	ClaimRepository      repositories.ClaimRepository
+	StartTime            time.Time
 }
 
 func (b *Bot) SetupBot(listeners ...bot.EventListener) error {

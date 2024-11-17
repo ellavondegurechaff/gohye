@@ -120,13 +120,6 @@ func CardsHandler(b *bottemplate.Bot) handler.CommandHandler {
 	}
 }
 
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
 // Format cards description for display
 func formatCardsDescription(b *bottemplate.Bot, cards []*models.UserCard) string {
 	var description strings.Builder
