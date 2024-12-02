@@ -14,10 +14,10 @@ func main() {
 
 	// Initialize PostgreSQL connection using existing DB package
 	db, err := database.New(ctx, database.DBConfig{
-		Host:     "db",
+		Host:     "localhost",
 		Port:     5432,
 		User:     "postgres",
-		Password: "password",
+		Password: "root",
 		Database: "postgres",
 		PoolSize: 10,
 	})

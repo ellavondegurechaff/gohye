@@ -325,14 +325,13 @@ func (m *Migrator) batchInsertUsers(ctx context.Context, users []*models.User) e
 		Model(&users).
 		On("CONFLICT (discord_id) DO UPDATE").
 		Set("username = EXCLUDED.username").
-		Set("exp = EXCLUDED.exp").
+		Set("user_stats = EXCLUDED.user_stats").
 		Set("promo_exp = EXCLUDED.promo_exp").
 		Set("joined = EXCLUDED.joined").
 		Set("last_queried_card = EXCLUDED.last_queried_card").
 		Set("last_kofi_claim = EXCLUDED.last_kofi_claim").
 		Set("daily_stats = EXCLUDED.daily_stats").
 		Set("effect_stats = EXCLUDED.effect_stats").
-		Set("user_stats = EXCLUDED.user_stats").
 		Set("cards = EXCLUDED.cards").
 		Set("inventory = EXCLUDED.inventory").
 		Set("completed_cols = EXCLUDED.completed_cols").
@@ -340,6 +339,22 @@ func (m *Migrator) batchInsertUsers(ctx context.Context, users []*models.User) e
 		Set("achievements = EXCLUDED.achievements").
 		Set("effects = EXCLUDED.effects").
 		Set("wishlist = EXCLUDED.wishlist").
+		Set("preferences = EXCLUDED.preferences").
+		Set("last_daily = EXCLUDED.last_daily").
+		Set("last_train = EXCLUDED.last_train").
+		Set("last_work = EXCLUDED.last_work").
+		Set("last_vote = EXCLUDED.last_vote").
+		Set("last_announce = EXCLUDED.last_announce").
+		Set("last_msg = EXCLUDED.last_msg").
+		Set("hero_slots = EXCLUDED.hero_slots").
+		Set("hero_cooldown = EXCLUDED.hero_cooldown").
+		Set("hero = EXCLUDED.hero").
+		Set("hero_changed = EXCLUDED.hero_changed").
+		Set("hero_submits = EXCLUDED.hero_submits").
+		Set("roles = EXCLUDED.roles").
+		Set("ban = EXCLUDED.ban").
+		Set("premium = EXCLUDED.premium").
+		Set("premium_expires = EXCLUDED.premium_expires").
 		Set("updated_at = EXCLUDED.updated_at").
 		Exec(ctx)
 
@@ -347,7 +362,7 @@ func (m *Migrator) batchInsertUsers(ctx context.Context, users []*models.User) e
 		slog.Error("Batch insert of users failed",
 			"error", err,
 			"duration", time.Since(startTime))
-		return err
+		return fmt.Errorf("batch insert failed: %w", err)
 	}
 
 	slog.Info("Batch insert of users completed",

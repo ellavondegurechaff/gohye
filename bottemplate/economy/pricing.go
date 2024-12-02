@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"math"
-	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -43,6 +42,10 @@ const (
 
 	InitialPricingTimeout = 5 * time.Minute  // Longer timeout for initial pricing
 	BatchQueryTimeout     = 30 * time.Second // Timeout for batch queries
+
+	statsQueryTimeout = 10 * time.Second
+	maxBatchSize      = 25 // Reduced batch size for faster processing
+	parallelQueries   = 4  // Number of parallel stat queries
 )
 
 type PriceCalculator struct {
@@ -422,6 +425,72 @@ func (pc *PriceCalculator) UpdateAllPrices(ctx context.Context) error {
 }
 
 func (pc *PriceCalculator) getCardStats(ctx context.Context, cardIDs []int64) (map[int64]CardStats, error) {
+	statsMap := make(map[int64]CardStats, len(cardIDs))
+
+	// Split into smaller batches
+	batches := make([][]int64, 0)
+	for i := 0; i < len(cardIDs); i += maxBatchSize {
+		end := i + maxBatchSize
+		if end > len(cardIDs) {
+			end = len(cardIDs)
+		}
+		batches = append(batches, cardIDs[i:end])
+	}
+
+	// Process batches in parallel with error group
+	g, gctx := errgroup.WithContext(ctx)
+	resultChan := make(chan map[int64]CardStats, len(batches))
+
+	// Semaphore to limit concurrent queries
+	sem := semaphore.NewWeighted(int64(parallelQueries))
+
+	for _, batch := range batches {
+		batch := batch // Capture for goroutine
+		g.Go(func() error {
+			if err := sem.Acquire(gctx, 1); err != nil {
+				return err
+			}
+			defer sem.Release(1)
+
+			// Create timeout context for this batch
+			queryCtx, cancel := context.WithTimeout(gctx, statsQueryTimeout)
+			defer cancel()
+
+			batchStats, err := pc.processStatsBatch(queryCtx, batch)
+			if err != nil {
+				return fmt.Errorf("batch stats error: %w", err)
+			}
+
+			select {
+			case resultChan <- batchStats:
+			case <-gctx.Done():
+				return gctx.Err()
+			}
+			return nil
+		})
+	}
+
+	// Close results channel when all goroutines complete
+	go func() {
+		g.Wait()
+		close(resultChan)
+	}()
+
+	// Collect results
+	for batchResult := range resultChan {
+		for cardID, stats := range batchResult {
+			statsMap[cardID] = stats
+		}
+	}
+
+	if err := g.Wait(); err != nil {
+		return nil, fmt.Errorf("error processing stats batches: %w", err)
+	}
+
+	return statsMap, nil
+}
+
+func (pc *PriceCalculator) processStatsBatch(ctx context.Context, cardIDs []int64) (map[int64]CardStats, error) {
 	var stats []CardStats
 	err := pc.db.BunDB().NewSelect().
 		TableExpr("cards c").
@@ -429,31 +498,31 @@ func (pc *PriceCalculator) getCardStats(ctx context.Context, cardIDs []int64) (m
 		ColumnExpr("COALESCE(COUNT(uc.id), 0) as total_copies").
 		ColumnExpr("COALESCE(COUNT(DISTINCT uc.user_id), 0) as unique_owners").
 		ColumnExpr(`COALESCE(COUNT(DISTINCT CASE 
-			WHEN u.last_daily > ? THEN uc.user_id 
-			ELSE NULL 
-			END), 0) as active_owners`, time.Now().Add(-pc.config.InactivityThreshold)).
+				WHEN u.last_daily > ? THEN uc.user_id 
+				ELSE NULL 
+				END), 0) as active_owners`, time.Now().Add(-pc.config.InactivityThreshold)).
 		ColumnExpr(`COALESCE(COUNT(CASE 
-			WHEN u.last_daily > ? THEN 1 
-			ELSE NULL 
-			END), 0) as active_copies`, time.Now().Add(-pc.config.InactivityThreshold)).
+				WHEN u.last_daily > ? THEN 1 
+				ELSE NULL 
+				END), 0) as active_copies`, time.Now().Add(-pc.config.InactivityThreshold)).
 		ColumnExpr(`COALESCE((
-			SELECT MAX(copies)
-			FROM (
-				SELECT COUNT(*) as copies
-				FROM user_cards uc2
-				WHERE uc2.card_id = c.id
-				GROUP BY uc2.user_id
-			) subq
-		), 0) as max_copies_per_user`).
+				SELECT MAX(copies)
+				FROM (
+					SELECT COUNT(*) as copies
+					FROM user_cards uc2
+					WHERE uc2.card_id = c.id
+					GROUP BY uc2.user_id
+				) subq
+			), 0) as max_copies_per_user`).
 		ColumnExpr(`COALESCE((
-			SELECT ROUND(AVG(copies)::numeric, 2)
-			FROM (
-				SELECT COUNT(*) as copies
-				FROM user_cards uc2
-				WHERE uc2.card_id = c.id
-				GROUP BY uc2.user_id
-			) subq
-		), 0) as avg_copies_per_user`).
+				SELECT AVG(copies)::numeric
+				FROM (
+					SELECT COUNT(*) as copies
+					FROM user_cards uc2
+					WHERE uc2.card_id = c.id
+					GROUP BY uc2.user_id
+				) subq
+			), 0) as avg_copies_per_user`).
 		Join("LEFT JOIN user_cards uc ON c.id = uc.card_id").
 		Join("LEFT JOIN users u ON uc.user_id = u.discord_id").
 		Where("c.id IN (?)", bun.In(cardIDs)).
@@ -464,7 +533,7 @@ func (pc *PriceCalculator) getCardStats(ctx context.Context, cardIDs []int64) (m
 		return nil, fmt.Errorf("error fetching card stats: %w", err)
 	}
 
-	// Convert slice to map
+	// Convert to map
 	statsMap := make(map[int64]CardStats, len(stats))
 	for _, stat := range stats {
 		statsMap[stat.CardID] = stat
@@ -474,204 +543,153 @@ func (pc *PriceCalculator) getCardStats(ctx context.Context, cardIDs []int64) (m
 }
 
 func (pc *PriceCalculator) calculatePriceFactors(stats CardStats) PriceFactors {
-	// 1. Scarcity Factor
-	scarcityFactor := math.Max(0.5, 1.0-(float64(stats.ActiveCopies)*pc.config.ScarcityImpact))
+	// Ensure minimum values to prevent division by zero
+	safeActiveOwners := math.Max(1.0, float64(stats.ActiveOwners))
+	safeUniqueOwners := math.Max(1.0, float64(stats.UniqueOwners))
+	safeActiveCopies := math.Max(1.0, float64(stats.ActiveCopies))
 
-	// 2. Distribution Factor
-	distributionRatio := float64(stats.ActiveCopies) / float64(stats.ActiveOwners)
-	distributionFactor := math.Max(0.5, 1.0-(distributionRatio-1.0)*pc.config.DistributionImpact)
+	// 1. Scarcity Factor - prevent division by zero
+	scarcityFactor := math.Max(0.5, 1.0-(safeActiveCopies*pc.config.ScarcityImpact))
 
-	// 3. Hoarding Impact
-	hoardingThreshold := float64(stats.ActiveCopies) * pc.config.HoardingThreshold
+	// 2. Distribution Factor - prevent NaN
+	distributionRatio := safeActiveCopies / safeActiveOwners
+	distributionFactor := math.Max(0.5, 1.0-(math.Min(distributionRatio, 10.0)-1.0)*pc.config.DistributionImpact)
+
+	// 3. Hoarding Impact - prevent Inf
 	hoardingFactor := 1.0
-	if float64(stats.MaxCopiesPerUser) > hoardingThreshold {
-		hoardingFactor = 1.0 + (float64(stats.MaxCopiesPerUser)/float64(stats.ActiveCopies))*pc.config.HoardingImpact
+	if stats.MaxCopiesPerUser > 0 {
+		hoardingThreshold := math.Max(1.0, safeActiveCopies*pc.config.HoardingThreshold)
+		if float64(stats.MaxCopiesPerUser) > hoardingThreshold {
+			hoardingImpact := math.Min(
+				(float64(stats.MaxCopiesPerUser)/safeActiveCopies)*pc.config.HoardingImpact,
+				2.0, // Cap the maximum hoarding impact
+			)
+			hoardingFactor = 1.0 + hoardingImpact
+		}
 	}
 
-	// 4. Activity Factor
-	activityFactor := math.Max(0.5, float64(stats.ActiveOwners)/float64(stats.UniqueOwners))
+	// 4. Activity Factor - prevent division by zero
+	activityFactor := math.Max(0.5, safeActiveOwners/safeUniqueOwners)
+	activityFactor = math.Min(activityFactor, 2.0) // Cap the maximum activity factor
 
-	reason := fmt.Sprintf(
+	// Validate all factors are within reasonable bounds
+	factors := PriceFactors{
+		ScarcityFactor:     math.Max(0.1, math.Min(scarcityFactor, 3.0)),
+		DistributionFactor: math.Max(0.1, math.Min(distributionFactor, 3.0)),
+		HoardingFactor:     math.Max(0.1, math.Min(hoardingFactor, 3.0)),
+		ActivityFactor:     math.Max(0.1, math.Min(activityFactor, 3.0)),
+	}
+
+	factors.Reason = fmt.Sprintf(
 		"Price factors: Scarcity (%.2fx), Distribution (%.2fx), Hoarding (%.2fx), Activity (%.2fx)\n"+
 			"Based on %d total copies, %d active owners, and %.1f average copies per user",
-		scarcityFactor,
-		distributionFactor,
-		hoardingFactor,
-		activityFactor,
+		factors.ScarcityFactor,
+		factors.DistributionFactor,
+		factors.HoardingFactor,
+		factors.ActivityFactor,
 		stats.TotalCopies,
 		stats.ActiveOwners,
 		stats.AvgCopiesPerUser,
 	)
 
-	return PriceFactors{
-		ScarcityFactor:     scarcityFactor,
-		DistributionFactor: distributionFactor,
-		HoardingFactor:     hoardingFactor,
-		ActivityFactor:     activityFactor,
-		Reason:             reason,
-	}
+	return factors
 }
 
-func (pc *PriceCalculator) processBatch(ctx context.Context, cardIDs []int64, stats *ProcessingStats, batchNum int) error {
+func (pc *PriceCalculator) processBatch(ctx context.Context, cardIDs []int64, procStats *ProcessingStats, batchNum int) error {
 	batchStart := time.Now()
 
-	if err := pc.sem.Acquire(ctx, 1); err != nil {
+	// Create a shorter timeout for batch processing
+	batchCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+
+	if err := pc.sem.Acquire(batchCtx, 1); err != nil {
 		return err
 	}
 	defer pc.sem.Release(1)
 
-	log.Printf("[GoHYE] [%s] [INFO] [MARKET] Starting batch %d with %d cards",
-		time.Now().Format("15:04:05"),
-		batchNum,
-		len(cardIDs),
-	)
+	// Get card stats with optimized batch size
+	cardStats, err := pc.getCardStats(batchCtx, cardIDs)
+	if err != nil {
+		return fmt.Errorf("failed to get card stats: %w", err)
+	}
 
-	// Worker pool implementation
-	g, ctx := errgroup.WithContext(ctx)
-	workChan := make(chan int64, len(cardIDs))
+	// Process prices in parallel
+	g, gctx := errgroup.WithContext(batchCtx)
+	pricesChan := make(chan struct {
+		cardID int64
+		price  int64
+	}, len(cardIDs))
 
-	for i := 0; i < workerPoolSize; i++ {
-		workerNum := i
+	for _, cardID := range cardIDs {
+		cardID := cardID // Capture for goroutine
 		g.Go(func() error {
-			log.Printf("[GoHYE] [%s] [DEBUG] [MARKET] Batch %d: Worker %d started",
-				time.Now().Format("15:04:05"),
-				batchNum,
-				workerNum,
-			)
-
-			processed := 0
-			for cardID := range workChan {
-				start := time.Now()
-				if err := pc.processCard(ctx, cardID); err != nil {
-					atomic.AddInt32((*int32)(&stats.Errors), 1)
-					log.Printf("[GoHYE] [%s] [ERROR] [MARKET] Error processing card %d: %v",
-						time.Now().Format("15:04:05"),
-						cardID,
-						err,
-					)
-					return err
+			stats, ok := cardStats[cardID]
+			if !ok {
+				stats = CardStats{
+					CardID:           cardID,
+					TotalCopies:      1,
+					UniqueOwners:     1,
+					ActiveOwners:     1,
+					ActiveCopies:     1,
+					MaxCopiesPerUser: 1,
+					AvgCopiesPerUser: 1.0,
 				}
-				processed++
-				atomic.AddInt32((*int32)(&stats.ProcessedCards), 1)
+			}
 
-				log.Printf("[GoHYE] [%s] [DEBUG] [MARKET] Batch %d: Worker %d processed card %d in %v",
-					time.Now().Format("15:04:05"),
-					batchNum,
-					workerNum,
-					cardID,
-					time.Since(start),
-				)
+			factors := pc.calculatePriceFactors(stats)
+			price := pc.calculateFinalPrice(models.Card{ID: cardID}, factors)
+
+			select {
+			case pricesChan <- struct {
+				cardID int64
+				price  int64
+			}{cardID, price}:
+			case <-gctx.Done():
+				return gctx.Err()
 			}
 			return nil
 		})
 	}
 
-	// Send work and wait for completion
-	for _, cardID := range cardIDs {
-		select {
-		case workChan <- cardID:
-		case <-ctx.Done():
-			return ctx.Err()
+	// Close prices channel when all calculations complete
+	go func() {
+		g.Wait()
+		close(pricesChan)
+	}()
+
+	// Collect and store prices
+	var histories []*models.CardMarketHistory
+	for price := range pricesChan {
+		history := &models.CardMarketHistory{
+			CardID:    price.cardID,
+			Price:     price.price,
+			Timestamp: time.Now(),
+		}
+		histories = append(histories, history)
+		atomic.AddInt32(&procStats.ProcessedCards, 1)
+	}
+
+	if err := g.Wait(); err != nil {
+		atomic.AddInt32(&procStats.Errors, 1)
+		return fmt.Errorf("error calculating prices: %w", err)
+	}
+
+	// Batch insert histories
+	if len(histories) > 0 {
+		_, err = pc.db.BunDB().NewInsert().
+			Model(&histories).
+			Exec(batchCtx)
+
+		if err != nil {
+			atomic.AddInt32(&procStats.Errors, 1)
+			return fmt.Errorf("failed to insert histories: %w", err)
 		}
 	}
-	close(workChan)
 
-	err := g.Wait()
-
-	// Log batch completion
-	var m runtime.MemStats
-	runtime.ReadMemStats(&m)
-	log.Printf("[GoHYE] [%s] [INFO] [MARKET] Batch %d completed:\n"+
-		"- Time taken: %v\n"+
-		"- Memory usage - Alloc: %v MiB, Sys: %v MiB\n"+
-		"- Cards processed: %d",
+	log.Printf("[GoHYE] [%s] [INFO] [MARKET] Batch %d completed in %v",
 		time.Now().Format("15:04:05"),
 		batchNum,
-		time.Since(batchStart),
-		m.Alloc/1024/1024,
-		m.Sys/1024/1024,
-		len(cardIDs),
-	)
-
-	return err
-}
-
-func (pc *PriceCalculator) processCard(ctx context.Context, cardID int64) error {
-	// Get card details
-	var card models.Card
-	err := pc.db.BunDB().NewSelect().
-		Model(&card).
-		Where("id = ?", cardID).
-		Scan(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get card: %w", err)
-	}
-
-	// Get card stats
-	stats, err := pc.getCardStats(ctx, []int64{cardID})
-	if err != nil {
-		return fmt.Errorf("failed to get card stats: %w", err)
-	}
-
-	cardStats, ok := stats[cardID]
-	if !ok {
-		// If no stats found, create default stats
-		cardStats = CardStats{
-			CardID:           cardID,
-			TotalCopies:      1,
-			UniqueOwners:     1,
-			ActiveOwners:     1,
-			ActiveCopies:     1,
-			MaxCopiesPerUser: 1,
-			AvgCopiesPerUser: 1.0,
-		}
-	}
-
-	// Calculate price factors
-	factors := pc.calculatePriceFactors(cardStats)
-
-	// Calculate final price with validation
-	price := pc.calculateFinalPrice(card, factors)
-	if price <= 0 {
-		// Set minimum price if calculation results in invalid price
-		price = int64(pc.config.MinPrice)
-	}
-
-	// Create history record with validated price
-	history := &models.CardMarketHistory{
-		CardID:       cardID,
-		Price:        price,
-		ActiveOwners: cardStats.ActiveOwners,
-		Timestamp:    time.Now(),
-	}
-
-	// Retry insert with validation
-	var insertErr error
-	for i := 0; i < MaxRetries; i++ {
-		if history.Price <= 0 {
-			history.Price = int64(pc.config.MinPrice)
-		}
-
-		_, err = pc.db.BunDB().NewInsert().
-			Model(history).
-			Exec(ctx)
-
-		if err == nil {
-			break
-		}
-		insertErr = err
-		time.Sleep(time.Duration(i+1) * 100 * time.Millisecond)
-	}
-
-	if insertErr != nil {
-		return fmt.Errorf("failed to insert market history after %d retries: %w", MaxRetries, insertErr)
-	}
-
-	// Update cache
-	pc.cache.Add(fmt.Sprintf("price:%d", cardID), cachedPrice{
-		price:     price,
-		timestamp: time.Now(),
-	})
+		time.Since(batchStart))
 
 	return nil
 }
@@ -680,27 +698,56 @@ func (pc *PriceCalculator) calculateFinalPrice(card models.Card, factors PriceFa
 	// Start with base price
 	basePrice := float64(pc.config.BasePrice)
 
-	// Apply level multiplier
-	basePrice *= math.Pow(pc.config.LevelMultiplier, float64(card.Level-1))
+	// Apply level multiplier safely
+	levelMultiplier := math.Max(1.0, math.Pow(pc.config.LevelMultiplier, float64(card.Level-1)))
+	basePrice *= levelMultiplier
 
-	// Apply factors with safety checks
-	price := basePrice *
-		math.Max(0.1, factors.ScarcityFactor) *
-		math.Max(0.1, factors.DistributionFactor) *
-		math.Max(0.1, factors.HoardingFactor) *
-		math.Max(0.1, factors.ActivityFactor)
+	// Apply rarity multiplier with safety bounds
+	rarityMultiplier := 1.0 + (math.Max(0, float64(card.Level-1)) * pc.config.RarityMultiplier)
+	rarityMultiplier = math.Max(1.0, math.Min(rarityMultiplier, 5.0))
+	basePrice *= rarityMultiplier
 
-	// Apply rarity multiplier
-	price *= (1.0 + (float64(card.Level-1) * pc.config.RarityMultiplier))
+	// Track price calculation with safety checks
+	price := basePrice
+	priceSteps := []struct {
+		factor float64
+		name   string
+	}{
+		{factors.ScarcityFactor, "Scarcity"},
+		{factors.DistributionFactor, "Distribution"},
+		{factors.HoardingFactor, "Hoarding"},
+		{factors.ActivityFactor, "Activity"},
+	}
 
-	// Convert to int64 and ensure it's within bounds
+	for _, step := range priceSteps {
+		oldPrice := price
+		safeFactor := math.Max(0.1, math.Min(step.factor, 3.0))
+		price *= safeFactor
+
+		// Ensure price stays within reasonable bounds after each step
+		price = math.Max(float64(pc.config.MinPrice), math.Min(price, float64(pc.config.MaxPrice)))
+
+		log.Printf("[GoHYE] [MARKET] Card %d: %s factor %.2f changed price from %d to %d",
+			card.ID, step.name, safeFactor, int64(oldPrice), int64(price))
+	}
+
+	// Final bounds check
 	finalPrice := int64(math.Max(float64(pc.config.MinPrice),
 		math.Min(float64(pc.config.MaxPrice), price)))
 
-	// Final safety check
-	if finalPrice <= 0 {
-		finalPrice = int64(pc.config.MinPrice)
-	}
+	// Log final calculation
+	log.Printf("[GoHYE] [MARKET] Card %d final price calculation:"+
+		"\n- Base Price: %.2f"+
+		"\n- Rarity Multiplier: %.2f"+
+		"\n- Scarcity Factor: %.2f"+
+		"\n- Distribution Factor: %.2f"+
+		"\n- Hoarding Factor: %.2f"+
+		"\n- Activity Factor: %.2f"+
+		"\n- Final Price: %d (took %dms)",
+		card.ID, basePrice, rarityMultiplier,
+		factors.ScarcityFactor, factors.DistributionFactor,
+		factors.HoardingFactor, factors.ActivityFactor,
+		finalPrice, time.Since(time.Now()).Milliseconds())
 
 	return finalPrice
 }
@@ -1154,4 +1201,96 @@ func (pc *PriceCalculator) getBatchActiveOwnersCount(ctx context.Context, cardID
 
 func (pc *PriceCalculator) GetDB() *database.DB {
 	return pc.db
+}
+
+func (pc *PriceCalculator) CalculateCardPricesBatch(ctx context.Context, cardIDs []int64) (map[int64]int64, error) {
+	prices := make(map[int64]int64)
+
+	// Get card stats for the entire batch
+	stats, err := pc.getCardStats(ctx, cardIDs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get card stats: %w", err)
+	}
+
+	// Get all cards in one query
+	var cards []models.Card
+	err = pc.db.BunDB().NewSelect().
+		Model(&cards).
+		Where("id IN (?)", bun.In(cardIDs)).
+		Scan(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get cards: %w", err)
+	}
+
+	// Calculate prices
+	for _, card := range cards {
+		cardStats, ok := stats[card.ID]
+		if !ok {
+			cardStats = CardStats{
+				CardID:           card.ID,
+				TotalCopies:      1,
+				UniqueOwners:     1,
+				ActiveOwners:     1,
+				ActiveCopies:     1,
+				MaxCopiesPerUser: 1,
+				AvgCopiesPerUser: 1.0,
+			}
+		}
+
+		// Calculate price factors
+		factors := pc.calculatePriceFactors(cardStats)
+
+		// Calculate final price with validation
+		finalPrice := pc.calculateFinalPrice(card, factors)
+		if finalPrice <= 0 {
+			finalPrice = int64(pc.config.MinPrice)
+		}
+
+		prices[card.ID] = finalPrice
+	}
+
+	return prices, nil
+}
+
+// Add a new validation function
+func (pc *PriceCalculator) ValidateCardPrice(ctx context.Context, cardID int64, price int64) error {
+	// Get historical prices
+	var history []models.CardMarketHistory
+	err := pc.db.BunDB().NewSelect().
+		Model(&history).
+		Where("card_id = ?", cardID).
+		Where("timestamp > NOW() - INTERVAL '24 hours'").
+		Order("timestamp DESC").
+		Limit(24).
+		Scan(ctx)
+
+	if err != nil {
+		return fmt.Errorf("failed to get price history: %w", err)
+	}
+
+	if len(history) > 0 {
+		// Calculate average and standard deviation
+		var sum, sqSum float64
+		for _, h := range history {
+			sum += float64(h.Price)
+			sqSum += float64(h.Price) * float64(h.Price)
+		}
+		avg := sum / float64(len(history))
+		stdDev := math.Sqrt((sqSum / float64(len(history))) - (avg * avg))
+
+		// Check if new price is within 3 standard deviations
+		if math.Abs(float64(price)-avg) > stdDev*3 {
+			log.Printf("[GoHYE] [MARKET] WARNING: Card %d price %d significantly deviates from average %.2f (±%.2f)",
+				cardID, price, avg, stdDev)
+
+			// Optional: Adjust price to be within bounds
+			if price > int64(avg+stdDev*2) {
+				price = int64(avg + stdDev*2)
+			} else if price < int64(avg-stdDev*2) {
+				price = int64(avg - stdDev*2)
+			}
+		}
+	}
+
+	return nil
 }

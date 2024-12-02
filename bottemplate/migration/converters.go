@@ -26,7 +26,7 @@ func (m *Migrator) convertUser(mu MongoUser) *models.User {
 	return &models.User{
 		DiscordID:       mu.DiscordID,
 		Username:        mu.Username,
-		Exp:             int64(mu.Exp),
+		Balance:         int64(mu.Exp),
 		PromoExp:        int64(mu.PromoExp),
 		Joined:          mu.Joined,
 		LastQueriedCard: convertCard(mu.LastQueriedCard, cardID),

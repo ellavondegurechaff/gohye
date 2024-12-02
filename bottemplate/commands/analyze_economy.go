@@ -378,12 +378,11 @@ func processBatch(ctx context.Context, batch []*models.User, priceCalc *economy.
 		ranges:     make(map[string]int),
 		cardRanges: make(map[string]int),
 		balances:   make([]int64, 0, len(batch)),
-		cardValues: make([]int64, 0, len(batch)),
+		cardValues: make([]int64, 0, len(batch)*10),
 	}
 
+	// Process currency wealth and active users
 	activeThreshold := time.Now().AddDate(0, 0, -7)
-
-	// Process currency wealth and active users first (no DB calls)
 	for _, user := range batch {
 		if user.Balance > 0 {
 			result.balances = append(result.balances, user.Balance)
@@ -396,84 +395,113 @@ func processBatch(ctx context.Context, batch []*models.User, priceCalc *economy.
 		}
 	}
 
-	// Batch fetch all user cards at once
-	userIDs := make([]string, len(batch))
-	for i, user := range batch {
-		userIDs[i] = user.DiscordID
+	// Fetch all cards at once with a longer timeout
+	var cards []struct {
+		UserID    string    `bun:"user_id"`
+		CardID    int64     `bun:"card_id"`
+		Amount    int       `bun:"amount"`
+		Level     int       `bun:"level"`
+		Name      string    `bun:"name"`
+		CreatedAt time.Time `bun:"created_at"`
 	}
 
-	var userCards []models.UserCard
+	queryCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+
 	err := priceCalc.GetDB().BunDB().NewSelect().
-		Model(&userCards).
-		Where("user_id IN (?)", bun.In(userIDs)).
-		Scan(ctx)
+		TableExpr("user_cards uc").
+		ColumnExpr("uc.user_id, uc.card_id, uc.amount, c.level, c.name, uc.created_at").
+		Join("JOIN cards c ON c.id = uc.card_id").
+		Where("uc.user_id IN (?)", bun.In(getUserIDs(batch))).
+		Scan(queryCtx, &cards)
 
 	if err != nil {
 		log.Printf("[GoHYE] [ERROR] Failed to fetch user cards in batch: %v", err)
 		return result
 	}
 
-	// Group cards by user
-	userCardMap := make(map[string][]models.UserCard)
-	cardIDs := make(map[int64]struct{})
-	for _, card := range userCards {
-		userCardMap[card.UserID] = append(userCardMap[card.UserID], card)
-		cardIDs[card.CardID] = struct{}{}
+	// Group cards by ID for batch processing
+	cardGroups := make(map[int64]struct {
+		cards []struct {
+			amount int
+			userID string
+		}
+		level int
+		name  string
+	})
+
+	for _, card := range cards {
+		group := cardGroups[card.CardID]
+		group.cards = append(group.cards, struct {
+			amount int
+			userID string
+		}{amount: card.Amount, userID: card.UserID})
+		group.level = card.Level
+		group.name = card.Name
+		cardGroups[card.CardID] = group
 	}
 
-	// Batch fetch all card prices at once
-	uniqueCardIDs := make([]int64, 0, len(cardIDs))
-	for cardID := range cardIDs {
-		uniqueCardIDs = append(uniqueCardIDs, cardID)
+	// Process cards in smaller batches
+	const batchSize = 25
+	cardIDs := make([]int64, 0, len(cardGroups))
+	for cardID := range cardGroups {
+		cardIDs = append(cardIDs, cardID)
 	}
-
-	prices, err := priceCalc.BatchCalculateCardPrices(ctx, uniqueCardIDs)
-	if err != nil {
-		log.Printf("[GoHYE] [ERROR] Failed to calculate prices in batch: %v", err)
-		return result
-	}
-
-	// Calculate card wealth for each user
-	var mu sync.Mutex
-	workers := runtime.GOMAXPROCS(0)
-	userBatchSize := (len(batch) + workers - 1) / workers
 
 	var wg sync.WaitGroup
-	for i := 0; i < len(batch); i += userBatchSize {
-		end := i + userBatchSize
-		if end > len(batch) {
-			end = len(batch)
+	priceCache := sync.Map{}
+	semaphore := make(chan struct{}, 4)
+
+	// Process in batches
+	for i := 0; i < len(cardIDs); i += batchSize {
+		end := i + batchSize
+		if end > len(cardIDs) {
+			end = len(cardIDs)
 		}
 
 		wg.Add(1)
-		go func(users []*models.User) {
+		go func(start, end int) {
 			defer wg.Done()
+			semaphore <- struct{}{}
+			defer func() { <-semaphore }()
 
-			for _, user := range users {
-				userCards := userCardMap[user.DiscordID]
-				if len(userCards) == 0 {
-					continue
-				}
+			batchCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+			defer cancel()
 
-				var totalValue int64
-				for _, card := range userCards {
-					if price, ok := prices[card.CardID]; ok {
-						cardValue := price * card.Amount
-						totalValue += cardValue
+			prices, err := priceCalc.CalculateCardPricesBatch(batchCtx, cardIDs[start:end])
+			if err != nil {
+				log.Printf("[GoHYE] [WARN] Failed to calculate prices for batch %d-%d: %v", start, end, err)
+				return
+			}
+
+			// Update cache and calculate wealth
+			for cardID, price := range prices {
+				priceCache.Store(cardID, price)
+				if group, ok := cardGroups[cardID]; ok {
+					for _, card := range group.cards {
+						cardValue := price * int64(card.amount)
+						if cardValue > 0 {
+							result.cardValues = append(result.cardValues, cardValue)
+							atomic.AddInt64(&result.cardWealth, cardValue)
+							categorizeCardWealth(cardValue, result.cardRanges)
+						}
 					}
 				}
-
-				if totalValue > 0 {
-					mu.Lock()
-					result.cardValues = append(result.cardValues, totalValue)
-					result.cardWealth += totalValue
-					categorizeCardWealth(totalValue, result.cardRanges)
-					mu.Unlock()
-				}
 			}
-		}(batch[i:end])
+
+			log.Printf("[GoHYE] [DEBUG] Processed batch %d-%d of %d cards", start, end, len(cardIDs))
+		}(i, end)
 	}
 
 	wg.Wait()
+
 	return result
+}
+
+func getUserIDs(users []*models.User) []string {
+	ids := make([]string, len(users))
+	for i, user := range users {
+		ids[i] = user.DiscordID
+	}
+	return ids
 }

@@ -17,6 +17,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/disgoorg/bot-template/bottemplate/database/models"
+	"github.com/disgoorg/bot-template/bottemplate/utils"
 )
 
 type PathType string
@@ -689,4 +690,16 @@ func (s *SpacesService) DeleteObject(ctx context.Context, path string) error {
 	s.pathCache.mu.Unlock()
 
 	return nil
+}
+
+// Add this method to SpacesService
+func (s *SpacesService) GetSpacesConfig() utils.SpacesConfig {
+	return utils.SpacesConfig{
+		Bucket:   s.bucket,
+		Region:   s.region,
+		CardRoot: s.CardRoot,
+		GetImageURL: func(cardName string, colID string, level int, groupType string) string {
+			return s.GetCardImageURL(cardName, colID, level, groupType)
+		},
+	}
 }

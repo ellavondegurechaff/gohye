@@ -90,11 +90,7 @@ func handleCardByID(b *bottemplate.Bot, event *handler.CommandEvent, cardID int6
 		card.ColID,
 		card.Level,
 		getGroupType(card.Tags),
-		utils.SpacesConfig{
-			Bucket:   b.SpacesService.GetBucket(),
-			Region:   b.SpacesService.GetRegion(),
-			CardRoot: b.SpacesService.GetCardRoot(),
-		},
+		b.SpacesService.GetSpacesConfig(),
 	)
 
 	// Get market status
@@ -272,11 +268,7 @@ func PriceDetailsHandler(b *bottemplate.Bot) handler.ComponentHandler {
 			card.ColID,
 			card.Level,
 			getGroupType(card.Tags),
-			utils.SpacesConfig{
-				Bucket:   b.SpacesService.GetBucket(),
-				Region:   b.SpacesService.GetRegion(),
-				CardRoot: b.SpacesService.GetCardRoot(),
-			},
+			b.SpacesService.GetSpacesConfig(),
 		)
 
 		inlineFalse := false
