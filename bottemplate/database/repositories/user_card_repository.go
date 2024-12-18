@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/disgoorg/bot-template/bottemplate/database/models"
@@ -49,12 +50,60 @@ func (r *userCardRepository) GetByID(ctx context.Context, id int64) (*models.Use
 }
 
 func (r *userCardRepository) GetByUserIDAndCardID(ctx context.Context, userID string, cardID int64) (*models.UserCard, error) {
-	userCard := new(models.UserCard)
+	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	defer cancel()
+
+	log.Printf("[GoHYE] [DEBUG] Checking card ownership - UserID: %s, CardID: %d", userID, cardID)
+
+	var userCard models.UserCard
 	err := r.db.NewSelect().
-		Model(userCard).
+		Model(&userCard).
 		Where("user_id = ? AND card_id = ?", userID, cardID).
 		Scan(ctx)
-	return userCard, err
+
+	if err != nil {
+		if err == sql.ErrNoRows {
+			log.Printf("[GoHYE] [DEBUG] No card found in user_cards table - UserID: %s, CardID: %d", userID, cardID)
+			return nil, nil
+		}
+		log.Printf("[GoHYE] [ERROR] Database error while checking ownership: %v", err)
+		return nil, fmt.Errorf("failed to get user card: %w", err)
+	}
+
+	if userCard.Amount <= 0 {
+		log.Printf("[GoHYE] [DEBUG] Attempting to fix card amount - UserID: %s, CardID: %d", userID, cardID)
+
+		tx, err := r.db.BeginTx(ctx, nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed to start transaction: %w", err)
+		}
+		defer tx.Rollback()
+
+		_, err = tx.NewUpdate().
+			Model(&userCard).
+			Set("amount = ?", 1).
+			Set("updated_at = ?", time.Now()).
+			Where("user_id = ? AND card_id = ?", userID, cardID).
+			Exec(ctx)
+
+		if err != nil {
+			log.Printf("[GoHYE] [ERROR] Failed to update card amount: %v", err)
+			return nil, fmt.Errorf("failed to update card amount: %w", err)
+		}
+
+		if err := tx.Commit(); err != nil {
+			return nil, fmt.Errorf("failed to commit transaction: %w", err)
+		}
+
+		userCard.Amount = 1
+		log.Printf("[GoHYE] [DEBUG] Successfully fixed card amount - UserID: %s, CardID: %d, New Amount: %d",
+			userID, cardID, userCard.Amount)
+	}
+
+	log.Printf("[GoHYE] [DEBUG] Card ownership check result: UserID: %s, CardID: %d, Amount: %d",
+		userCard.UserID, userCard.CardID, userCard.Amount)
+
+	return &userCard, nil
 }
 
 func (r *userCardRepository) GetAllByUserID(ctx context.Context, userID string) ([]*models.UserCard, error) {

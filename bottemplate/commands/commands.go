@@ -20,4 +20,11 @@ var Commands = []discord.ApplicationCommandCreate{
 	Balance,
 	AnalyzeEconomy,
 	ManageImages,
+	Daily,
+	Wish,
+	Has,
+	Miss,
+	Diff,
+	Liquefy,
+	Forge,
 }

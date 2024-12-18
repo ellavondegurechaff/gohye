@@ -3,6 +3,7 @@ package migration
 
 import (
 	"fmt"
+	"log/slog"
 	"strconv"
 	"time"
 
@@ -25,7 +26,7 @@ func (m *Migrator) convertUser(mu MongoUser) *models.User {
 
 	return &models.User{
 		DiscordID:       mu.DiscordID,
-		Username:        mu.Username,
+		Username:        cleanseString(mu.Username),
 		Balance:         int64(mu.Exp),
 		PromoExp:        int64(mu.PromoExp),
 		Joined:          mu.Joined,
@@ -46,7 +47,7 @@ func (m *Migrator) convertUser(mu MongoUser) *models.User {
 		LastWork:        mu.LastWork,
 		LastVote:        mu.LastVote,
 		LastAnnounce:    mu.LastAnnounce,
-		LastMsg:         mu.LastMsg,
+		LastMsg:         cleanseString(mu.LastMsg),
 		HeroSlots:       mu.HeroSlots,
 		HeroCooldown:    mu.HeroCooldown,
 		Hero:            mu.Hero,
@@ -65,7 +66,7 @@ func (m *Migrator) convertUser(mu MongoUser) *models.User {
 func convertCard(mqc LastQueriedCard, cardID int64) models.Card {
 	return models.Card{
 		ID:       cardID,
-		Name:     mqc.Name,
+		Name:     cleanseString(mqc.Name),
 		Level:    int(mqc.Level),
 		Animated: mqc.Animated,
 		ColID:    mqc.ColID,
@@ -148,8 +149,8 @@ func convertPreferences(prefs Preferences) *models.Preferences {
 			CanSell: prefs.Interactions.CanSell,
 		},
 		Profile: models.ProfilePreferences{
-			Bio:         prefs.Profile.Bio,
-			Title:       prefs.Profile.Title,
+			Bio:         cleanseString(prefs.Profile.Bio),
+			Title:       cleanseString(prefs.Profile.Title),
 			Color:       prefs.Profile.Color,
 			Card:        prefs.Profile.Card,
 			FavComplete: prefs.Profile.FavComplete,
@@ -250,4 +251,16 @@ func convertInventory(items []interface{}) []models.InventoryItemModel {
 		}
 	}
 	return result
+}
+
+func cleanseString(input string) string {
+	output := ""
+	for _, char := range input {
+		if char < 32 || char > 126 {
+			slog.Warn("Removed invalid character from string", "char", char, "input", input)
+			continue
+		}
+		output += string(char)
+	}
+	return output
 }

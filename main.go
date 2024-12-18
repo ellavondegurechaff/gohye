@@ -54,11 +54,9 @@ func main() {
 	slog.Info("Initializing database connection...")
 	dbStartTime := time.Now()
 
-	// Create context with longer timeout for database connection and initial setup
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
 
-	// Convert bottemplate.DBConfig to database.DBConfig
 	dbConfig := database.DBConfig{
 		Host:     cfg.DB.Host,
 		Port:     cfg.DB.Port,
@@ -80,7 +78,7 @@ func main() {
 		slog.String("database", cfg.DB.Database),
 		slog.Duration("took", time.Since(dbStartTime)))
 
-	// Add automatic schema initialization
+	// Initialize database schema
 	slog.Info("Initializing database schema...")
 	if err := db.InitializeSchema(ctx); err != nil {
 		slog.Error("Failed to initialize database schema",
@@ -101,13 +99,13 @@ func main() {
 		cfg.Spaces.Secret,
 		cfg.Spaces.Region,
 		cfg.Spaces.Bucket,
-		cfg.Spaces.CardRoot, // Add this parameter
+		cfg.Spaces.CardRoot,
 	)
 	b.SpacesService = spacesService
 
-	//Initialize Auction Manager
-	auctionRepo := repositories.NewAuctionRepository(b.DB.BunDB()) // Create the repository
-	b.AuctionManager = auction.NewManager(auctionRepo)             // Create the manager
+	// Initialize Auction Manager
+	auctionRepo := repositories.NewAuctionRepository(b.DB.BunDB())
+	b.AuctionManager = auction.NewManager(auctionRepo)
 	b.AuctionManager.SetClient(b.Client)
 
 	// Initialize repositories
@@ -116,32 +114,35 @@ func main() {
 	b.CardRepository = repositories.NewCardRepository(b.DB.BunDB(), spacesService)
 	b.ClaimRepository = repositories.NewClaimRepository(b.DB.BunDB())
 	b.CollectionRepository = repositories.NewCollectionRepository(b.DB.BunDB())
+	b.EconomyStatsRepository = repositories.NewEconomyStatsRepository(b.DB.BunDB())
+	b.WishlistRepository = repositories.NewWishlistRepository(b.DB.BunDB())
 
-	// Update the price calculator initialization with better configured values
-	priceCalc := economy.NewPriceCalculator(db, economy.PricingConfig{
-		BasePrice:       1000, // Base price for level 1 cards
-		LevelMultiplier: 1.5,  // 50% increase per level
-		ScarcityWeight:  0.8,  // Weight for scarcity impact
+	priceCalc := economy.NewPriceCalculator(
+		db,
+		economy.PricingConfig{
+			BasePrice:           1000,
+			LevelMultiplier:     1.5,
+			ScarcityWeight:      0.8,
+			ActivityWeight:      0.5,
+			MinPrice:            100,
+			MaxPrice:            1000000,
+			MinActiveOwners:     3,
+			MinTotalCopies:      1,
+			BaseMultiplier:      1000,
+			ScarcityImpact:      0.01,
+			DistributionImpact:  0.05,
+			HoardingThreshold:   0.2,
+			HoardingImpact:      0.1,
+			ActivityImpact:      0.05,
+			OwnershipImpact:     0.01,
+			RarityMultiplier:    0.5,
+			PriceUpdateInterval: 1 * time.Hour,
+			InactivityThreshold: 7 * 24 * time.Hour,
+			CacheExpiration:     15 * time.Minute,
+		},
+		b.EconomyStatsRepository,
+	)
 
-		ActivityWeight:      0.5,     // Weight for activity impact
-		MinPrice:            100,     // Absolute minimum price
-		MaxPrice:            1000000, // Absolute maximum price
-		MinActiveOwners:     3,       // Minimum active owners for price calculation
-		MinTotalCopies:      1,       // Minimum total copies for price calculation
-		BaseMultiplier:      1000,    // Base price multiplier
-		ScarcityImpact:      0.01,    // 1% price reduction per copy
-		DistributionImpact:  0.05,    // 5% impact for distribution
-		HoardingThreshold:   0.2,     // 20% of supply triggers hoarding
-		HoardingImpact:      0.1,     // 10% price increase for hoarding
-		ActivityImpact:      0.05,    // 5% impact for activity
-		OwnershipImpact:     0.01,    // 1% impact per owner
-		RarityMultiplier:    0.5,     // 50% increase per rarity level
-		PriceUpdateInterval: 1 * time.Hour,
-		InactivityThreshold: 7 * 24 * time.Hour, // 7 days for inactivity
-		CacheExpiration:     15 * time.Minute,
-	})
-
-	// Initialize prices if needed with a longer timeout
 	initCtx, initCancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	if err := priceCalc.InitializeCardPrices(initCtx); err != nil {
 		initCancel()
@@ -151,7 +152,6 @@ func main() {
 	}
 	initCancel()
 
-	// Schedule price updates with a separate context
 	updateCtx, updateCancel := context.WithCancel(context.Background())
 	defer updateCancel()
 
@@ -162,7 +162,6 @@ func main() {
 		for {
 			select {
 			case <-ticker.C:
-				// Create a new context for each update
 				ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 				if err := priceCalc.UpdateAllPrices(ctx); err != nil {
 					slog.Error("Failed to update prices",
@@ -175,7 +174,6 @@ func main() {
 		}
 	}()
 
-	// Force initial price calculation for all cards
 	if *shouldCalculatePrices {
 		slog.Info("Performing initial price calculation for all cards...")
 		if err := priceCalc.UpdateAllPrices(ctx); err != nil {
@@ -189,16 +187,13 @@ func main() {
 		slog.String("component", "price_calculator"),
 		slog.String("status", "success"))
 
-	// Add price calculator to bot
 	b.PriceCalculator = priceCalc
 
-	// Initialize ClaimManager
-	b.ClaimManager = claim.NewManager(time.Second * 5) // 5 second cooldown between claims
+	b.ClaimManager = claim.NewManager(time.Second * 5)
 	b.ClaimManager.StartCleanupRoutine(context.Background())
 
 	h := handler.New()
 
-	// Group related command handlers
 	// System commands
 	h.Command("/version", commands.VersionHandler(b))
 	h.Command("/test", handlers.WrapWithLogging("test", commands.TestHandler))
@@ -224,8 +219,22 @@ func main() {
 	h.Command("/analyze-economy", handlers.WrapWithLogging("analyze-economy", commands.AnalyzeEconomyHandler(b)))
 	h.Command("/manage-images", handlers.WrapWithLogging("manage-images", commands.ManageImagesHandler(b)))
 	h.Autocomplete("/manage-images", commands.ManageImagesAutocomplete(b))
-	//User-Related Commands
+
+	// User-Related Commands
 	h.Command("/balance", handlers.WrapWithLogging("balance", commands.BalanceHandler(b)))
+	h.Command("/daily", handlers.WrapWithLogging("daily", commands.DailyHandler(b)))
+	h.Command("/wish", handlers.WrapWithLogging("wish", commands.WishHandler(b)))
+	h.Command("/has", handlers.WrapWithLogging("has", commands.HasHandler(b)))
+	h.Command("/miss", handlers.WrapWithLogging("miss", commands.MissHandler(b)))
+	h.Command("/diff", handlers.WrapWithLogging("diff", commands.DiffHandler(b)))
+
+	// Vial Related Commands
+	h.Command("/liquefy", handlers.WrapWithLogging("liquefy", commands.NewLiquefyHandler(b).HandleLiquefy))
+	h.Component("/liquefy/", handlers.WrapComponentWithLogging("liquefy", commands.NewLiquefyHandler(b).HandleComponent))
+
+	// Forge Related Commands
+	h.Command("/forge", handlers.WrapWithLogging("forge", commands.NewForgeHandler(b).HandleForge))
+	h.Component("/forge/", handlers.WrapComponentWithLogging("forge", commands.NewForgeHandler(b).HandleComponent))
 	// Auction-related commands
 	auctionHandler := commands.NewAuctionHandler(b.AuctionManager, b.Client, b.CardRepository)
 	auctionHandler.Register(h)

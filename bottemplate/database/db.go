@@ -236,6 +236,8 @@ func (db *DB) InitializeSchema(ctx context.Context) error {
 		(*models.UserStats)(nil),
 		(*models.UserEffect)(nil),
 		(*models.Claim)(nil),
+		(*models.EconomyStats)(nil),
+		(*models.Wishlist)(nil),
 	}
 
 	// Create tables using Bun
@@ -259,6 +261,8 @@ func (db *DB) InitializeSchema(ctx context.Context) error {
 		"CREATE INDEX IF NOT EXISTS idx_user_cards_user_id ON user_cards(user_id);",
 		"CREATE INDEX IF NOT EXISTS idx_user_cards_card_id ON user_cards(card_id);",
 		"CREATE INDEX IF NOT EXISTS idx_user_cards_user_card ON user_cards(user_id, card_id);",
+		"CREATE INDEX IF NOT EXISTS idx_economy_stats_timestamp ON economy_stats(timestamp);",
+		"CREATE INDEX IF NOT EXISTS idx_economy_stats_economic_health ON economy_stats(economic_health);",
 	}
 
 	for _, idx := range indexes {

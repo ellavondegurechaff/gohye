@@ -39,6 +39,7 @@ type CardRepository interface {
 	GetUserCard(ctx context.Context, userID string, cardID int64) (*models.UserCard, error)
 	GetAllByUserID(ctx context.Context, userID string) ([]*models.UserCard, error)
 	GetByIDs(ctx context.Context, ids []int64) ([]*models.Card, error)
+	GetByQuery(ctx context.Context, query string) (*models.Card, error)
 }
 
 type cardRepository struct {
@@ -653,4 +654,23 @@ func (r *cardRepository) GetByIDs(ctx context.Context, ids []int64) ([]*models.C
 		Scan(ctx)
 
 	return cards, err
+}
+
+func (r *cardRepository) GetByQuery(ctx context.Context, query string) (*models.Card, error) {
+	card := new(models.Card)
+	err := r.db.NewSelect().
+		Model(card).
+		Where("LOWER(name) LIKE LOWER(?)", "%"+query+"%").
+		WhereOr("id::text = ?", query).
+		Limit(1).
+		Scan(ctx)
+
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, fmt.Errorf("no card found matching query: %s", query)
+		}
+		return nil, err
+	}
+
+	return card, nil
 }

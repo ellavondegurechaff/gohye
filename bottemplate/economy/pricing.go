@@ -12,6 +12,7 @@ import (
 
 	"github.com/disgoorg/bot-template/bottemplate/database"
 	"github.com/disgoorg/bot-template/bottemplate/database/models"
+	"github.com/disgoorg/bot-template/bottemplate/database/repositories"
 	lru "github.com/hashicorp/golang-lru"
 	"github.com/uptrace/bun"
 	"golang.org/x/sync/errgroup"
@@ -49,11 +50,12 @@ const (
 )
 
 type PriceCalculator struct {
-	db     *database.DB
-	cache  *lru.Cache
-	config PricingConfig
-	sem    *semaphore.Weighted
-	logger *log.Logger
+	db        *database.DB
+	cache     *lru.Cache
+	config    PricingConfig
+	sem       *semaphore.Weighted
+	logger    *log.Logger
+	statsRepo repositories.EconomyStatsRepository
 }
 
 type cachedPrice struct {
@@ -126,21 +128,28 @@ type ProcessingStats struct {
 	Errors         int32 // Using int32 for atomic operations
 }
 
-func NewPriceCalculator(db *database.DB, config PricingConfig) *PriceCalculator {
+func NewPriceCalculator(db *database.DB, config PricingConfig, statsRepo repositories.EconomyStatsRepository) *PriceCalculator {
 	cache, _ := lru.New(cacheSize)
 	return &PriceCalculator{
-		db:     db,
-		cache:  cache,
-		config: config,
-		sem:    semaphore.NewWeighted(maxConcurrentBatches),
-		logger: log.Default(),
+		db:        db,
+		cache:     cache,
+		config:    config,
+		sem:       semaphore.NewWeighted(maxConcurrentBatches),
+		logger:    log.Default(),
+		statsRepo: statsRepo,
 	}
 }
 
 func (pc *PriceCalculator) CalculateCardPrice(ctx context.Context, cardID int64) (int64, error) {
+	// Get old price for comparison
+	oldPrice, err := pc.GetLastPrice(ctx, cardID)
+	if err != nil {
+		pc.logger.Printf("Warning: Could not get old price: %v", err)
+	}
+
 	// Get card details
 	var card models.Card
-	err := pc.db.BunDB().NewSelect().
+	err = pc.db.BunDB().NewSelect().
 		Model(&card).
 		Where("id = ?", cardID).
 		Scan(ctx)
@@ -167,11 +176,17 @@ func (pc *PriceCalculator) CalculateCardPrice(ctx context.Context, cardID int64)
 
 	// Calculate final price
 	finalPrice := int64(float64(basePrice) * ownershipModifier * rarityModifier)
+	finalPrice = pc.applyPriceLimits(finalPrice)
 
 	log.Printf("[GoHYE] [%s] [DEBUG] [MARKET] Card %d price calculation: base=%d, ownership=%.2f, rarity=%.2f, final=%d",
 		time.Now().Format("15:04:05"), cardID, basePrice, ownershipModifier, rarityModifier, finalPrice)
 
-	return pc.applyPriceLimits(finalPrice), nil
+	// Update market stats
+	if err := pc.updateMarketStats(ctx, cardID, finalPrice, oldPrice); err != nil {
+		pc.logger.Printf("Warning: Failed to update market stats: %v", err)
+	}
+
+	return finalPrice, nil
 }
 
 func (pc *PriceCalculator) getActiveOwnersCount(ctx context.Context, cardID int64) (int, error) {
@@ -1122,7 +1137,14 @@ func (pc *PriceCalculator) CalculatePriceFactors(stats CardStats) PriceFactors {
 
 // BatchCalculateCardPrices calculates prices for multiple cards efficiently
 func (pc *PriceCalculator) BatchCalculateCardPrices(ctx context.Context, cardIDs []int64) (map[int64]int64, error) {
-	prices := make(map[int64]int64, len(cardIDs))
+	prices := make(map[int64]int64)
+	oldPrices := make(map[int64]int64)
+
+	// Get old prices
+	for _, cardID := range cardIDs {
+		oldPrice, _ := pc.GetLastPrice(ctx, cardID)
+		oldPrices[cardID] = oldPrice
+	}
 
 	// Get card details in bulk
 	var cards []models.Card
@@ -1166,6 +1188,13 @@ func (pc *PriceCalculator) BatchCalculateCardPrices(ctx context.Context, cardIDs
 
 		log.Printf("[GoHYE] [MARKET] Card %d price calculated: base=%d, market_mod=%.2f, final=%d",
 			card.ID, basePrice, marketMod, finalPrice)
+	}
+
+	// Update market stats for batch
+	for cardID, price := range prices {
+		if err := pc.updateMarketStats(ctx, cardID, price, oldPrices[cardID]); err != nil {
+			pc.logger.Printf("Warning: Failed to update market stats for card %d: %v", cardID, err)
+		}
 	}
 
 	return prices, nil
@@ -1293,4 +1322,36 @@ func (pc *PriceCalculator) ValidateCardPrice(ctx context.Context, cardID int64, 
 	}
 
 	return nil
+}
+
+// Add this method to update market stats after price calculations
+func (pc *PriceCalculator) updateMarketStats(ctx context.Context, cardID int64, newPrice int64, oldPrice int64) error {
+	stats, err := pc.statsRepo.GetLatest(ctx)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			// Initialize new stats if none exist
+			stats = &models.EconomyStats{
+				Timestamp:          time.Now(),
+				PriceVolatility:    0,
+				MarketVolume:       0,
+				AverageDailyTrades: 0,
+			}
+			return pc.statsRepo.Create(ctx, stats)
+		}
+		return fmt.Errorf("failed to get latest stats: %w", err)
+	}
+
+	// Calculate price volatility
+	if oldPrice > 0 {
+		priceChange := math.Abs(float64(newPrice-oldPrice)) / float64(oldPrice)
+		stats.PriceVolatility = (stats.PriceVolatility + priceChange) / 2
+	}
+
+	// Update market volume
+	stats.MarketVolume += newPrice
+
+	// Update average daily trades
+	stats.AverageDailyTrades++
+
+	return pc.statsRepo.Create(ctx, stats)
 }

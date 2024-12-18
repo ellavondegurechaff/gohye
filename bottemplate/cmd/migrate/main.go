@@ -16,7 +16,7 @@ func main() {
 	db, err := database.New(ctx, database.DBConfig{
 		Host:     "localhost",
 		Port:     5432,
-		User:     "postgres",
+		User:     "root",
 		Password: "root",
 		Database: "postgres",
 		PoolSize: 10,

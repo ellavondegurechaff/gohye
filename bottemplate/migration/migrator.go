@@ -359,6 +359,12 @@ func (m *Migrator) batchInsertUsers(ctx context.Context, users []*models.User) e
 		Exec(ctx)
 
 	if err != nil {
+		for _, user := range users {
+			_, singleErr := m.pgDB.NewInsert().Model(user).Exec(ctx)
+			if singleErr != nil {
+				slog.Error("Failed to insert user individually", "discord_id", user.DiscordID, "error", singleErr)
+			}
+		}
 		slog.Error("Batch insert of users failed",
 			"error", err,
 			"duration", time.Since(startTime))
