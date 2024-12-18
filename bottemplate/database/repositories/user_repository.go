@@ -2,6 +2,7 @@ package repositories
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/disgoorg/bot-template/bottemplate/database/models"
@@ -17,6 +18,7 @@ type UserRepository interface {
 	UpdateLastDaily(ctx context.Context, discordID string) error
 	GetTopUsers(ctx context.Context, limit int) ([]*models.User, error)
 	GetUsers(ctx context.Context) ([]*models.User, error)
+	UpdateLastWork(ctx context.Context, discordID string) error
 }
 
 type userRepository struct {
@@ -102,4 +104,17 @@ func (r *userRepository) GetUsers(ctx context.Context) ([]*models.User, error) {
 	}
 
 	return users, nil
+}
+
+func (r *userRepository) UpdateLastWork(ctx context.Context, discordID string) error {
+	_, err := r.db.NewUpdate().
+		Model((*models.User)(nil)).
+		Set("last_work = ?", time.Now()).
+		Set("updated_at = ?", time.Now()).
+		Where("discord_id = ?", discordID).
+		Exec(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to update last_work: %w", err)
+	}
+	return nil
 }

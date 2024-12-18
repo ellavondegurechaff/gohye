@@ -27,4 +27,5 @@ var Commands = []discord.ApplicationCommandCreate{
 	Diff,
 	Liquefy,
 	Forge,
+	Work,
 }

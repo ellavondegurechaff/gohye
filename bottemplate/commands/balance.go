@@ -44,14 +44,22 @@ func BalanceHandler(b *bottemplate.Bot) handler.CommandHandler {
 		}
 
 		balanceBar := createBalanceBar(user.Balance)
+		vialBar := createBalanceBar(user.UserStats.Vials)
+
 		description := fmt.Sprintf("```ansi\n"+
 			"\x1b[1;36mBalance:\x1b[0m %d credits\n"+
+			"\x1b[0;37m%s\x1b[0m\n"+
+			"\n"+
+			"\x1b[1;35mVials:\x1b[0m %d\n"+
 			"\x1b[0;37m%s\x1b[0m\n"+
 			"```",
 			user.Balance,
 			balanceBar,
+			user.UserStats.Vials,
+			vialBar,
 		)
 
+		now := time.Now()
 		return e.CreateMessage(discord.MessageCreate{
 			Embeds: []discord.Embed{{
 				Title:       "💰 Balance",
@@ -60,7 +68,7 @@ func BalanceHandler(b *bottemplate.Bot) handler.CommandHandler {
 				Footer: &discord.EmbedFooter{
 					Text: fmt.Sprintf("Requested by %s", e.User().Username),
 				},
-				// Timestamp: discord.NewTimestamp(time.Now()),
+				Timestamp: &now,
 			}},
 		})
 	}
@@ -71,6 +79,11 @@ func createBalanceBar(balance int64) string {
 
 	// Calculate milestone based on balance range
 	var milestone int64 = 1000000 // 1M milestone for high balances
+	if balance < 100000 {
+		milestone = 100000 // 100k milestone for lower balances
+	} else if balance < 500000 {
+		milestone = 500000 // 500k milestone for medium balances
+	}
 
 	// Calculate progress
 	progress := float64(balance) / float64(milestone)

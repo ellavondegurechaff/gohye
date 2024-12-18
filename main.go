@@ -235,6 +235,12 @@ func main() {
 	// Forge Related Commands
 	h.Command("/forge", handlers.WrapWithLogging("forge", commands.NewForgeHandler(b).HandleForge))
 	h.Component("/forge/", handlers.WrapComponentWithLogging("forge", commands.NewForgeHandler(b).HandleComponent))
+
+	// Work Related Commands
+	workHandler := commands.NewWorkHandler(b)
+	h.Command("/work", handlers.WrapWithLogging("work", workHandler.HandleWork))
+	h.Component("/work/", handlers.WrapComponentWithLogging("work", workHandler.HandleComponent))
+
 	// Auction-related commands
 	auctionHandler := commands.NewAuctionHandler(b.AuctionManager, b.Client, b.CardRepository)
 	auctionHandler.Register(h)
