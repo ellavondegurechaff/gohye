@@ -9,6 +9,7 @@ import (
 
 	"github.com/disgoorg/bot-template/bottemplate"
 	"github.com/disgoorg/bot-template/bottemplate/economy"
+	"github.com/disgoorg/bot-template/bottemplate/economy/vials"
 	"github.com/disgoorg/bot-template/bottemplate/utils"
 	"github.com/disgoorg/disgo/discord"
 	"github.com/disgoorg/disgo/handler"
@@ -104,36 +105,44 @@ func handleCardByID(b *bottemplate.Bot, event *handler.CommandEvent, cardID int6
 
 	timestamp := fmt.Sprintf("<t:%d:R>", time.Now().Unix())
 
+	description := fmt.Sprintf("```md\n"+
+		"# Market Information\n"+
+		"* Collection: %s\n"+
+		"* Level: %s\n"+
+		"* Current Price: %d 💰\n"+
+		"* 24h Change: %.2f%%\n"+
+		"* Status: %s\n"+
+		"* Total Owners: %d\n"+
+		"* Active Owners: %d\n"+
+		"\n"+
+		"# 24h Price Range\n"+
+		"* Minimum: %d 💰\n"+
+		"* Maximum: %d 💰\n"+
+		"* Average: %.0f 💰\n"+
+		"\n"+
+		"# Vial Information\n"+
+		"* Current Vial Value: %d 🧪\n"+
+		"* Vial Rate: %.0f%%\n"+
+		"```",
+		cardInfo.FormattedCollection,
+		stars,
+		price,
+		marketStats.PriceChangePercent,
+		marketStatus,
+		cardStats.UniqueOwners,
+		cardStats.ActiveOwners,
+		marketStats.MinPrice24h,
+		marketStats.MaxPrice24h,
+		marketStats.AvgPrice24h,
+		calculateVialValue(price, card.Level),
+		getVialRate(card.Level)*100,
+	)
+
 	return event.CreateMessage(discord.MessageCreate{
 		Embeds: []discord.Embed{{
-			Title: fmt.Sprintf("%s %s", cardInfo.Stars, cardInfo.FormattedName),
-			Description: fmt.Sprintf("```md\n"+
-				"# Market Information\n"+
-				"* Collection: %s\n"+
-				"* Level: %s\n"+
-				"* Current Price: %d 💰\n"+
-				"* 24h Change: %.2f%%\n"+
-				"* Status: %s\n"+
-				"* Total Owners: %d\n"+
-				"* Active Owners: %d\n"+
-				"\n"+
-				"# 24h Price Range\n"+
-				"* Minimum: %d 💰\n"+
-				"* Maximum: %d 💰\n"+
-				"* Average: %.0f 💰\n"+
-				"```",
-				cardInfo.FormattedCollection,
-				stars,
-				price,
-				marketStats.PriceChangePercent,
-				marketStatus,
-				cardStats.UniqueOwners,
-				cardStats.ActiveOwners,
-				marketStats.MinPrice24h,
-				marketStats.MaxPrice24h,
-				marketStats.AvgPrice24h,
-			),
-			Color: getColorByLevel(card.Level),
+			Title:       fmt.Sprintf("%s %s", cardInfo.Stars, cardInfo.FormattedName),
+			Description: description,
+			Color:       getColorByLevel(card.Level),
 			Thumbnail: &discord.EmbedResource{
 				URL: cardInfo.ImageURL,
 			},
@@ -167,13 +176,12 @@ func PriceDetailsHandler(b *bottemplate.Bot) handler.ComponentHandler {
 			})
 		}
 
-		// Convert string ID to int64
 		cardID, err := strconv.ParseInt(parts[0], 10, 64)
 		if err != nil {
 			return event.CreateMessage(discord.MessageCreate{
 				Embeds: []discord.Embed{{
 					Title:       "❌ Error",
-					Description: "Invalid card ID format",
+					Description: "Invalid card ID",
 					Color:       0xFF0000,
 				}},
 				Flags: discord.MessageFlagEphemeral,
@@ -183,7 +191,20 @@ func PriceDetailsHandler(b *bottemplate.Bot) handler.ComponentHandler {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
-		// Get current price using the same method as price-stats
+		// Get the card details first
+		card, err := b.CardRepository.GetByID(ctx, cardID)
+		if err != nil {
+			return event.CreateMessage(discord.MessageCreate{
+				Embeds: []discord.Embed{{
+					Title:       "❌ Error",
+					Description: fmt.Sprintf("Card #%d does not exist", cardID),
+					Color:       0xFF0000,
+				}},
+				Flags: discord.MessageFlagEphemeral,
+			})
+		}
+
+		// Get current price
 		price, err := b.PriceCalculator.GetLatestPrice(ctx, cardID)
 		if err != nil {
 			return event.CreateMessage(discord.MessageCreate{
@@ -219,12 +240,15 @@ func PriceDetailsHandler(b *bottemplate.Bot) handler.ComponentHandler {
 		priceFactors := fmt.Sprintf("```ansi\n"+
 			"# Price Factors\n"+
 			"* Current Price: %d 💰\n"+
+			"* Vial Value: %d 🧪 (%.0f%%)\n"+
 			"* Scarcity: %s\n"+
 			"* Distribution: %s\n"+
 			"* Hoarding: %s\n"+
 			"* Activity: %s\n"+
 			"```",
 			price,
+			calculateVialValue(price, card.Level),
+			getVialRate(card.Level)*100,
 			formatFactor(factors.ScarcityFactor, isInactive),
 			formatFactor(factors.DistributionFactor, isInactive),
 			formatFactor(factors.HoardingFactor, isInactive),
@@ -249,18 +273,6 @@ func PriceDetailsHandler(b *bottemplate.Bot) handler.ComponentHandler {
 		explanation := factors.Reason
 		if isInactive {
 			explanation = "Card is currently inactive due to insufficient owners or activity"
-		}
-
-		card, err := b.CardRepository.GetByID(ctx, cardID)
-		if err != nil {
-			return event.CreateMessage(discord.MessageCreate{
-				Embeds: []discord.Embed{{
-					Title:       "❌ Error",
-					Description: fmt.Sprintf("Card #%d does not exist", cardID),
-					Color:       0xFF0000,
-				}},
-				Flags: discord.MessageFlagEphemeral,
-			})
 		}
 
 		cardInfo := utils.GetCardDisplayInfo(
@@ -336,4 +348,24 @@ func handleCardByName(b *bottemplate.Bot, event *handler.CommandEvent, cardName 
 
 	// Use the best match
 	return handleCardByID(b, event, sortedCards[0].ID)
+}
+
+// Helper function to calculate vial value
+func calculateVialValue(price int64, level int) int64 {
+	rate := getVialRate(level)
+	return int64(float64(price) * rate)
+}
+
+// Helper function to get vial rate based on card level
+func getVialRate(level int) float64 {
+	switch level {
+	case 1:
+		return vials.VialRate1Star
+	case 2:
+		return vials.VialRate2Star
+	case 3:
+		return vials.VialRate3Star
+	default:
+		return 0
+	}
 }
