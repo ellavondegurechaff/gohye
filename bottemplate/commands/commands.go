@@ -28,4 +28,5 @@ var Commands = []discord.ApplicationCommandCreate{
 	Liquefy,
 	Forge,
 	Work,
+	Shop,
 }

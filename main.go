@@ -18,6 +18,7 @@ import (
 	"github.com/disgoorg/bot-template/bottemplate/economy"
 	"github.com/disgoorg/bot-template/bottemplate/economy/auction"
 	"github.com/disgoorg/bot-template/bottemplate/economy/claim"
+	"github.com/disgoorg/bot-template/bottemplate/economy/effects"
 	"github.com/disgoorg/bot-template/bottemplate/handlers"
 	"github.com/disgoorg/bot-template/bottemplate/logger"
 	"github.com/disgoorg/bot-template/bottemplate/services"
@@ -244,6 +245,19 @@ func main() {
 	// Auction-related commands
 	auctionHandler := commands.NewAuctionHandler(b.AuctionManager, b.Client, b.CardRepository)
 	auctionHandler.Register(h)
+
+	// Initialize effect manager
+	effectManager := effects.NewManager(
+		repositories.NewEffectRepository(b.DB.BunDB()),
+		b.UserRepository,
+	)
+
+	// Shop commands
+	shopHandler := commands.NewShopHandler(b, effectManager)
+	h.Command("/shop", handlers.WrapWithLogging("shop", shopHandler.Handle))
+	h.Component("/shop_category", handlers.WrapComponentWithLogging("shop_category", shopHandler.HandleComponent))
+	h.Component("/shop_item", handlers.WrapComponentWithLogging("shop_item", shopHandler.HandleComponent))
+	h.Component("/shop_buy:", handlers.WrapComponentWithLogging("shop_buy", shopHandler.HandleComponent))
 
 	if err = b.SetupBot(h, bot.NewListenerFunc(b.OnReady), handlers.MessageHandler(b)); err != nil {
 		slog.Error("Failed to setup bot",
