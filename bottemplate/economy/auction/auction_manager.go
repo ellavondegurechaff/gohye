@@ -283,7 +283,22 @@ func (m *Manager) removeCardFromInventory(ctx context.Context, tx bun.Tx, userID
 }
 
 func (m *Manager) PlaceBid(ctx context.Context, auctionID int64, bidderID string, amount int64) error {
-	auction, err := m.repo.GetByID(ctx, auctionID)
+	tx, err := m.repo.DB().BeginTx(ctx, &sql.TxOptions{
+		Isolation: sql.LevelSerializable,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to start transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	// Lock and get auction details
+	auction := new(models.Auction)
+	err = tx.NewSelect().
+		Model(auction).
+		Where("id = ?", auctionID).
+		For("UPDATE").
+		Scan(ctx)
+
 	if err != nil {
 		return fmt.Errorf("failed to get auction: %w", err)
 	}
@@ -296,45 +311,80 @@ func (m *Manager) PlaceBid(ctx context.Context, auctionID int64, bidderID string
 		return fmt.Errorf("seller cannot bid on their own auction")
 	}
 
+	// Check if user has already bid and wasn't outbid
+	if auction.TopBidderID == bidderID {
+		return fmt.Errorf("you are already the highest bidder")
+	}
+
 	minValidBid := auction.CurrentPrice + auction.MinIncrement
 	if amount < minValidBid {
 		return fmt.Errorf("bid must be at least %d (current price + minimum increment)", minValidBid)
 	}
 
-	// Store previous bidder info before updating
-	previousBidderID := auction.TopBidderID
-	previousBidAmount := auction.CurrentPrice
+	// Lock and verify bidder's balance
+	var bidder models.User
+	err = tx.NewSelect().
+		Model(&bidder).
+		Where("id = ?", bidderID).
+		For("UPDATE").
+		Scan(ctx)
 
-	// Start transaction
-	tx, err := m.repo.DB().BeginTx(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("failed to start transaction: %w", err)
+		return fmt.Errorf("failed to get bidder info: %w", err)
 	}
-	defer tx.Rollback()
 
-	// Update auction with new bid and previous bidder info
+	if bidder.Balance < amount {
+		return fmt.Errorf("insufficient balance (%d required, has %d)", amount, bidder.Balance)
+	}
+
+	// Deduct bid amount from bidder immediately
+	_, err = tx.NewUpdate().
+		Model((*models.User)(nil)).
+		Set("balance = balance - ?", amount).
+		Where("id = ?", bidderID).
+		Exec(ctx)
+
+	if err != nil {
+		return fmt.Errorf("failed to deduct bid amount: %w", err)
+	}
+
+	// If there was a previous bidder, refund their bid
+	if auction.TopBidderID != "" {
+		_, err = tx.NewUpdate().
+			Model((*models.User)(nil)).
+			Set("balance = balance + ?", auction.CurrentPrice).
+			Where("id = ?", auction.TopBidderID).
+			Exec(ctx)
+
+		if err != nil {
+			return fmt.Errorf("failed to refund previous bidder: %w", err)
+		}
+	}
+
+	// Update auction with new bid
 	_, err = tx.NewUpdate().
 		Model((*models.Auction)(nil)).
 		Set("top_bidder_id = ?", bidderID).
 		Set("current_price = ?", amount).
-		Set("previous_bidder_id = ?", previousBidderID).
-		Set("previous_bid_amount = ?", previousBidAmount).
+		Set("previous_bidder_id = ?", auction.TopBidderID).
+		Set("previous_bid_amount = ?", auction.CurrentPrice).
 		Set("last_bid_time = ?", time.Now()).
 		Set("bid_count = bid_count + 1").
 		Where("id = ?", auctionID).
 		Exec(ctx)
 
 	if err != nil {
-		return fmt.Errorf("failed to update bid: %w", err)
+		return fmt.Errorf("failed to update auction: %w", err)
 	}
 
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("failed to commit bid: %w", err)
+		return fmt.Errorf("failed to commit bid transaction: %w", err)
 	}
 
+	// Send notifications after successful commit
 	m.notifier.NotifyBid(auctionID, bidderID, amount)
-	if previousBidderID != "" {
-		m.notifier.NotifyOutbid(auctionID, previousBidderID, bidderID, amount)
+	if auction.TopBidderID != "" {
+		m.notifier.NotifyOutbid(auctionID, auction.TopBidderID, bidderID, amount)
 	}
 
 	return nil
@@ -420,6 +470,43 @@ func (m *Manager) completeAuction(ctx context.Context, auctionID int64) error {
 		time.Sleep(time.Duration(math.Pow(2, float64(attempt))) * time.Second)
 	}
 
+	// Add verification after completion
+	if auction.TopBidderID != "" {
+		// Verify card transfer
+		var winnerCard models.UserCard
+		err = tx.NewSelect().
+			Model(&winnerCard).
+			Where("user_id = ? AND card_id = ?", auction.TopBidderID, auction.CardID).
+			Scan(ctx)
+
+		if err != nil || winnerCard.Amount <= 0 {
+			slog.Error("Card transfer verification failed",
+				slog.String("winner_id", auction.TopBidderID),
+				slog.Int64("card_id", auction.CardID))
+			return fmt.Errorf("card transfer verification failed")
+		}
+
+		// Verify balance transfer
+		var seller, winner models.User
+		err = tx.NewSelect().
+			Model(&seller).
+			Where("id = ?", auction.SellerID).
+			Scan(ctx)
+
+		if err != nil {
+			return fmt.Errorf("failed to verify seller balance: %w", err)
+		}
+
+		err = tx.NewSelect().
+			Model(&winner).
+			Where("id = ?", auction.TopBidderID).
+			Scan(ctx)
+
+		if err != nil {
+			return fmt.Errorf("failed to verify winner balance: %w", err)
+		}
+	}
+
 	// Update auction status
 	_, err = tx.NewUpdate().
 		Model((*models.Auction)(nil)).
@@ -489,54 +576,26 @@ func (m *Manager) handleNoBidsCompletion(ctx context.Context, tx bun.Tx, auction
 }
 
 func (m *Manager) handleWinningBidCompletion(ctx context.Context, tx bun.Tx, auction *models.Auction) error {
-	// Transfer card to winner's inventory
-	result, err := tx.NewUpdate().
-		Model((*models.UserCard)(nil)).
-		Set("amount = amount + 1").
-		Where("user_id = ? AND card_id = ?", auction.TopBidderID, auction.CardID).
+	// Transfer card to winner's inventory with UPSERT
+	_, err := tx.NewInsert().
+		Model(&models.UserCard{
+			UserID:    auction.TopBidderID,
+			CardID:    auction.CardID,
+			Amount:    1,
+			Obtained:  time.Now(),
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
+		}).
+		On("CONFLICT (user_id, card_id) DO UPDATE").
+		Set("amount = user_cards.amount + 1").
+		Set("updated_at = ?", time.Now()).
 		Exec(ctx)
 
 	if err != nil {
 		return fmt.Errorf("failed to transfer card to winner: %w", err)
 	}
 
-	rowsAffected, err := result.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("failed to get rows affected: %w", err)
-	}
-
-	if rowsAffected == 0 {
-		// If no rows were affected, the winner doesn't have this card entry yet
-		_, err = tx.NewInsert().
-			Model(&models.UserCard{
-				UserID: auction.TopBidderID,
-				CardID: auction.CardID,
-				Amount: 1,
-			}).
-			Exec(ctx)
-
-		if err != nil {
-			return fmt.Errorf("failed to create new card entry for winner: %w", err)
-		}
-	}
-
-	// Transfer money from winner to seller
-	// Deduct from winner
-	result, err = tx.NewUpdate().
-		Model((*models.User)(nil)).
-		Set("balance = balance - ?", auction.CurrentPrice).
-		Where("id = ? AND balance >= ?", auction.TopBidderID, auction.CurrentPrice).
-		Exec(ctx)
-
-	if err != nil {
-		return fmt.Errorf("failed to deduct money from winner: %w", err)
-	}
-
-	if affected, err := result.RowsAffected(); err != nil || affected == 0 {
-		return fmt.Errorf("winner doesn't have sufficient funds")
-	}
-
-	// Add to seller
+	// Transfer winning bid amount to seller
 	_, err = tx.NewUpdate().
 		Model((*models.User)(nil)).
 		Set("balance = balance + ?", auction.CurrentPrice).
@@ -544,20 +603,7 @@ func (m *Manager) handleWinningBidCompletion(ctx context.Context, tx bun.Tx, auc
 		Exec(ctx)
 
 	if err != nil {
-		return fmt.Errorf("failed to transfer money to seller: %w", err)
-	}
-
-	// If there was a previous bid, refund it
-	if auction.PreviousBidderID != "" && auction.PreviousBidAmount > 0 {
-		_, err = tx.NewUpdate().
-			Model((*models.User)(nil)).
-			Set("balance = balance + ?", auction.PreviousBidAmount).
-			Where("id = ?", auction.PreviousBidderID).
-			Exec(ctx)
-
-		if err != nil {
-			return fmt.Errorf("failed to refund previous bidder: %w", err)
-		}
+		return fmt.Errorf("failed to transfer balance to seller: %w", err)
 	}
 
 	return nil
