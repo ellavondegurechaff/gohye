@@ -1,29 +1,40 @@
 name: Test
 
 on: [ push ]
-
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout code
         uses: actions/checkout@v4
+
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version: 1.22.x
-      - name: Test
+
+      - name: Install dependencies
+        run: go mod tidy
+
+      - name: Run tests
         run: go test -v ./...
+
   lint:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout code
         uses: actions/checkout@v4
+
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version: 1.22.x
-      - name: Lint
+
+      - name: Install dependencies
+        run: go mod tidy
+
+      - name: Run GolangCI-Lint
         uses: golangci/golangci-lint-action@v6
         with:
           version: latest
+          args: run ./...
