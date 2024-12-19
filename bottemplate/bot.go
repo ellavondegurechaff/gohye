@@ -77,7 +77,7 @@ func (b *Bot) OnReady(_ *events.Ready) {
 	defer cancel()
 
 	if err := b.Client.SetPresence(ctx,
-		gateway.WithListeningActivity("rewrite myself :)"),
+		gateway.WithListeningActivity("Give me will power"),
 		gateway.WithOnlineStatus(discord.OnlineStatusOnline)); err != nil {
 		slog.Error("Failed to set presence", slog.Any("error", err))
 	}

@@ -1,29 +1,37 @@
 package auction
 
 import (
+	"context"
 	"fmt"
-	"log"
+	"log/slog"
+	"sync"
 
+	"github.com/disgoorg/bot-template/bottemplate/database/models"
 	"github.com/disgoorg/disgo/bot"
 	"github.com/disgoorg/disgo/discord"
 	"github.com/disgoorg/snowflake/v2"
 )
 
 type AuctionNotifier struct {
-	client    bot.Client
-	channelID snowflake.ID
+	client      bot.Client
+	channelID   snowflake.ID
+	mu          sync.RWMutex
+	initialized bool
 }
 
-func NewAuctionNotifier() *AuctionNotifier {
-	return &AuctionNotifier{}
+func NewAuctionNotifier(client bot.Client) *AuctionNotifier {
+	return &AuctionNotifier{
+		client:      client,
+		channelID:   snowflake.ID(1301232741697851395),
+		initialized: true,
+	}
 }
 
 func (n *AuctionNotifier) SetClient(client bot.Client) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
 	n.client = client
-}
-
-func (n *AuctionNotifier) SetChannelID(channelID snowflake.ID) {
-	n.channelID = channelID
+	n.initialized = true
 }
 
 func (n *AuctionNotifier) NotifyBid(auctionID int64, bidderID string, amount int64) {
@@ -37,26 +45,88 @@ func (n *AuctionNotifier) NotifyOutbid(auctionID int64, outbidUserID string, new
 	n.logNotification(message)
 }
 
-func (n *AuctionNotifier) NotifyEnd(auctionID int64, winnerID string, finalPrice int64) {
-	var message string
-	if winnerID == "" {
-		message = fmt.Sprintf("[END] Auction #%d has ended with no bids", auctionID)
-	} else {
-		message = fmt.Sprintf("[END] Auction #%d has ended! Winner: <@%s> with %d 💰",
-			auctionID, winnerID, finalPrice)
+func (n *AuctionNotifier) NotifyAuctionEnd(ctx context.Context, auction *models.Auction) error {
+	n.mu.RLock()
+	if !n.initialized || n.client == nil {
+		n.mu.RUnlock()
+		return fmt.Errorf("auction notifier not properly initialized: initialized=%v, client=%v",
+			n.initialized, n.client != nil)
 	}
-	n.logNotification(message)
+	client := n.client
+	n.mu.RUnlock()
+
+	// Create DM for seller
+	sellerEmbed := discord.NewEmbedBuilder().
+		SetTitle("🏛️ Auction Completed").
+		SetColor(0x2b2d31)
+
+	if auction.TopBidderID != "" {
+		sellerEmbed.SetDescription(fmt.Sprintf("Your auction `%s` has ended with a winning bid of %d vials!",
+			auction.AuctionID,
+			auction.CurrentPrice))
+	} else {
+		sellerEmbed.SetDescription(fmt.Sprintf("Your auction `%s` has ended with no bids. The card has been returned to your inventory.",
+			auction.AuctionID))
+	}
+
+	// Try to DM the seller
+	dmChannel, err := client.Rest().CreateDMChannel(snowflake.MustParse(auction.SellerID))
+	if err != nil {
+		slog.Error("Failed to create DM channel with seller",
+			slog.String("seller_id", auction.SellerID),
+			slog.String("error", err.Error()))
+		return err
+	}
+
+	_, err = client.Rest().CreateMessage(dmChannel.ID(), discord.MessageCreate{
+		Embeds: []discord.Embed{sellerEmbed.Build()},
+	})
+	if err != nil {
+		slog.Error("Failed to send message to seller",
+			slog.String("seller_id", auction.SellerID),
+			slog.String("error", err.Error()))
+	}
+
+	// If there's a winner, notify them too
+	if auction.TopBidderID != "" {
+		winnerEmbed := discord.NewEmbedBuilder().
+			SetTitle("🏛️ Auction Won!").
+			SetDescription(fmt.Sprintf("You won auction `%s` with a bid of %d vials!",
+				auction.AuctionID,
+				auction.CurrentPrice)).
+			SetColor(0x2b2d31)
+
+		winnerDMChannel, err := client.Rest().CreateDMChannel(snowflake.MustParse(auction.TopBidderID))
+		if err != nil {
+			slog.Error("Failed to create DM channel with winner",
+				slog.String("winner_id", auction.TopBidderID),
+				slog.String("error", err.Error()))
+			return err
+		}
+
+		_, err = client.Rest().CreateMessage(winnerDMChannel.ID(), discord.MessageCreate{
+			Embeds: []discord.Embed{winnerEmbed.Build()},
+		})
+		if err != nil {
+			slog.Error("Failed to send message to winner",
+				slog.String("winner_id", auction.TopBidderID),
+				slog.String("error", err.Error()))
+		}
+	}
+
+	return nil
 }
 
 func (n *AuctionNotifier) logNotification(message string) {
-	log.Printf("[AUCTION] %s", message)
+	slog.Info(message)
 
-	if n.client != nil && n.channelID != 1301232741697851395 {
+	if n.client != nil {
 		_, err := n.client.Rest().CreateMessage(n.channelID, discord.NewMessageCreateBuilder().
 			SetContent(message).
 			Build())
 		if err != nil {
-			log.Printf("[AUCTION] Failed to send to Discord: %v", err)
+			slog.Error("Failed to send to Discord",
+				slog.String("error", err.Error()))
 		}
 	}
 }

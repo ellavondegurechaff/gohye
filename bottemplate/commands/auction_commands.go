@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/disgoorg/bot-template/bottemplate/economy/auction"
-	"github.com/disgoorg/bot-template/bottemplate/utils"
 	"github.com/disgoorg/bot-template/internal/domain/cards"
 	"github.com/disgoorg/bot-template/internal/gateways/database/models"
 	"github.com/disgoorg/disgo/bot"
@@ -37,10 +36,10 @@ var AuctionCommand = discord.SlashCommandCreate{
 				},
 				discord.ApplicationCommandOptionInt{
 					Name:        "duration",
-					Description: "Auction duration in hours (1-24)",
+					Description: "Auction duration in seconds (min 10 seconds, max 24 hours)",
 					Required:    true,
-					MinValue:    intPtr(1),
-					MaxValue:    intPtr(24),
+					MinValue:    intPtr(10),
+					MaxValue:    intPtr(86400),
 				},
 			},
 		},
@@ -90,24 +89,81 @@ func (h *AuctionHandler) Register(r handler.Router) {
 }
 
 func (h *AuctionHandler) HandleCreate(event *handler.CommandEvent) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
 	data := event.SlashCommandInteractionData()
 	cardID := int64(data.Int("card_id"))
 	startPrice := int64(data.Int("start_price"))
-	duration := time.Duration(data.Int("duration")) * time.Hour
+	duration := time.Duration(data.Int("duration")) * time.Second
 
-	ctx := context.Background()
-	auction, err := h.manager.CreateAuction(ctx, cardID, event.User().ID.String(), startPrice, duration)
-	if err != nil {
-		return event.CreateMessage(discord.MessageCreate{
-			Content: fmt.Sprintf("Failed to create auction: %s", err),
-			Flags:   discord.MessageFlagEphemeral,
-		})
+	if err := event.DeferCreateMessage(false); err != nil {
+		return fmt.Errorf("failed to defer message: %w", err)
 	}
 
-	return event.CreateMessage(discord.MessageCreate{
-		Content: fmt.Sprintf("Successfully created auction #%d", auction.ID),
-		Flags:   discord.MessageFlagEphemeral,
+	// Get card details first for the error message
+	card, err := h.cardRepo.GetByID(ctx, cardID)
+	if err != nil {
+		_, err = event.CreateFollowupMessage(discord.MessageCreate{
+			Embeds: []discord.Embed{
+				discord.NewEmbedBuilder().
+					SetTitle("❌ Error").
+					SetDescription("Card not found in the database").
+					SetColor(0xFF0000).
+					Build(),
+			},
+			Flags: discord.MessageFlagEphemeral,
+		})
+		return err
+	}
+
+	// Check card ownership
+	userCard, err := h.manager.UserCardRepo.GetByUserIDAndCardID(ctx, event.User().ID.String(), cardID)
+	if err != nil || userCard == nil || userCard.Amount <= 0 {
+		_, err = event.CreateFollowupMessage(discord.MessageCreate{
+			Embeds: []discord.Embed{
+				discord.NewEmbedBuilder().
+					SetTitle("❌ Card Not Owned").
+					SetDescription(fmt.Sprintf("You don't own the card: **%s** (ID: %d)\nTry checking your inventory to see which cards you own",
+						card.Name, cardID)).
+					SetColor(0xFF0000).
+					Build(),
+			},
+			Flags: discord.MessageFlagEphemeral,
+		})
+		return err
+	}
+
+	// Create auction
+	auction, err := h.manager.CreateAuction(ctx, cardID, event.User().ID.String(), startPrice, duration)
+	if err != nil {
+		_, err = event.CreateFollowupMessage(discord.MessageCreate{
+			Embeds: []discord.Embed{
+				discord.NewEmbedBuilder().
+					SetTitle("❌ Auction Creation Failed").
+					SetDescription(fmt.Sprintf("Failed to create auction: %s", err)).
+					SetColor(0xFF0000).
+					Build(),
+			},
+			Flags: discord.MessageFlagEphemeral,
+		})
+		return err
+	}
+
+	// Success message
+	_, err = event.CreateFollowupMessage(discord.MessageCreate{
+		Embeds: []discord.Embed{
+			discord.NewEmbedBuilder().
+				SetTitle("✅ Auction Created").
+				SetDescription(fmt.Sprintf("Successfully created auction #%s for **%s**", auction.AuctionID, card.Name)).
+				SetColor(0x00FF00).
+				AddField("Start Price", fmt.Sprintf("%d 💰", startPrice), true).
+				AddField("Duration", fmt.Sprintf("%d hours", int(duration.Hours())), true).
+				Build(),
+		},
+		Flags: discord.MessageFlagEphemeral,
 	})
+	return err
 }
 
 func (h *AuctionHandler) HandleBid(event *handler.CommandEvent) error {
@@ -193,46 +249,36 @@ func (h *AuctionHandler) HandleList(event *handler.CommandEvent) error {
 		}
 
 		timeLeft := time.Until(auction.EndTime).Round(time.Second)
-		hours := int(timeLeft.Hours())
-		minutes := int(timeLeft.Minutes()) % 60
+		timeStr := formatDuration(timeLeft)
 
-		// Format time remaining
-		var timeStr string
-		if hours > 0 {
-			timeStr = fmt.Sprintf("%dh %dm", hours, minutes)
-		} else {
-			timeStr = fmt.Sprintf("%dm", minutes)
+		// Format card name by capitalizing each word
+		words := strings.Split(strings.ReplaceAll(card.Name, "_", " "), " ")
+		for i, word := range words {
+			words[i] = strings.Title(strings.ToLower(word))
 		}
+		cardName := strings.Join(words, " ")
 
-		// Format auction entry using card formatter
-		formattedName := utils.FormatCardName(card.Name)
-		formattedCollection := utils.FormatCollectionName(card.ColID)
-		stars := utils.GetStarsDisplay(card.Level)
-
-		description.WriteString(fmt.Sprintf("### %s\n", auction.AuctionID))
-		description.WriteString(fmt.Sprintf("> \x1b[32m%s\x1b[0m [%s] %s\n",
-			formattedName,
-			stars,
-			formattedCollection))
-		description.WriteString(fmt.Sprintf("> 💰 Current Bid: %d\n", auction.CurrentPrice))
-		description.WriteString(fmt.Sprintf("> ⏳ Ends in: %s\n", timeStr))
-		description.WriteString("\n")
+		// Format auction entry with enhanced colors and new layout
+		description.WriteString(fmt.Sprintf("\u001b[36m[%s]\u001b[0m \u001b[33m%s\u001b[0m \u001b[32m[%d]\u001b[0m %s \u001b[97m%s\u001b[0m \u001b[94m[%s]\u001b[0m\n",
+			timeStr,                         // Cyan for time
+			auction.AuctionID,               // Gold for auction ID
+			auction.CurrentPrice,            // Green for price
+			strings.Repeat("★", card.Level), // Stars (no color)
+			cardName,                        // Bright white for name
+			strings.ToUpper(card.ColID)))    // Light blue for collection
 	}
-
-	description.WriteString("-------------------\n")
 	description.WriteString("```")
 
 	embed := discord.NewEmbedBuilder().
-		SetTitle("Auction House").
+		SetTitle("🏛️ Auction House").
 		SetDescription(description.String()).
 		SetColor(0x2b2d31).
-		SetFooter(fmt.Sprintf("Total Active Auctions: %d", len(auctions)), "")
+		SetFooter(fmt.Sprintf("Page 1/%d", (len(auctions)+9)/10), "")
 
 	components := []discord.ContainerComponent{
 		discord.NewActionRow(
 			discord.NewPrimaryButton("◀ Previous", "auction:prev_page"),
 			discord.NewPrimaryButton("Next ▶", "auction:next_page"),
-			discord.NewSecondaryButton("🔄 Refresh", "auction:refresh"),
 		),
 	}
 
