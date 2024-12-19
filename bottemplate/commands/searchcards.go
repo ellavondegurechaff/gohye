@@ -10,9 +10,8 @@ import (
 	"time"
 
 	"github.com/disgoorg/bot-template/bottemplate"
-	"github.com/disgoorg/bot-template/bottemplate/database/models"
-	"github.com/disgoorg/bot-template/bottemplate/database/repositories"
 	"github.com/disgoorg/bot-template/bottemplate/utils"
+	"github.com/disgoorg/bot-template/internal/gateways/database/models"
 	"github.com/disgoorg/disgo/discord"
 	"github.com/disgoorg/disgo/handler"
 	"github.com/disgoorg/paginator"
@@ -89,7 +88,7 @@ func SearchCardsHandler(b *bottemplate.Bot) handler.CommandHandler {
 		}
 
 		// Convert to repository filters
-		repoFilters := repositories.SearchFilters{
+		repoFilters := models.SearchFilters{
 			Name:       filters.Name,
 			Level:      filters.Level,
 			Collection: filters.Collection,
@@ -151,7 +150,7 @@ func SearchCardsHandler(b *bottemplate.Bot) handler.CommandHandler {
 	}
 }
 
-func generateCacheKey(filters repositories.SearchFilters) string {
+func generateCacheKey(filters models.SearchFilters) string {
 	return fmt.Sprintf("%s:%d:%d:%s:%s:%v",
 		filters.Name,
 		filters.ID,
@@ -162,7 +161,7 @@ func generateCacheKey(filters repositories.SearchFilters) string {
 	)
 }
 
-func createPaginator(b *bottemplate.Bot, e *handler.CommandEvent, initialCards []*models.Card, totalCount int, filters repositories.SearchFilters) error {
+func createPaginator(b *bottemplate.Bot, e *handler.CommandEvent, initialCards []*models.Card, totalCount int, filters models.SearchFilters) error {
 	// Ensure totalCount is at least the length of initial cards
 	if totalCount < len(initialCards) {
 		totalCount = len(initialCards)
@@ -216,7 +215,7 @@ func createPaginator(b *bottemplate.Bot, e *handler.CommandEvent, initialCards [
 	}, false)
 }
 
-func buildSearchDescription(cards []*models.Card, filters repositories.SearchFilters, currentPage, totalCount, totalPages int) string {
+func buildSearchDescription(cards []*models.Card, filters models.SearchFilters, currentPage, totalCount, totalPages int) string {
 	var description strings.Builder
 	description.WriteString("```md\n")
 
@@ -267,7 +266,7 @@ func buildSearchDescription(cards []*models.Card, filters repositories.SearchFil
 	return description.String()
 }
 
-func hasActiveFilters(filters repositories.SearchFilters) bool {
+func hasActiveFilters(filters models.SearchFilters) bool {
 	return filters.Name != "" ||
 		filters.ID != 0 ||
 		filters.Level != 0 ||

@@ -9,7 +9,7 @@ import (
 
 	"log/slog"
 
-	"github.com/disgoorg/bot-template/bottemplate/database/models"
+	"github.com/disgoorg/bot-template/internal/gateways/database/models"
 	"github.com/uptrace/bun"
 
 	"github.com/jackc/pgx/v5"

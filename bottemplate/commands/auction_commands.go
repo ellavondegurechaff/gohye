@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/disgoorg/bot-template/bottemplate/database/models"
-	"github.com/disgoorg/bot-template/bottemplate/database/repositories"
 	"github.com/disgoorg/bot-template/bottemplate/economy/auction"
+	"github.com/disgoorg/bot-template/internal/domain/cards"
+	"github.com/disgoorg/bot-template/internal/gateways/database/models"
 	"github.com/disgoorg/disgo/bot"
 	"github.com/disgoorg/disgo/discord"
 	"github.com/disgoorg/disgo/handler"
@@ -69,10 +69,10 @@ var AuctionCommand = discord.SlashCommandCreate{
 type AuctionHandler struct {
 	manager  *auction.Manager
 	client   bot.Client
-	cardRepo repositories.CardRepository
+	cardRepo cards.Repository
 }
 
-func NewAuctionHandler(manager *auction.Manager, client bot.Client, cardRepo repositories.CardRepository) *AuctionHandler {
+func NewAuctionHandler(manager *auction.Manager, client bot.Client, cardRepo cards.Repository) *AuctionHandler {
 	return &AuctionHandler{
 		manager:  manager,
 		client:   client,

@@ -10,7 +10,8 @@ import (
 
 	"github.com/disgoorg/bot-template/bottemplate/services"
 
-	"github.com/disgoorg/bot-template/bottemplate/database/models"
+	"github.com/disgoorg/bot-template/internal/domain/cards"
+	"github.com/disgoorg/bot-template/internal/gateways/database/models"
 	"github.com/uptrace/bun"
 )
 
@@ -20,35 +21,15 @@ const (
 	maxBatchSize    = 1000
 )
 
-type CardRepository interface {
-	Create(ctx context.Context, card *models.Card) error
-	GetByID(ctx context.Context, id int64) (*models.Card, error)
-	GetByName(ctx context.Context, name string) ([]*models.Card, error)
-	GetAll(ctx context.Context) ([]*models.Card, error)
-	GetByCollectionID(ctx context.Context, colID string) ([]*models.Card, error)
-	Update(ctx context.Context, card *models.Card) error
-	Delete(ctx context.Context, id int64) error
-	GetByTag(ctx context.Context, tag string) ([]*models.Card, error)
-	BulkCreate(ctx context.Context, cards []*models.Card) (int, error)
-	GetByLevel(ctx context.Context, level int) ([]*models.Card, error)
-	GetAnimated(ctx context.Context) ([]*models.Card, error)
-	SafeDelete(ctx context.Context, cardID int64) (*models.DeletionReport, error)
-	Search(ctx context.Context, filters SearchFilters, offset, limit int) ([]*models.Card, int, error)
-	UpdateUserCard(ctx context.Context, userCard *models.UserCard) error
-	DeleteUserCard(ctx context.Context, id int64) error
-	GetUserCard(ctx context.Context, userID string, cardID int64) (*models.UserCard, error)
-	GetAllByUserID(ctx context.Context, userID string) ([]*models.UserCard, error)
-	GetByIDs(ctx context.Context, ids []int64) ([]*models.Card, error)
-	GetByQuery(ctx context.Context, query string) (*models.Card, error)
-}
-
 type cardRepository struct {
 	db            *bun.DB
 	spacesService *services.SpacesService
 	cache         *sync.Map
 }
 
-func NewCardRepository(db *bun.DB, spacesService *services.SpacesService) CardRepository {
+var _ cards.Repository = &cardRepository{}
+
+func NewCardRepository(db *bun.DB, spacesService *services.SpacesService) *cardRepository {
 	return &cardRepository{
 		db:            db,
 		spacesService: spacesService,
@@ -364,7 +345,7 @@ func (r *cardRepository) SafeDelete(ctx context.Context, cardID int64) (*models.
 }
 
 // First, let's improve the cache key generation
-func generateCacheKey(filters SearchFilters, offset, limit int) string {
+func generateCacheKey(filters models.SearchFilters, offset, limit int) string {
 	return fmt.Sprintf("search:name=%s:id=%d:level=%d:col=%s:type=%s:animated=%v:offset=%d:limit=%d",
 		filters.Name,
 		filters.ID,
@@ -377,7 +358,7 @@ func generateCacheKey(filters SearchFilters, offset, limit int) string {
 	)
 }
 
-func (r *cardRepository) Search(ctx context.Context, filters SearchFilters, offset, limit int) ([]*models.Card, int, error) {
+func (r *cardRepository) Search(ctx context.Context, filters models.SearchFilters, offset, limit int) ([]*models.Card, int, error) {
 	fmt.Printf("\n=== Search Query Debug ===\n")
 	fmt.Printf("Filters: %+v\n", filters)
 	fmt.Printf("Offset: %d, Limit: %d\n", offset, limit)

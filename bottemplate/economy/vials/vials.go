@@ -10,9 +10,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/disgoorg/bot-template/bottemplate/database"
-	"github.com/disgoorg/bot-template/bottemplate/database/models"
 	"github.com/disgoorg/bot-template/bottemplate/economy"
+	"github.com/disgoorg/bot-template/internal/gateways/database"
+	"github.com/disgoorg/bot-template/internal/gateways/database/models"
 )
 
 const (

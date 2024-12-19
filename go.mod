@@ -13,7 +13,14 @@ require (
 
 require (
 	github.com/hashicorp/golang-lru v1.0.2
+	github.com/spf13/cobra v1.8.1
 	go.mongodb.org/mongo-driver v1.17.1
+	go.uber.org/mock v0.5.0
+)
+
+require (
+	github.com/inconshreveable/mousetrap v1.1.0 // indirect
+	github.com/spf13/pflag v1.0.5 // indirect
 )
 
 require (

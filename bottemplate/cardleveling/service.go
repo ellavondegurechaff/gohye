@@ -7,18 +7,18 @@ import (
 	"sync"
 	"time"
 
-	"github.com/disgoorg/bot-template/bottemplate/database/models"
-	"github.com/disgoorg/bot-template/bottemplate/database/repositories"
+	"github.com/disgoorg/bot-template/internal/domain/cards"
+	"github.com/disgoorg/bot-template/internal/gateways/database/models"
 )
 
 type Service struct {
 	config     *Config
 	calculator *Calculator
-	cardRepo   repositories.CardRepository
+	cardRepo   cards.Repository
 	cache      *sync.Map
 }
 
-func NewService(config *Config, cardRepo repositories.CardRepository) *Service {
+func NewService(config *Config, cardRepo cards.Repository) *Service {
 	return &Service{
 		config:     config,
 		calculator: NewCalculator(config),

@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/disgoorg/bot-template/bottemplate/database/models"
-	"github.com/disgoorg/bot-template/bottemplate/database/repositories"
+	"github.com/disgoorg/bot-template/internal/gateways/database/models"
+	"github.com/disgoorg/bot-template/internal/gateways/database/repositories"
 )
 
 // Configuration variables

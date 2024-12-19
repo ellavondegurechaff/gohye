@@ -10,9 +10,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/disgoorg/bot-template/bottemplate/database"
-	"github.com/disgoorg/bot-template/bottemplate/database/models"
-	"github.com/disgoorg/bot-template/bottemplate/database/repositories"
+	"github.com/disgoorg/bot-template/internal/gateways/database"
+	"github.com/disgoorg/bot-template/internal/gateways/database/models"
+	"github.com/disgoorg/bot-template/internal/gateways/database/repositories"
 	lru "github.com/hashicorp/golang-lru"
 	"github.com/uptrace/bun"
 	"golang.org/x/sync/errgroup"
