@@ -35,6 +35,9 @@ type EffectRepository interface {
 	// Recipe methods
 	StoreUserRecipe(ctx context.Context, userID string, itemID string, cardIDs []int64) error
 	GetUserRecipe(ctx context.Context, userID string, itemID string) (*models.UserRecipe, error)
+
+	// Card methods
+	GetCard(ctx context.Context, cardID int64) (*models.Card, error)
 }
 
 type effectRepository struct {
@@ -256,4 +259,16 @@ func (r *effectRepository) GetUserRecipe(ctx context.Context, userID string, ite
 		return nil, err
 	}
 	return recipe, nil
+}
+
+func (r *effectRepository) GetCard(ctx context.Context, cardID int64) (*models.Card, error) {
+	var card models.Card
+	err := r.db.NewSelect().
+		Model(&card).
+		Where("id = ?", cardID).
+		Scan(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get card: %w", err)
+	}
+	return &card, nil
 }

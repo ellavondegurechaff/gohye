@@ -157,62 +157,56 @@ func (h *InventoryHandler) handleItemSelect(event *handler.ComponentEvent) error
 		})
 	}
 
-	var recipeInfo strings.Builder
+	embed := discord.NewEmbedBuilder().
+		SetTitle(fmt.Sprintf("%s %s", getTypeEmoji(item.Type), item.Name)).
+		SetColor(getColorByType(item.Type))
+
+	// Build description sections
+	var description strings.Builder
+	description.WriteString("```ansi\n")
+	description.WriteString("\u001b[1;33m📋 Item Details\u001b[0m\n")
+	description.WriteString(fmt.Sprintf("• Description: %s\n", item.Description))
+	description.WriteString(fmt.Sprintf("• Duration: %d hours\n\n", item.Duration))
+
 	if len(item.Recipe) > 0 {
-		log.Printf("[DEBUG] Processing recipe requirements for item %s", itemID)
+		description.WriteString("\u001b[1;36m🔮 Recipe Requirements\u001b[0m\n")
+		cards, err := h.effectManager.GetUserRecipeStatus(ctx, userID, itemID)
+		if err != nil {
+			log.Printf("[ERROR] Failed to get recipe status: %v", err)
+			description.WriteString("Failed to load recipe requirements\n")
+		} else {
+			for i, card := range cards {
+				if card == nil {
+					continue
+				}
 
-		for i, stars := range item.Recipe {
-			log.Printf("[DEBUG] Processing recipe requirement %d/%d - %d stars", i+1, len(item.Recipe), stars)
+				userCard, err := h.bot.UserCardRepository.GetByUserIDAndCardID(ctx, userID, card.ID)
+				hasCard := err == nil && userCard != nil && userCard.Amount > 0
 
-			card, err := h.effectManager.GetRandomCardForRecipe(ctx, userID, stars)
-			if err != nil {
-				log.Printf("[ERROR] Failed to get recipe card: %v", err)
-				recipeInfo.WriteString(fmt.Sprintf("* ❌ %s-star card (%s)\n",
-					strings.Repeat("⭐", int(stars)),
-					err.Error()))
-				continue
-			}
+				// Format card name properly
+				cardName := strings.Title(strings.ReplaceAll(card.Name, "_", " "))
 
-			if card == nil {
-				log.Printf("[DEBUG] No card returned for %d stars", stars)
-				recipeInfo.WriteString(fmt.Sprintf("* ❌ %s-star card (No available cards)\n",
-					strings.Repeat("⭐", int(stars))))
-				continue
-			}
-
-			userCard, err := h.bot.UserCardRepository.GetByUserIDAndCardID(ctx, userID, card.ID)
-			if err != nil {
-				log.Printf("[ERROR] Failed to check card ownership: %v", err)
-			}
-
-			if err != nil || userCard == nil {
-				log.Printf("[DEBUG] User %s does not own card %d (%s)", userID, card.ID, card.Name)
-				recipeInfo.WriteString(fmt.Sprintf("* ❌ %s-star %s (Need to collect)\n",
-					strings.Repeat("⭐", int(stars)), card.Name))
-			} else {
-				log.Printf("[DEBUG] User %s owns card %d (%s)", userID, card.ID, card.Name)
-				recipeInfo.WriteString(fmt.Sprintf("* ✅ %s-star %s (Have)\n",
-					strings.Repeat("⭐", int(stars)), card.Name))
+				if hasCard {
+					description.WriteString(fmt.Sprintf("\u001b[1;32m✓ %s ⭐%s\u001b[0m\n",
+						cardName, strings.Repeat("", int(item.Recipe[i]))))
+				} else {
+					description.WriteString(fmt.Sprintf("\u001b[1;31m✗ %s ⭐%s\u001b[0m\n",
+						cardName, strings.Repeat("", int(item.Recipe[i]))))
+				}
 			}
 		}
 	}
+	description.WriteString("```")
 
-	embed := discord.NewEmbedBuilder().
-		SetTitle(fmt.Sprintf("%s %s", getTypeEmoji(item.Type), item.Name)).
-		SetColor(getColorByType(item.Type)).
-		SetDescription(fmt.Sprintf("```md\n## Item Details\n* Description: %s\n* Duration: %d hours\n\n## Recipe Requirements\n%s```",
-			item.Description,
-			item.Duration,
-			recipeInfo.String())).
-		SetFooter("💡 Tip: Use /shop to purchase more items", "").
-		Build()
+	embed.SetDescription(description.String())
+	embed.SetFooter("💡 Use /shop to purchase more items", "")
 
 	actionRow := discord.NewActionRow(
 		discord.NewSecondaryButton("Back to Inventory ↩️", "/inventory_category"),
 	)
 
 	return event.UpdateMessage(discord.MessageUpdate{
-		Embeds:     &[]discord.Embed{embed},
+		Embeds:     &[]discord.Embed{embed.Build()},
 		Components: &[]discord.ContainerComponent{actionRow},
 	})
 }

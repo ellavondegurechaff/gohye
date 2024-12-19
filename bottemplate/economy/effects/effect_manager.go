@@ -148,13 +148,26 @@ func (m *Manager) ListUserEffects(ctx context.Context, userID string) ([]*models
 	return items, nil
 }
 
-func (m *Manager) GetUserRecipeStatus(ctx context.Context, userID string, recipe []int64) ([]*models.Card, error) {
-	cards := make([]*models.Card, len(recipe))
-
-	for i, stars := range recipe {
-		card, err := m.repo.GetRandomCardForRecipe(ctx, userID, stars)
+func (m *Manager) GetUserRecipeStatus(ctx context.Context, userID string, effectID string) ([]*models.Card, error) {
+	// Get stored recipe
+	recipe, err := m.repo.GetUserRecipe(ctx, userID, effectID)
+	if err != nil {
+		// If no stored recipe exists, create one
+		if err := m.StoreRecipeForUser(ctx, userID, effectID); err != nil {
+			return nil, fmt.Errorf("failed to store recipe: %w", err)
+		}
+		recipe, err = m.repo.GetUserRecipe(ctx, userID, effectID)
 		if err != nil {
-			cards[i] = nil
+			return nil, fmt.Errorf("failed to get stored recipe: %w", err)
+		}
+	}
+
+	// Get card details for each stored card ID
+	cards := make([]*models.Card, len(recipe.CardIDs))
+	for i, cardID := range recipe.CardIDs {
+		card, err := m.repo.GetCard(ctx, cardID)
+		if err != nil {
+			log.Printf("[ERROR] Failed to get card %d: %v", cardID, err)
 			continue
 		}
 		cards[i] = card
@@ -177,4 +190,33 @@ func (m *Manager) GetRandomCardForRecipe(ctx context.Context, userID string, sta
 	}
 
 	return card, nil
+}
+
+// StoreRecipeForUser stores the specific recipe cards for a user's effect item
+func (m *Manager) StoreRecipeForUser(ctx context.Context, userID string, effectID string) error {
+	// Get effect item
+	item, err := m.repo.GetEffectItem(ctx, effectID)
+	if err != nil {
+		return fmt.Errorf("effect not found: %w", err)
+	}
+
+	// Get recipe cards for each star requirement
+	var cardIDs []int64
+	for _, stars := range item.Recipe {
+		card, err := m.repo.GetRandomCardForRecipe(ctx, userID, stars)
+		if err != nil {
+			return fmt.Errorf("failed to get recipe card: %w", err)
+		}
+		if card == nil {
+			return fmt.Errorf("no available cards found for %d stars", stars)
+		}
+		cardIDs = append(cardIDs, card.ID)
+	}
+
+	// Store the recipe
+	if err := m.repo.StoreUserRecipe(ctx, userID, effectID, cardIDs); err != nil {
+		return fmt.Errorf("failed to store recipe: %w", err)
+	}
+
+	return nil
 }
