@@ -3,8 +3,8 @@ package cmd
 import (
 	"log/slog"
 
-	"github.com/disgoorg/bot-template/bottemplate/database"
 	"github.com/disgoorg/bot-template/bottemplate/migration"
+	"github.com/disgoorg/bot-template/internal/gateways/database"
 	"github.com/spf13/cobra"
 )
 

@@ -16,8 +16,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
-	"github.com/disgoorg/bot-template/bottemplate/database/models"
 	"github.com/disgoorg/bot-template/bottemplate/utils"
+	"github.com/disgoorg/bot-template/internal/gateways/database/models"
 )
 
 type PathType string

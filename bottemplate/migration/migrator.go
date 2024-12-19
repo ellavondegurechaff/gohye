@@ -10,7 +10,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/disgoorg/bot-template/bottemplate/database/models"
+	"github.com/disgoorg/bot-template/internal/gateways/database/models"
 	"github.com/uptrace/bun"
 	"go.mongodb.org/mongo-driver/bson"
 )

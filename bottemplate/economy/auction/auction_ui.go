@@ -5,19 +5,19 @@ import (
 	"strings"
 	"time"
 
-	"github.com/disgoorg/bot-template/bottemplate/database/models"
-	"github.com/disgoorg/bot-template/bottemplate/database/repositories"
+	"github.com/disgoorg/bot-template/internal/domain/cards"
+	"github.com/disgoorg/bot-template/internal/gateways/database/models"
 	"github.com/disgoorg/disgo/bot"
 	"github.com/disgoorg/disgo/discord"
 )
 
 type AuctionUI struct {
 	client         bot.Client
-	cardRepository repositories.CardRepository
+	cardRepository cards.Repository
 	manager        *Manager
 }
 
-func NewAuctionUI(client bot.Client, cardRepo repositories.CardRepository, manager *Manager) *AuctionUI {
+func NewAuctionUI(client bot.Client, cardRepo cards.Repository, manager *Manager) *AuctionUI {
 	return &AuctionUI{
 		client:         client,
 		cardRepository: cardRepo,

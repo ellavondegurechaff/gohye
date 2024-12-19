@@ -6,6 +6,15 @@ import (
 	"github.com/uptrace/bun"
 )
 
+type SearchFilters struct {
+	Name       string
+	ID         int64
+	Level      int
+	Collection string
+	Type       string
+	Animated   bool
+}
+
 type Card struct {
 	bun.BaseModel `bun:"table:cards,alias:c"`
 

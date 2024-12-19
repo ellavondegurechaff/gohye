@@ -5,12 +5,13 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/disgoorg/bot-template/bottemplate/database"
-	"github.com/disgoorg/bot-template/bottemplate/database/repositories"
 	"github.com/disgoorg/bot-template/bottemplate/economy"
 	"github.com/disgoorg/bot-template/bottemplate/economy/auction"
 	"github.com/disgoorg/bot-template/bottemplate/economy/claim"
 	"github.com/disgoorg/bot-template/bottemplate/services"
+	"github.com/disgoorg/bot-template/internal/domain/cards"
+	"github.com/disgoorg/bot-template/internal/gateways/database"
+	"github.com/disgoorg/bot-template/internal/gateways/database/repositories"
 	"github.com/disgoorg/disgo"
 	"github.com/disgoorg/disgo/bot"
 	"github.com/disgoorg/disgo/cache"
@@ -38,7 +39,8 @@ type Bot struct {
 	Commit                 string
 	DB                     *database.DB
 	UserRepository         repositories.UserRepository
-	CardRepository         repositories.CardRepository
+	CardRepository         cards.Repository
+	CardCommands           cards.Commands
 	CollectionRepository   repositories.CollectionRepository
 	UserCardRepository     repositories.UserCardRepository
 	SpacesService          *services.SpacesService

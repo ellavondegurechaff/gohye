@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/disgoorg/bot-template/bottemplate"
-	"github.com/disgoorg/bot-template/bottemplate/database/models"
-	"github.com/disgoorg/bot-template/bottemplate/database/repositories"
+	"github.com/disgoorg/bot-template/internal/domain/cards"
+	"github.com/disgoorg/bot-template/internal/gateways/database/models"
 	"github.com/disgoorg/disgo/discord"
 	"github.com/disgoorg/disgo/handler"
 
@@ -38,11 +38,11 @@ var LevelUp = &discord.SlashCommandCreate{
 
 type LevelUpCommand struct {
 	levelingService *cardleveling.Service
-	cardRepo        repositories.CardRepository
+	cardRepo        cards.Repository
 	bot             *bottemplate.Bot
 }
 
-func NewLevelUpCommand(levelingService *cardleveling.Service, cardRepo repositories.CardRepository, bot *bottemplate.Bot) *LevelUpCommand {
+func NewLevelUpCommand(levelingService *cardleveling.Service, cardRepo cards.Repository, bot *bottemplate.Bot) *LevelUpCommand {
 	return &LevelUpCommand{
 		levelingService: levelingService,
 		cardRepo:        cardRepo,

@@ -13,8 +13,6 @@ import (
 	"github.com/disgoorg/bot-template/bottemplate"
 	"github.com/disgoorg/bot-template/bottemplate/commands"
 	"github.com/disgoorg/bot-template/bottemplate/components"
-	"github.com/disgoorg/bot-template/bottemplate/database"
-	"github.com/disgoorg/bot-template/bottemplate/database/repositories"
 	"github.com/disgoorg/bot-template/bottemplate/economy"
 	"github.com/disgoorg/bot-template/bottemplate/economy/auction"
 	"github.com/disgoorg/bot-template/bottemplate/economy/claim"
@@ -22,6 +20,9 @@ import (
 	"github.com/disgoorg/bot-template/bottemplate/handlers"
 	"github.com/disgoorg/bot-template/bottemplate/logger"
 	"github.com/disgoorg/bot-template/bottemplate/services"
+	"github.com/disgoorg/bot-template/internal/domain/cards"
+	"github.com/disgoorg/bot-template/internal/gateways/database"
+	"github.com/disgoorg/bot-template/internal/gateways/database/repositories"
 	"github.com/disgoorg/disgo/bot"
 	"github.com/disgoorg/disgo/handler"
 	"github.com/spf13/cobra"
@@ -79,6 +80,7 @@ var serverCmd = &cobra.Command{
 				slog.Duration("attempted_for", time.Since(dbStartTime)))
 			return err
 		}
+		defer db.Close()
 
 		slog.Info("Database connected successfully",
 			slog.String("database", cfg.DB.Database),
@@ -93,8 +95,6 @@ var serverCmd = &cobra.Command{
 			return err
 		}
 		slog.Info("Database schema initialized successfully")
-
-		defer db.Close()
 
 		b := bottemplate.New(*cfg, version, commit)
 		b.DB = db
@@ -122,6 +122,8 @@ var serverCmd = &cobra.Command{
 		b.CollectionRepository = repositories.NewCollectionRepository(b.DB.BunDB())
 		b.EconomyStatsRepository = repositories.NewEconomyStatsRepository(b.DB.BunDB())
 		b.WishlistRepository = repositories.NewWishlistRepository(b.DB.BunDB())
+
+		b.CardCommands = cards.NewCommands(cards.NewService(b.CardRepository), b.Paginator)
 
 		priceCalc := economy.NewPriceCalculator(
 			db,
@@ -214,7 +216,7 @@ var serverCmd = &cobra.Command{
 		// Card-related commands
 		h.Command("/summon", handlers.WrapWithLogging("summon", commands.SummonHandler(b)))
 		h.Command("/searchcards", handlers.WrapWithLogging("searchcards", commands.SearchCardsHandler(b)))
-		h.Command("/cards", handlers.WrapWithLogging("cards", commands.CardsHandler(b)))
+		// h.Command("/cards", handlers.WrapWithLogging("cards", commands.CardsHandler(b)))
 		h.Command("/price-stats", handlers.WrapWithLogging("price-stats", commands.PriceStatsHandler(b)))
 		h.Component("/details/", handlers.WrapComponentWithLogging("price-details", commands.PriceDetailsHandler(b)))
 		h.Component("/claim/", handlers.WrapComponentWithLogging("claim", commands.ClaimButtonHandler(b)))
