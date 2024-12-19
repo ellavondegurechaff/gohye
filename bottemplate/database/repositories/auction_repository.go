@@ -27,6 +27,8 @@ type AuctionRepository interface {
 	UpdateAuctionMessage(ctx context.Context, auctionID int64, messageID string) error
 	CompleteAuctionWithTransfer(ctx context.Context, auctionID int64) error
 	GetActiveAuctionByCardAndSeller(ctx context.Context, cardID int64, sellerID string) (*models.Auction, error)
+	CompleteAuctionWithTransferAndGet(ctx context.Context, auctionID int64) (*models.Auction, error)
+	handleWinningBidTransfer(ctx context.Context, tx bun.Tx, auction *models.Auction) error
 }
 
 type auctionRepository struct {
@@ -252,7 +254,9 @@ func (r *auctionRepository) CancelAuction(ctx context.Context, auctionID int64) 
 }
 
 func (r *auctionRepository) GetExpiredAuctions(ctx context.Context) ([]*models.Auction, error) {
-	tx, err := r.db.BeginTx(ctx, nil)
+	tx, err := r.db.BeginTx(ctx, &sql.TxOptions{
+		Isolation: sql.LevelRepeatableRead,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to start transaction: %w", err)
 	}
@@ -265,6 +269,7 @@ func (r *auctionRepository) GetExpiredAuctions(ctx context.Context) ([]*models.A
 		Where("end_time <= ?", time.Now()).
 		For("UPDATE SKIP LOCKED"). // Skip locked records to prevent conflicts
 		Order("end_time ASC").
+		Limit(10). // Process in smaller batches
 		Scan(ctx)
 
 	if err != nil {
@@ -272,7 +277,7 @@ func (r *auctionRepository) GetExpiredAuctions(ctx context.Context) ([]*models.A
 	}
 
 	if len(auctions) > 0 {
-		// Bulk update all found auctions to completed status
+		// Mark these auctions as being processed
 		ids := make([]int64, len(auctions))
 		for i, auction := range auctions {
 			ids[i] = auction.ID
@@ -280,7 +285,6 @@ func (r *auctionRepository) GetExpiredAuctions(ctx context.Context) ([]*models.A
 
 		_, err = tx.NewUpdate().
 			Model((*models.Auction)(nil)).
-			Set("status = ?", models.AuctionStatusCompleted).
 			Set("updated_at = ?", time.Now()).
 			Where("id IN (?)", bun.In(ids)).
 			Where("status = ?", models.AuctionStatusActive).
@@ -288,7 +292,7 @@ func (r *auctionRepository) GetExpiredAuctions(ctx context.Context) ([]*models.A
 			Exec(ctx)
 
 		if err != nil {
-			return nil, fmt.Errorf("failed to bulk update expired auctions: %w", err)
+			return nil, fmt.Errorf("failed to mark auctions as processing: %w", err)
 		}
 	}
 
@@ -337,21 +341,27 @@ func (r *auctionRepository) CompleteAuctionWithTransfer(ctx context.Context, auc
 	}
 	defer tx.Rollback()
 
-	// Get auction details first
+	// Lock and get auction details
 	auction := new(models.Auction)
 	err = tx.NewSelect().
 		Model(auction).
-		Where("id = ?", auctionID).
+		Where("id = ? AND status = ?", auctionID, models.AuctionStatusActive).
+		For("UPDATE").
 		Scan(ctx)
 
 	if err != nil {
 		return fmt.Errorf("failed to get auction: %w", err)
 	}
 
+	// If auction is already completed, skip
+	if auction.Status != models.AuctionStatusActive {
+		return nil
+	}
+
 	if auction.TopBidderID == "" {
 		// No bids - return card to seller
 		result, err := tx.NewUpdate().
-			Model(&models.UserCard{}).
+			Model((*models.UserCard)(nil)).
 			Set("amount = amount + 1").
 			Set("updated_at = ?", time.Now()).
 			Where("user_id = ? AND card_id = ?", auction.SellerID, auction.CardID).
@@ -361,13 +371,13 @@ func (r *auctionRepository) CompleteAuctionWithTransfer(ctx context.Context, auc
 			return fmt.Errorf("failed to return card to seller: %w", err)
 		}
 
-		rowsAffected, err := result.RowsAffected()
+		// If seller doesn't have the card yet, create new entry
+		affected, err := result.RowsAffected()
 		if err != nil {
 			return fmt.Errorf("failed to get rows affected: %w", err)
 		}
 
-		if rowsAffected == 0 {
-			// If no rows affected, create new entry
+		if affected == 0 {
 			_, err = tx.NewInsert().
 				Model(&models.UserCard{
 					UserID:    auction.SellerID,
@@ -383,58 +393,46 @@ func (r *auctionRepository) CompleteAuctionWithTransfer(ctx context.Context, auc
 				return fmt.Errorf("failed to create new card entry for seller: %w", err)
 			}
 		}
-
-		slog.Info("Card returned to seller - no bids",
-			slog.String("seller_id", auction.SellerID),
-			slog.Int64("card_id", auction.CardID))
 	} else {
-		// Has winner - transfer card to winner
-		// Remove card from seller
+		// Transfer to winner - first try update
 		result, err := tx.NewUpdate().
 			Model((*models.UserCard)(nil)).
-			Set("amount = amount - 1").
-			Where("user_id = ? AND card_id = ? AND amount > 0", auction.SellerID, auction.CardID).
-			Exec(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to update seller's card: %w", err)
-		}
-
-		rowsAffected, err := result.RowsAffected()
-		if err != nil || rowsAffected == 0 {
-			return fmt.Errorf("failed to update seller's card amount")
-		}
-
-		// Cleanup zero amount cards
-		cleanupResult, err := tx.NewDelete().
-			Model((*models.UserCard)(nil)).
-			Where("user_id = ? AND card_id = ? AND amount <= 0", auction.SellerID, auction.CardID).
-			Exec(ctx)
-		if err != nil {
-			return fmt.Errorf("failed to cleanup zero amount card: %w", err)
-		}
-
-		if cleaned, _ := cleanupResult.RowsAffected(); cleaned > 0 {
-			slog.Info("Cleaned up zero amount card",
-				slog.String("seller_id", auction.SellerID),
-				slog.Int64("card_id", auction.CardID))
-		}
-
-		// Add card to winner
-		_, err = tx.NewInsert().
-			Model(&models.UserCard{
-				UserID:    auction.TopBidderID,
-				CardID:    auction.CardID,
-				Amount:    1,
-				Obtained:  time.Now(),
-				CreatedAt: time.Now(),
-				UpdatedAt: time.Now(),
-			}).
-			On("CONFLICT (user_id, card_id) DO UPDATE").
-			Set("amount = user_cards.amount + 1").
+			Set("amount = amount + 1").
 			Set("updated_at = ?", time.Now()).
+			Where("user_id = ? AND card_id = ?", auction.TopBidderID, auction.CardID).
 			Exec(ctx)
+
 		if err != nil {
-			return fmt.Errorf("failed to transfer card to winner: %w", err)
+			return fmt.Errorf("failed to update winner's card: %w", err)
+		}
+
+		// If winner doesn't have the card yet, create new entry
+		if affected, _ := result.RowsAffected(); affected == 0 {
+			_, err = tx.NewInsert().
+				Model(&models.UserCard{
+					UserID:    auction.TopBidderID,
+					CardID:    auction.CardID,
+					Amount:    1,
+					Obtained:  time.Now(),
+					CreatedAt: time.Now(),
+					UpdatedAt: time.Now(),
+				}).
+				Exec(ctx)
+
+			if err != nil {
+				return fmt.Errorf("failed to create new card entry for winner: %w", err)
+			}
+		}
+
+		// Transfer currency to seller
+		_, err = tx.NewUpdate().
+			Model((*models.User)(nil)).
+			Set("balance = balance + ?", auction.CurrentPrice).
+			Where("id = ?", auction.SellerID).
+			Exec(ctx)
+
+		if err != nil {
+			return fmt.Errorf("failed to transfer balance to seller: %w", err)
 		}
 	}
 
@@ -468,4 +466,160 @@ func (r *auctionRepository) GetActiveAuctionByCardAndSeller(ctx context.Context,
 	}
 
 	return auction, nil
+}
+
+func (r *auctionRepository) CompleteAuctionWithTransferAndGet(ctx context.Context, auctionID int64) (*models.Auction, error) {
+	tx, err := r.db.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
+	if err != nil {
+		return nil, fmt.Errorf("failed to start transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	// Lock and get auction details
+	auction := new(models.Auction)
+	err = tx.NewSelect().
+		Model(auction).
+		Where("id = ? AND status = ?", auctionID, models.AuctionStatusActive).
+		For("UPDATE").
+		Scan(ctx)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to get auction: %w", err)
+	}
+
+	// If auction is already completed, return current state
+	if auction.Status != models.AuctionStatusActive {
+		return auction, nil
+	}
+
+	if auction.TopBidderID == "" {
+		// Handle no bids case
+		result, err := tx.NewUpdate().
+			Model((*models.UserCard)(nil)).
+			Set("amount = amount + 1").
+			Set("updated_at = ?", time.Now()).
+			Where("user_id = ? AND card_id = ?", auction.SellerID, auction.CardID).
+			Exec(ctx)
+
+		if err != nil {
+			return nil, fmt.Errorf("failed to return card to seller: %w", err)
+		}
+
+		affected, err := result.RowsAffected()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get rows affected: %w", err)
+		}
+
+		if affected == 0 {
+			_, err = tx.NewInsert().
+				Model(&models.UserCard{
+					UserID:    auction.SellerID,
+					CardID:    auction.CardID,
+					Amount:    1,
+					Obtained:  time.Now(),
+					CreatedAt: time.Now(),
+					UpdatedAt: time.Now(),
+				}).
+				Exec(ctx)
+
+			if err != nil {
+				return nil, fmt.Errorf("failed to create new card entry for seller: %w", err)
+			}
+		}
+	} else {
+		// Handle winning bid case
+		if err := r.handleWinningBidTransfer(ctx, tx, auction); err != nil {
+			return nil, err
+		}
+	}
+
+	// Update auction status
+	_, err = tx.NewUpdate().
+		Model(auction).
+		Set("status = ?", models.AuctionStatusCompleted).
+		Set("updated_at = ?", time.Now()).
+		Where("id = ?", auctionID).
+		Exec(ctx)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to update auction status: %w", err)
+	}
+
+	// Get final state within transaction
+	updatedAuction := new(models.Auction)
+	err = tx.NewSelect().
+		Model(updatedAuction).
+		Where("id = ?", auctionID).
+		Scan(ctx)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to get final auction state: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	return updatedAuction, nil
+}
+
+func (r *auctionRepository) handleWinningBidTransfer(ctx context.Context, tx bun.Tx, auction *models.Auction) error {
+	// Transfer to winner - first try update
+	result, err := tx.NewUpdate().
+		Model((*models.UserCard)(nil)).
+		Set("amount = amount + 1").
+		Set("updated_at = ?", time.Now()).
+		Where("user_id = ? AND card_id = ?", auction.TopBidderID, auction.CardID).
+		Exec(ctx)
+
+	if err != nil {
+		return fmt.Errorf("failed to update winner's card: %w", err)
+	}
+
+	// If winner doesn't have the card yet, create new entry
+	if affected, _ := result.RowsAffected(); affected == 0 {
+		_, err = tx.NewInsert().
+			Model(&models.UserCard{
+				UserID:    auction.TopBidderID,
+				CardID:    auction.CardID,
+				Amount:    1,
+				Obtained:  time.Now(),
+				CreatedAt: time.Now(),
+				UpdatedAt: time.Now(),
+			}).
+			Exec(ctx)
+
+		if err != nil {
+			return fmt.Errorf("failed to create new card entry for winner: %w", err)
+		}
+	}
+
+	// Transfer currency to seller - Fixed the WHERE clause to use discord_id
+	_, err = tx.NewUpdate().
+		Model((*models.User)(nil)).
+		Set("balance = balance + ?", auction.CurrentPrice).
+		Where("discord_id = ?", auction.SellerID). // Changed from id to discord_id
+		Exec(ctx)
+
+	if err != nil {
+		return fmt.Errorf("failed to transfer balance to seller: %w", err)
+	}
+
+	// Verify the balance transfer
+	var seller models.User
+	err = tx.NewSelect().
+		Model(&seller).
+		Where("discord_id = ?", auction.SellerID).
+		Scan(ctx)
+
+	if err != nil {
+		return fmt.Errorf("failed to verify seller balance transfer: %w", err)
+	}
+
+	slog.Info("Successfully transferred auction proceeds",
+		slog.String("seller_id", auction.SellerID),
+		slog.Int64("amount", auction.CurrentPrice),
+		slog.Int64("new_balance", seller.Balance))
+
+	return nil
 }

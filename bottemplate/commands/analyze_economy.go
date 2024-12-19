@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"math"
 	"strings"
 	"time"
 
@@ -145,16 +146,28 @@ func createDistributionGraph(stats *models.EconomyStats) string {
 	var sb strings.Builder
 	sb.WriteString("```\n")
 
-	// Calculate percentages
-	wealthyPct := float64(stats.WealthyPlayerCount) / float64(stats.TotalUsers) * 100
-	poorPct := float64(stats.PoorPlayerCount) / float64(stats.TotalUsers) * 100
-	middlePct := 100 - wealthyPct - poorPct
+	// Ensure we have valid total users to prevent division by zero
+	totalUsers := float64(stats.TotalUsers)
+	if totalUsers <= 0 {
+		totalUsers = 1 // Prevent division by zero
+	}
+
+	// Calculate percentages with bounds checking
+	wealthyPct := math.Max(0, float64(stats.WealthyPlayerCount)/totalUsers*100)
+	poorPct := math.Max(0, float64(stats.PoorPlayerCount)/totalUsers*100)
+	middlePct := math.Max(0, 100-wealthyPct-poorPct)
 
 	// Create simplified bar graph using shorter bars and cleaner format
 	const barWidth = 20 // Maximum bar width
-	sb.WriteString(fmt.Sprintf("W │%s %.1f%%\n", strings.Repeat("■", int(wealthyPct*barWidth/100)), wealthyPct))
-	sb.WriteString(fmt.Sprintf("M │%s %.1f%%\n", strings.Repeat("■", int(middlePct*barWidth/100)), middlePct))
-	sb.WriteString(fmt.Sprintf("P │%s %.1f%%\n", strings.Repeat("■", int(poorPct*barWidth/100)), poorPct))
+
+	// Ensure we don't pass negative values to strings.Repeat
+	wealthyBars := int(math.Max(0, wealthyPct*barWidth/100))
+	middleBars := int(math.Max(0, middlePct*barWidth/100))
+	poorBars := int(math.Max(0, poorPct*barWidth/100))
+
+	sb.WriteString(fmt.Sprintf("W │%s %.1f%%\n", strings.Repeat("■", wealthyBars), wealthyPct))
+	sb.WriteString(fmt.Sprintf("M │%s %.1f%%\n", strings.Repeat("■", middleBars), middlePct))
+	sb.WriteString(fmt.Sprintf("P │%s %.1f%%\n", strings.Repeat("■", poorBars), poorPct))
 	sb.WriteString("```")
 
 	return sb.String()

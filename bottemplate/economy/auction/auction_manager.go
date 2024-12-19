@@ -835,35 +835,36 @@ func (m *Manager) verifyCardOwnership(ctx context.Context, userID string, cardID
 }
 
 func (m *Manager) cleanupExpiredAuctions(ctx context.Context) error {
-	// Get expired auctions
 	expiredAuctions, err := m.repo.GetExpiredAuctions(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to get expired auctions: %w", err)
 	}
 
 	for _, auction := range expiredAuctions {
-		// Create a new context with timeout for each auction
 		auctionCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 
-		err := m.repo.CompleteAuctionWithTransfer(auctionCtx, auction.ID)
+		// Complete the auction with transfer and get updated data in the same transaction
+		updatedAuction, err := m.repo.CompleteAuctionWithTransferAndGet(auctionCtx, auction.ID)
 		if err != nil {
 			slog.Error("Failed to complete expired auction",
 				slog.Int64("auction_id", auction.ID),
+				slog.String("auction_code", auction.AuctionID),
 				slog.String("error", err.Error()))
 			cancel()
 			continue
 		}
 
-		// Notify after successful completion
-		if err := m.notifier.NotifyAuctionEnd(auctionCtx, auction); err != nil {
+		// Remove from active auctions map
+		m.activeAuctions.Delete(auction.ID)
+
+		// Notify after successful completion with updated auction data
+		if err := m.notifier.NotifyAuctionEnd(auctionCtx, updatedAuction); err != nil {
 			slog.Error("Failed to send auction end notification",
-				slog.String("auction_id", auction.AuctionID),
+				slog.String("auction_id", updatedAuction.AuctionID),
 				slog.String("error", err.Error()))
 		}
 
 		cancel()
-
-		// Add a small delay between processing auctions
 		time.Sleep(100 * time.Millisecond)
 	}
 
