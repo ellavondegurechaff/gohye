@@ -48,7 +48,7 @@ func (h *LiquefyHandler) HandleLiquefy(e *handler.CommandEvent) error {
 	ctx := context.Background()
 	userID := strconv.FormatInt(int64(e.User().ID), 10)
 
-	log.Printf("[GoHYE] [DEBUG] Searching for card with query: %s", query)
+	log.Printf("[DEBUG] Searching for card with query: %s", query)
 
 	// Try parsing as ID first
 	if cardID, err := strconv.ParseInt(query, 10, 64); err == nil {
@@ -56,7 +56,7 @@ func (h *LiquefyHandler) HandleLiquefy(e *handler.CommandEvent) error {
 		if err == nil {
 			userCard, err := h.bot.UserCardRepository.GetByUserIDAndCardID(ctx, userID, cardID)
 			if err != nil {
-				log.Printf("[GoHYE] [ERROR] Error checking card ownership: %v", err)
+				log.Printf("[ERROR] Error checking card ownership: %v", err)
 				return e.CreateMessage(discord.MessageCreate{
 					Content: fmt.Sprintf("❌ Error checking card ownership: %v", err),
 					Flags:   discord.MessageFlagEphemeral,
@@ -75,17 +75,17 @@ func (h *LiquefyHandler) HandleLiquefy(e *handler.CommandEvent) error {
 	// For name search, try exact match first
 	card, err := h.bot.CardRepository.GetByQuery(ctx, query)
 	if err == nil && card != nil {
-		log.Printf("[GoHYE] [DEBUG] Found exact match: %+v", card)
+		log.Printf("[DEBUG] Found exact match: %+v", card)
 		userCard, err := h.bot.UserCardRepository.GetByUserIDAndCardID(ctx, userID, card.ID)
 		if err != nil {
-			log.Printf("[GoHYE] [ERROR] Error checking card ownership: %v", err)
+			log.Printf("[ERROR] Error checking card ownership: %v", err)
 			return e.CreateMessage(discord.MessageCreate{
 				Content: fmt.Sprintf("❌ Error checking card ownership: %v", err),
 				Flags:   discord.MessageFlagEphemeral,
 			})
 		}
 		if userCard == nil || userCard.Amount <= 0 {
-			log.Printf("[GoHYE] [DEBUG] User doesn't own card: %+v", userCard)
+			log.Printf("[DEBUG] User doesn't own card: %+v", userCard)
 			return e.CreateMessage(discord.MessageCreate{
 				Content: "❌ You don't own this card",
 				Flags:   discord.MessageFlagEphemeral,
@@ -112,11 +112,11 @@ func (h *LiquefyHandler) HandleLiquefy(e *handler.CommandEvent) error {
 	}
 
 	// Debug logging
-	log.Printf("[GoHYE] [DEBUG] Found card match: %+v", searchResults[0])
+	log.Printf("[DEBUG] Found card match: %+v", searchResults[0])
 
 	userCard, err := h.bot.UserCardRepository.GetByUserIDAndCardID(ctx, userID, searchResults[0].ID)
 	if err != nil {
-		log.Printf("[GoHYE] [ERROR] Error checking ownership: %v", err)
+		log.Printf("[ERROR] Error checking ownership: %v", err)
 		return e.CreateMessage(discord.MessageCreate{
 			Content: fmt.Sprintf("❌ Error checking card ownership: %v", err),
 			Flags:   discord.MessageFlagEphemeral,
@@ -124,7 +124,7 @@ func (h *LiquefyHandler) HandleLiquefy(e *handler.CommandEvent) error {
 	}
 
 	if userCard == nil || userCard.Amount <= 0 {
-		log.Printf("[GoHYE] [DEBUG] User card data: %+v", userCard)
+		log.Printf("[DEBUG] User card data: %+v", userCard)
 		return e.CreateMessage(discord.MessageCreate{
 			Content: "❌ You don't own this card",
 			Flags:   discord.MessageFlagEphemeral,

@@ -79,7 +79,6 @@ func SummonHandler(b *bottemplate.Bot) handler.CommandHandler {
 
 // displayCard handles the card display logic
 func displayCard(e *handler.CommandEvent, card *models.Card, b *bottemplate.Bot) error {
-	fmt.Printf("Card data:\n%+v\n", card)
 
 	config := utils.SpacesConfig{
 		Bucket:   b.SpacesService.GetBucket(),
@@ -90,8 +89,6 @@ func displayCard(e *handler.CommandEvent, card *models.Card, b *bottemplate.Bot)
 		},
 	}
 
-	fmt.Printf("SpacesConfig:\n%+v\n", config)
-
 	cardInfo := utils.GetCardDisplayInfo(
 		card.Name,
 		card.ColID,
@@ -99,8 +96,6 @@ func displayCard(e *handler.CommandEvent, card *models.Card, b *bottemplate.Bot)
 		utils.GetGroupType(card.Tags),
 		config,
 	)
-
-	fmt.Printf("CardInfo:\n%+v\n", cardInfo)
 
 	timestamp := fmt.Sprintf("<t:%d:R>", time.Now().Unix())
 
@@ -130,11 +125,6 @@ func displayCard(e *handler.CommandEvent, card *models.Card, b *bottemplate.Bot)
 			IconURL: e.User().EffectiveAvatarURL(),
 		},
 	}
-
-	fmt.Printf("Final embed:\nTitle: %s\nDescription: %s\nImage URL: %s\n",
-		embed.Title,
-		embed.Description,
-		embed.Image.URL)
 
 	return e.CreateMessage(discord.MessageCreate{
 		Embeds: []discord.Embed{embed},

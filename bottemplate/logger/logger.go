@@ -33,156 +33,128 @@ const (
 )
 
 type CustomHandler struct {
-	opts      *slog.HandlerOptions
-	startTime time.Time
-	attrs     []slog.Attr
-	groups    []string
+	opts        *slog.HandlerOptions
+	startTime   time.Time
+	attrs       []slog.Attr
+	serviceName string
 }
 
-func NewHandler() *CustomHandler {
+func NewHandler(serviceName string) *CustomHandler {
 	return &CustomHandler{
-		opts:      &slog.HandlerOptions{Level: slog.LevelDebug},
-		startTime: time.Now(),
-		attrs:     make([]slog.Attr, 0),
-		groups:    make([]string, 0),
-	}
-}
-
-func (h *CustomHandler) Enabled(_ context.Context, level slog.Level) bool {
-	return level >= h.opts.Level.Level()
-}
-
-func (h *CustomHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
-	return &CustomHandler{
-		opts:      h.opts,
-		startTime: h.startTime,
-		attrs:     append(h.attrs, attrs...),
-		groups:    h.groups,
-	}
-}
-
-func (h *CustomHandler) WithGroup(name string) slog.Handler {
-	return &CustomHandler{
-		opts:      h.opts,
-		startTime: h.startTime,
-		attrs:     h.attrs,
-		groups:    append(h.groups, name),
+		opts:        &slog.HandlerOptions{Level: slog.LevelInfo},
+		startTime:   time.Now(),
+		attrs:       make([]slog.Attr, 0),
+		serviceName: serviceName,
 	}
 }
 
 func (h *CustomHandler) Handle(_ context.Context, r slog.Record) error {
+	// Skip debug logs by default
+	if r.Level == slog.LevelDebug {
+		return nil
+	}
+
+	// Skip noisy logs
 	if shouldSkipLog(&r) {
 		return nil
 	}
 
-	timeElapsed := time.Since(h.startTime).Milliseconds()
-	timestamp := time.Now().Format("15:04:05")
-
-	var levelColor, levelText string
-	switch r.Level {
-	case slog.LevelDebug:
-		levelColor = colorPurple
-		levelText = "DEBUG"
-	case slog.LevelInfo:
-		levelColor = colorGreen
-		levelText = "INFO"
-	case slog.LevelWarn:
-		levelColor = colorYellow
-		levelText = "WARN"
-	case slog.LevelError:
-		levelColor = colorRed
-		levelText = "ERROR"
-	}
-
-	// Get log type and additional information
+	timestamp := time.Now().Format("15:04:05.000")
 	logType := getLogType(&r)
-	status := getStatus(&r)
-	userName := getUserName(&r)
-	cmdName := getCommandName(&r)
-	errorDetails := getErrorDetails(&r)
-	errorLocation := getErrorLocation(&r)
 
-	// Format message with source info for errors
-	message := r.Message
-	if r.Level == slog.LevelError {
-		if errorLocation != "" {
-			message = fmt.Sprintf("%s (%s)", message, errorLocation)
-		}
-		if errorDetails != "" {
-			message = fmt.Sprintf("%s: %s", message, errorDetails)
-		}
-	}
-
-	// Add command and user info if available
-	if cmdName != "" && userName != "" {
-		message = fmt.Sprintf("%s [%s by %s]", message, cmdName, userName)
-	}
-
-	// Add status if available
-	if status != "" {
-		message = fmt.Sprintf("%s [Status: %s]", message, status)
-	}
-
-	// Add elapsed time for performance tracking
-	if timeElapsed > 0 {
-		message = fmt.Sprintf("%s (took %dms)", message, timeElapsed)
-	}
-
-	// Build attributes string
-	var attrsStr string
-	if len(h.attrs) > 0 {
-		for _, attr := range h.attrs {
-			if !isInternalAttr(attr.Key) {
-				attrsStr += fmt.Sprintf(" %s=%v", attr.Key, attr.Value)
-			}
-		}
-	}
-
-	fmt.Printf("%s[GoHYE] [%s] [%s%s%s] [%s] %s%s%s\n",
-		colorWhite,
+	// Format: [TIME][LEVEL][TYPE] Message {metadata}
+	fmt.Printf("[%s][%s][%s] %s%s\n",
 		timestamp,
-		levelColor,
-		levelText,
-		colorWhite,
+		h.formatLevel(r.Level),
 		logType,
-		message,
-		attrsStr,
-		colorReset,
+		h.buildMessage(&r),
+		h.buildMetadata(&r),
 	)
 
 	return nil
 }
 
-func shouldSkipLog(r *slog.Record) bool {
-	// Skip only specific gateway and bucket messages
-	skippedMessages := []string{
-		"locking buckets",
-		"unlocking buckets",
-		"gateway event",
-		"cleaning up bucket",
-		"cleaned up rate limit buckets",
-		"binary message received",
-		"received gateway message",
-		"opening gateway connection",
-		"locking gateway rate limiter",
-		"unlocking gateway rate limiter",
-		"sending gateway command",
-		"new request",
-		"new response",
-		"locking rest bucket",
-		"unlocking rest bucket",
-		"sending identify command name-gateway",
-		"ready message received name",
-		"rate limit response headers",
-		"sending heartbeat",
+func (h *CustomHandler) formatLevel(level slog.Level) string {
+	var color, text string
+	switch level {
+	case slog.LevelDebug:
+		color, text = colorPurple, "DBG"
+	case slog.LevelInfo:
+		color, text = colorGreen, "INF"
+	case slog.LevelWarn:
+		color, text = colorYellow, "WRN"
+	case slog.LevelError:
+		color, text = colorRed, "ERR"
 	}
+	return fmt.Sprintf("%s%s%s", color, text, colorReset)
+}
 
-	for _, skip := range skippedMessages {
-		if strings.Contains(strings.ToLower(r.Message), strings.ToLower(skip)) {
-			return true
+func (h *CustomHandler) buildMessage(r *slog.Record) string {
+	parts := []string{r.Message}
+
+	// Add context information
+	if cmdName := getCommandName(r); cmdName != "" {
+		if userName := getUserName(r); userName != "" {
+			parts = append(parts, fmt.Sprintf("(%s by %s)", cmdName, userName))
 		}
 	}
 
+	// Add error context
+	if r.Level == slog.LevelError {
+		if loc := getErrorLocation(r); loc != "" {
+			parts = append(parts, fmt.Sprintf("at %s", loc))
+		}
+		if err := getErrorDetails(r); err != "" {
+			parts = append(parts, fmt.Sprintf("error=%s", err))
+		}
+	}
+
+	return strings.Join(parts, " ")
+}
+
+func (h *CustomHandler) buildMetadata(r *slog.Record) string {
+	metadata := make(map[string]string)
+
+	// Add duration if present
+	if took := time.Since(h.startTime).Milliseconds(); took > 0 {
+		metadata["took"] = fmt.Sprintf("%dms", took)
+	}
+
+	// Add important attributes
+	r.Attrs(func(a slog.Attr) bool {
+		if !isInternalAttr(a.Key) && a.Value.String() != "" {
+			metadata[a.Key] = a.Value.String()
+		}
+		return true
+	})
+
+	if len(metadata) == 0 {
+		return ""
+	}
+
+	parts := make([]string, 0, len(metadata))
+	for k, v := range metadata {
+		parts = append(parts, fmt.Sprintf("%s=%s", k, v))
+	}
+	return fmt.Sprintf(" {%s}", strings.Join(parts, ", "))
+}
+
+func shouldSkipLog(r *slog.Record) bool {
+	// Skip common noise
+	noisePatterns := []string{
+		"ratelimit",
+		"bucket",
+		"gateway event",
+		"binary message",
+		"heartbeat",
+	}
+
+	msg := strings.ToLower(r.Message)
+	for _, pattern := range noisePatterns {
+		if strings.Contains(msg, pattern) {
+			return true
+		}
+	}
 	return false
 }
 
@@ -286,4 +258,26 @@ func getErrorLocation(r *slog.Record) string {
 		}
 	}
 	return location
+}
+
+func (h *CustomHandler) Enabled(ctx context.Context, level slog.Level) bool {
+	return level >= h.opts.Level.Level()
+}
+
+func (h *CustomHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	return &CustomHandler{
+		opts:        h.opts,
+		startTime:   h.startTime,
+		attrs:       append(h.attrs, attrs...),
+		serviceName: h.serviceName,
+	}
+}
+
+func (h *CustomHandler) WithGroup(name string) slog.Handler {
+	return &CustomHandler{
+		opts:        h.opts,
+		startTime:   h.startTime,
+		attrs:       h.attrs,
+		serviceName: h.serviceName,
+	}
 }

@@ -59,14 +59,14 @@ func (r *userCardRepository) GetByUserIDAndCardID(ctx context.Context, userID st
 
 	if err != nil {
 		if err == sql.ErrNoRows {
-			log.Printf("[GoHYE] [DEBUG] Card not found in inventory - UserID: %s, CardID: %d", userID, cardID)
+			log.Printf("[DEBUG] Card not found in inventory - UserID: %s, CardID: %d", userID, cardID)
 			return nil, nil
 		}
-		log.Printf("[GoHYE] [ERROR] Database error while checking ownership: %v", err)
+		log.Printf("[ERROR] Database error while checking ownership: %v", err)
 		return nil, fmt.Errorf("failed to get user card: %w", err)
 	}
 
-	log.Printf("[GoHYE] [DEBUG] Card inventory check - UserID: %s, CardID: %d, Amount: %d",
+	log.Printf("[DEBUG] Card inventory check - UserID: %s, CardID: %d, Amount: %d",
 		userCard.UserID, userCard.CardID, userCard.Amount)
 
 	return &userCard, nil
@@ -166,6 +166,6 @@ func (r *userCardRepository) CleanupZeroAmountCards(ctx context.Context) error {
 	}
 
 	rowsAffected, _ := result.RowsAffected()
-	log.Printf("[GoHYE] [INFO] Cleaned up %d cards with zero amount", rowsAffected)
+	log.Printf("[INFO] Cleaned up %d cards with zero amount", rowsAffected)
 	return nil
 }

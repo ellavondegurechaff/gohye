@@ -157,7 +157,7 @@ func (pc *PriceCalculator) CalculateCardPrice(ctx context.Context, cardID int64)
 		return 0, fmt.Errorf("failed to get card: %w", err)
 	}
 
-	log.Printf("[GoHYE] [%s] [DEBUG] [MARKET] Found card %d with level %d",
+	log.Printf("[%s] [DEBUG] [MARKET] Found card %d with level %d",
 		time.Now().Format("15:04:05"), cardID, card.Level)
 
 	// Get active owners count
@@ -166,7 +166,7 @@ func (pc *PriceCalculator) CalculateCardPrice(ctx context.Context, cardID int64)
 		return 0, err
 	}
 
-	log.Printf("[GoHYE] [%s] [DEBUG] [MARKET] Card %d has %d active owners",
+	log.Printf("[%s] [DEBUG] [MARKET] Card %d has %d active owners",
 		time.Now().Format("15:04:05"), cardID, activeOwners)
 
 	// Calculate price components
@@ -178,7 +178,7 @@ func (pc *PriceCalculator) CalculateCardPrice(ctx context.Context, cardID int64)
 	finalPrice := int64(float64(basePrice) * ownershipModifier * rarityModifier)
 	finalPrice = pc.applyPriceLimits(finalPrice)
 
-	log.Printf("[GoHYE] [%s] [DEBUG] [MARKET] Card %d price calculation: base=%d, ownership=%.2f, rarity=%.2f, final=%d",
+	log.Printf("[%s] [DEBUG] [MARKET] Card %d price calculation: base=%d, ownership=%.2f, rarity=%.2f, final=%d",
 		time.Now().Format("15:04:05"), cardID, basePrice, ownershipModifier, rarityModifier, finalPrice)
 
 	// Update market stats
@@ -701,7 +701,7 @@ func (pc *PriceCalculator) processBatch(ctx context.Context, cardIDs []int64, pr
 		}
 	}
 
-	log.Printf("[GoHYE] [%s] [INFO] [MARKET] Batch %d completed in %v",
+	log.Printf("[%s] [INFO] [MARKET] Batch %d completed in %v",
 		time.Now().Format("15:04:05"),
 		batchNum,
 		time.Since(batchStart))
@@ -742,7 +742,7 @@ func (pc *PriceCalculator) calculateFinalPrice(card models.Card, factors PriceFa
 		// Ensure price stays within reasonable bounds after each step
 		price = math.Max(float64(pc.config.MinPrice), math.Min(price, float64(pc.config.MaxPrice)))
 
-		log.Printf("[GoHYE] [MARKET] Card %d: %s factor %.2f changed price from %d to %d",
+		log.Printf("[MARKET] Card %d: %s factor %.2f changed price from %d to %d",
 			card.ID, step.name, safeFactor, int64(oldPrice), int64(price))
 	}
 
@@ -751,7 +751,7 @@ func (pc *PriceCalculator) calculateFinalPrice(card models.Card, factors PriceFa
 		math.Min(float64(pc.config.MaxPrice), price)))
 
 	// Log final calculation
-	log.Printf("[GoHYE] [MARKET] Card %d final price calculation:"+
+	log.Printf("[MARKET] Card %d final price calculation:"+
 		"\n- Base Price: %.2f"+
 		"\n- Rarity Multiplier: %.2f"+
 		"\n- Scarcity Factor: %.2f"+
@@ -932,7 +932,7 @@ func (pc *PriceCalculator) performInitialPricing(ctx context.Context) error {
 	ctx, cancel := context.WithTimeout(ctx, InitialPricingTimeout)
 	defer cancel()
 
-	log.Printf("[GoHYE] [%s] [INFO] [MARKET] Starting initial card price initialization",
+	log.Printf("[%s] [INFO] [MARKET] Starting initial card price initialization",
 		time.Now().Format("15:04:05"))
 
 	// Optimize the query by breaking it into smaller parts
@@ -1046,7 +1046,7 @@ func (pc *PriceCalculator) performInitialPricing(ctx context.Context) error {
 				PriceChangePercent: 0,
 			}
 
-			log.Printf("[GoHYE] [%s] [INFO] [MARKET] Initialized card %d price: %d (Level: %d, Copies: %d, Owners: %d/%d)",
+			log.Printf("[%s] [INFO] [MARKET] Initialized card %d price: %d (Level: %d, Copies: %d, Owners: %d/%d)",
 				time.Now().Format("15:04:05"),
 				card.ID,
 				initialPrice,
@@ -1066,7 +1066,7 @@ func (pc *PriceCalculator) performInitialPricing(ctx context.Context) error {
 			return fmt.Errorf("failed to insert batch: %w", err)
 		}
 
-		log.Printf("[GoHYE] [%s] [INFO] [MARKET] Processed batch %d-%d of %d cards",
+		log.Printf("[%s] [INFO] [MARKET] Processed batch %d-%d of %d cards",
 			time.Now().Format("15:04:05"),
 			i, end-1, len(cardIDs))
 	}
@@ -1186,7 +1186,7 @@ func (pc *PriceCalculator) BatchCalculateCardPrices(ctx context.Context, cardIDs
 
 		prices[card.ID] = finalPrice
 
-		log.Printf("[GoHYE] [MARKET] Card %d price calculated: base=%d, market_mod=%.2f, final=%d",
+		log.Printf("[MARKET] Card %d price calculated: base=%d, market_mod=%.2f, final=%d",
 			card.ID, basePrice, marketMod, finalPrice)
 	}
 
@@ -1309,7 +1309,7 @@ func (pc *PriceCalculator) ValidateCardPrice(ctx context.Context, cardID int64, 
 
 		// Check if new price is within 3 standard deviations
 		if math.Abs(float64(price)-avg) > stdDev*3 {
-			log.Printf("[GoHYE] [MARKET] WARNING: Card %d price %d significantly deviates from average %.2f (±%.2f)",
+			log.Printf("[MARKET] WARNING: Card %d price %d significantly deviates from average %.2f (±%.2f)",
 				cardID, price, avg, stdDev)
 
 			// Optional: Adjust price to be within bounds

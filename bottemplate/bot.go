@@ -10,6 +10,7 @@ import (
 	"github.com/disgoorg/bot-template/bottemplate/economy"
 	"github.com/disgoorg/bot-template/bottemplate/economy/auction"
 	"github.com/disgoorg/bot-template/bottemplate/economy/claim"
+	"github.com/disgoorg/bot-template/bottemplate/economy/effects"
 	"github.com/disgoorg/bot-template/bottemplate/services"
 	"github.com/disgoorg/disgo"
 	"github.com/disgoorg/disgo/bot"
@@ -34,6 +35,7 @@ type Bot struct {
 	Cfg                    Config
 	Client                 bot.Client
 	Paginator              *paginator.Manager
+	EffectManager          *effects.Manager
 	Version                string
 	Commit                 string
 	DB                     *database.DB

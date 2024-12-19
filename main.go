@@ -32,13 +32,14 @@ var (
 )
 
 func main() {
-	// Initialize custom logger
-	customHandler := logger.NewHandler()
+	// Initialize custom logger with service name
+	customHandler := logger.NewHandler("GoHYE")
 	slog.SetDefault(slog.New(customHandler))
 
-	slog.Info("Starting GoHYE Discord Bot",
+	slog.Info("Starting Discord Bot",
 		slog.String("version", version),
-		slog.String("commit", commit))
+		slog.String("commit", commit),
+		slog.String("type", "sys"))
 
 	shouldSyncCommands := flag.Bool("sync-commands", false, "Whether to sync commands to discord")
 	shouldCalculatePrices := flag.Bool("calculate-prices", false, "Whether to calculate prices on startup")
