@@ -104,12 +104,7 @@ func main() {
 	)
 	b.SpacesService = spacesService
 
-	// Initialize Auction Manager
-	auctionRepo := repositories.NewAuctionRepository(b.DB.BunDB())
-	b.AuctionManager = auction.NewManager(auctionRepo)
-	b.AuctionManager.SetClient(b.Client)
-
-	// Initialize repositories
+	// Initialize repositories first
 	b.UserRepository = repositories.NewUserRepository(b.DB.BunDB())
 	b.UserCardRepository = repositories.NewUserCardRepository(b.DB.BunDB())
 	b.CardRepository = repositories.NewCardRepository(b.DB.BunDB(), spacesService)
@@ -117,6 +112,14 @@ func main() {
 	b.CollectionRepository = repositories.NewCollectionRepository(b.DB.BunDB())
 	b.EconomyStatsRepository = repositories.NewEconomyStatsRepository(b.DB.BunDB())
 	b.WishlistRepository = repositories.NewWishlistRepository(b.DB.BunDB())
+
+	// Then initialize Auction Manager with all required dependencies
+	// auctionRepo := repositories.NewAuctionRepository(b.DB.BunDB())
+	// auctionManager := auction.NewManager(
+	// 	auctionRepo,
+	// 	b.UserCardRepository,
+	// 	b.Client,
+	// )
 
 	priceCalc := economy.NewPriceCalculator(
 		db,
@@ -242,10 +245,6 @@ func main() {
 	h.Command("/work", handlers.WrapWithLogging("work", workHandler.HandleWork))
 	h.Component("/work/", handlers.WrapComponentWithLogging("work", workHandler.HandleComponent))
 
-	// Auction-related commands
-	auctionHandler := commands.NewAuctionHandler(b.AuctionManager, b.Client, b.CardRepository)
-	auctionHandler.Register(h)
-
 	// Initialize effect manager
 	effectManager := effects.NewManager(
 		repositories.NewEffectRepository(b.DB.BunDB()),
@@ -275,6 +274,20 @@ func main() {
 		)
 		os.Exit(-1)
 	}
+
+	// Initialize auction manager with the now-initialized client
+	auctionManager := auction.NewManager(
+		repositories.NewAuctionRepository(db.BunDB()),
+		repositories.NewUserCardRepository(db.BunDB()),
+		b.Client, // Now b.Client is properly initialized
+	)
+
+	// Store the auction manager in the bot instance
+	b.AuctionManager = auctionManager
+
+	// Initialize auction handler with the manager
+	auctionHandler := commands.NewAuctionHandler(auctionManager, b.Client, b.CardRepository)
+	auctionHandler.Register(h)
 
 	defer func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
