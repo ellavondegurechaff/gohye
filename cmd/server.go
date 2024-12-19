@@ -99,8 +99,8 @@ var serverCmd = &cobra.Command{
 		b := bottemplate.New(*cfg, version, commit)
 		b.DB = db
 
-		// Initialize Spaces service
 		spacesService := services.NewSpacesService(
+			// Initialize Spaces service
 			cfg.Spaces.Key,
 			cfg.Spaces.Secret,
 			cfg.Spaces.Region,
@@ -108,11 +108,6 @@ var serverCmd = &cobra.Command{
 			cfg.Spaces.CardRoot,
 		)
 		b.SpacesService = spacesService
-
-		// Initialize Auction Manager
-		auctionRepo := repositories.NewAuctionRepository(b.DB.BunDB())
-		b.AuctionManager = auction.NewManager(auctionRepo)
-		b.AuctionManager.SetClient(b.Client)
 
 		// Initialize repositories
 		b.UserRepository = repositories.NewUserRepository(b.DB.BunDB())
@@ -250,7 +245,16 @@ var serverCmd = &cobra.Command{
 		h.Component("/work/", handlers.WrapComponentWithLogging("work", workHandler.HandleComponent))
 
 		// Auction-related commands
-		auctionHandler := commands.NewAuctionHandler(b.AuctionManager, b.Client, b.CardRepository)
+		// Initialize auction manager with the now-initialized client
+		auctionManager := auction.NewManager(
+			repositories.NewAuctionRepository(db.BunDB()),
+			repositories.NewUserCardRepository(db.BunDB()),
+			b.Client, // Now b.Client is properly initialized
+		)
+		// Store the auction manager in the bot instance
+		b.AuctionManager = auctionManager
+		// Initialize auction handler with the manager
+		auctionHandler := commands.NewAuctionHandler(auctionManager, b.Client, b.CardRepository)
 		auctionHandler.Register(h)
 
 		// Initialize effect manager
@@ -281,8 +285,8 @@ var serverCmd = &cobra.Command{
 				slog.String("status", "failed"),
 			)
 			return err
-		}
 
+		}
 		defer func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
