@@ -163,22 +163,6 @@ func selectRandomCard(cards []*models.Card) *models.Card {
 	return eligibleCards[rand.Intn(len(eligibleCards))]
 }
 
-// Update getRarityMessage to be simpler
-func getRarityMessage(level int) string {
-	switch level {
-	case 1:
-		return "⭐"
-	case 2:
-		return "⭐⭐"
-	case 3:
-		return "⭐⭐⭐"
-	case 4:
-		return "⭐⭐⭐⭐"
-	default:
-		return "⭐"
-	}
-}
-
 func createClaimComponents(cardID int64) discord.ContainerComponent {
 	return discord.NewActionRow(
 		discord.NewPrimaryButton("✨ Claim", fmt.Sprintf("/claim/%d", cardID)),

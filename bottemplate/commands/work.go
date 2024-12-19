@@ -276,44 +276,21 @@ func createDanceGameEmbed(userID string, e *handler.ComponentEvent) (discord.Emb
 		Build()
 
 	// Start goroutine to hide sequence after 5 seconds
-	go func() {
+	go func(event *handler.ComponentEvent) {
 		time.Sleep(5 * time.Second)
 		stateMutex.Lock()
 		if state, exists := gameStates[userID]; exists {
 			state.ShowSequence = false
+			// Add message update using the event
+			event.UpdateMessage(discord.MessageUpdate{
+				Content:    utils.Ptr("Time to repeat the sequence!"),
+				Components: &state.Buttons,
+			})
 		}
 		stateMutex.Unlock()
-	}()
+	}(e)
 
 	return embed, components
-}
-
-func createChoreographyGameEmbed(userID string) (discord.Embed, []discord.ContainerComponent) {
-	positions := []string{"1️⃣", "2️⃣", "3️⃣", "4️⃣"}
-	state := createGameState("choreo", 5, len(positions))
-
-	stateMutex.Lock()
-	gameStates[userID] = state
-	stateMutex.Unlock()
-
-	sequence := make([]string, len(state.Sequence))
-	for i, idx := range state.Sequence {
-		sequence[i] = positions[idx]
-	}
-
-	embed := discord.NewEmbedBuilder().
-		SetTitle("🎭 Choreography Practice").
-		SetDescription(fmt.Sprintf("Remember the position sequence:\n%s\n\nThe sequence will disappear in 5 seconds!",
-			strings.Join(sequence, " "))).
-		SetColor(0x2b2d31).
-		Build()
-
-	buttons := make([]discord.InteractiveComponent, len(positions))
-	for i, pos := range positions {
-		buttons[i] = discord.NewSecondaryButton(pos, fmt.Sprintf("work/game/choreo/%d", i))
-	}
-
-	return embed, []discord.ContainerComponent{discord.NewActionRow(buttons...)}
 }
 
 func createVocalGameEmbed(userID string, e *handler.ComponentEvent) (discord.Embed, []discord.ContainerComponent) {
@@ -603,18 +580,4 @@ func (h *WorkHandler) handleSuccess(e *handler.ComponentEvent) error {
 		Embeds:     &[]discord.Embed{embed},
 		Components: &[]discord.ContainerComponent{discord.NewActionRow(buttons...)},
 	})
-}
-
-func getTrainingTaskFeedback(taskIndex int) string {
-	feedbacks := []string{
-		"Great practice session! Time to record your progress.",
-		"Nice recording! Let's review it.",
-		"Good analysis! Now perfect your performance.",
-		"Perfect execution! Training complete!",
-	}
-
-	if taskIndex >= 0 && taskIndex < len(feedbacks) {
-		return feedbacks[taskIndex]
-	}
-	return "Keep going!"
 }
