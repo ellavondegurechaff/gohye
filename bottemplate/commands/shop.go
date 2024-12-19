@@ -166,20 +166,46 @@ func getColorByType(itemType string) int {
 
 func (h *ShopHandler) handleBuy(event *handler.ComponentEvent) error {
 	customID := event.Data.CustomID()
-	itemID := strings.TrimPrefix(customID, "shop_buy:")
+	itemID := strings.TrimPrefix(customID, "/shop_buy/")
 
 	ctx := context.Background()
 	err := h.effectManager.PurchaseEffect(ctx, event.User().ID.String(), itemID)
 	if err != nil {
-		return event.CreateMessage(discord.MessageCreate{
-			Content: fmt.Sprintf("❌ Failed to purchase item: %v", err),
-			Flags:   discord.MessageFlagEphemeral,
+		flags := discord.MessageFlagEphemeral
+		return event.UpdateMessage(discord.MessageUpdate{
+			Content:    utils.Ptr(fmt.Sprintf("❌ Failed to purchase item: %v", err)),
+			Components: &[]discord.ContainerComponent{},
+			Flags:      &flags,
 		})
 	}
 
-	return event.CreateMessage(discord.MessageCreate{
-		Content: "✅ Successfully purchased item!",
-		Flags:   discord.MessageFlagEphemeral,
+	item, err := h.effectManager.GetEffectItem(ctx, itemID)
+	if err != nil {
+		flags := discord.MessageFlagEphemeral
+		return event.UpdateMessage(discord.MessageUpdate{
+			Content:    utils.Ptr("✅ Item purchased successfully, but failed to get item details"),
+			Components: &[]discord.ContainerComponent{},
+			Flags:      &flags,
+		})
+	}
+
+	embed := discord.NewEmbedBuilder().
+		SetTitle("✅ Purchase Successful").
+		SetColor(0x57f287). // Green color for success
+		SetDescription(fmt.Sprintf("```md\n# Item Purchased\n* %s %s\n* Price: %d %s\n* Duration: %d hours```\n> 💡 **Tip**: Use `/inventory` to view your purchased items!",
+			getTypeEmoji(item.Type),
+			item.Name,
+			item.Price,
+			getCurrencyEmoji(item.Currency),
+			item.Duration)).
+		SetFooter("Item added to your inventory", "").
+		Build()
+
+	flags := discord.MessageFlagEphemeral
+	return event.UpdateMessage(discord.MessageUpdate{
+		Embeds:     &[]discord.Embed{embed},
+		Components: &[]discord.ContainerComponent{},
+		Flags:      &flags,
 	})
 }
 
@@ -219,11 +245,11 @@ func (h *ShopHandler) HandleComponent(event *handler.ComponentEvent) error {
 	customID := event.Data.CustomID()
 
 	switch {
-	case customID == "shop_category":
+	case customID == "/shop_category":
 		return h.handleCategorySelect(event)
-	case strings.HasPrefix(customID, "shop_item"):
+	case strings.HasPrefix(customID, "/shop_item"):
 		return h.handleItemSelect(event)
-	case strings.HasPrefix(customID, "shop_buy:"):
+	case strings.HasPrefix(customID, "/shop_buy/"):
 		return h.handleBuy(event)
 	default:
 		return nil
@@ -302,7 +328,7 @@ func (h *ShopHandler) handleCategorySelect(event *handler.ComponentEvent) error 
 func createShopComponents(selectedValue string) []discord.ContainerComponent {
 	return []discord.ContainerComponent{
 		discord.NewActionRow(
-			discord.NewStringSelectMenu("shop_category", "Select Category",
+			discord.NewStringSelectMenu("/shop_category", "Select Category",
 				discord.StringSelectMenuOption{
 					Label:       "Active Effects",
 					Value:       "active",
@@ -334,7 +360,7 @@ func createItemSelectMenu(items []*models.EffectItem, itemType string) discord.C
 	}
 
 	return discord.NewActionRow(
-		discord.NewStringSelectMenu("shop_item", "Select Item", options...).
+		discord.NewStringSelectMenu("/shop_item", "Select Item", options...).
 			WithMinValues(1).
 			WithMaxValues(1),
 	)
@@ -391,8 +417,8 @@ func (h *ShopHandler) handleItemSelect(event *handler.ComponentEvent) error {
 
 	// Simplify component structure similar to liquefy
 	actionRow := discord.NewActionRow(
-		discord.NewSuccessButton("Buy 🛍️", fmt.Sprintf("shop_buy:%s", item.ID)),
-		discord.NewSecondaryButton("Back ↩️", "shop_category"),
+		discord.NewSuccessButton("Buy 🛍️", fmt.Sprintf("/shop_buy/%s", item.ID)),
+		discord.NewSecondaryButton("Back ↩️", "/shop_category"),
 	)
 
 	return event.UpdateMessage(discord.MessageUpdate{

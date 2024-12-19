@@ -2,7 +2,9 @@ package repositories
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/disgoorg/bot-template/bottemplate/database/models"
@@ -26,6 +28,13 @@ type EffectRepository interface {
 	AddToInventory(ctx context.Context, userID string, itemID string, amount int) error
 	RemoveFromInventory(ctx context.Context, userID string, itemID string, amount int) error
 	GetInventory(ctx context.Context, userID string) ([]*models.UserInventory, error)
+
+	// Random Card for Recipe
+	GetRandomCardForRecipe(ctx context.Context, userID string, stars int64) (*models.Card, error)
+
+	// Recipe methods
+	StoreUserRecipe(ctx context.Context, userID string, itemID string, cardIDs []int64) error
+	GetUserRecipe(ctx context.Context, userID string, itemID string) (*models.UserRecipe, error)
 }
 
 type effectRepository struct {
@@ -101,13 +110,84 @@ func (r *effectRepository) DeactivateExpiredEffects(ctx context.Context) error {
 }
 
 func (r *effectRepository) AddToInventory(ctx context.Context, userID string, itemID string, amount int) error {
-	// Implementation for adding to inventory
-	return nil
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to start transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	// Try to update existing inventory item first
+	result, err := tx.NewUpdate().
+		Model((*models.UserInventory)(nil)).
+		Set("amount = amount + ?", amount).
+		Set("updated_at = ?", time.Now()).
+		Where("user_id = ? AND item_id = ?", userID, itemID).
+		Exec(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to update inventory: %w", err)
+	}
+
+	// If no existing item, insert new one
+	if affected, _ := result.RowsAffected(); affected == 0 {
+		_, err = tx.NewInsert().
+			Model(&models.UserInventory{
+				UserID:    userID,
+				ItemID:    itemID,
+				Amount:    amount,
+				CreatedAt: time.Now(),
+				UpdatedAt: time.Now(),
+			}).
+			Exec(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to add new inventory item: %w", err)
+		}
+	}
+
+	return tx.Commit()
 }
 
 func (r *effectRepository) RemoveFromInventory(ctx context.Context, userID string, itemID string, amount int) error {
-	// Implementation for removing from inventory
-	return nil
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to start transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	// Get current amount
+	var inventory models.UserInventory
+	err = tx.NewSelect().
+		Model(&inventory).
+		Where("user_id = ? AND item_id = ?", userID, itemID).
+		Scan(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get inventory: %w", err)
+	}
+
+	if inventory.Amount < amount {
+		return fmt.Errorf("insufficient items in inventory")
+	}
+
+	if inventory.Amount == amount {
+		// Delete the entry if removing all
+		_, err = tx.NewDelete().
+			Model((*models.UserInventory)(nil)).
+			Where("user_id = ? AND item_id = ?", userID, itemID).
+			Exec(ctx)
+	} else {
+		// Decrease amount
+		_, err = tx.NewUpdate().
+			Model((*models.UserInventory)(nil)).
+			Set("amount = amount - ?", amount).
+			Set("updated_at = ?", time.Now()).
+			Where("user_id = ? AND item_id = ?", userID, itemID).
+			Exec(ctx)
+	}
+
+	if err != nil {
+		return fmt.Errorf("failed to update inventory: %w", err)
+	}
+
+	return tx.Commit()
 }
 
 func (r *effectRepository) GetInventory(ctx context.Context, userID string) ([]*models.UserInventory, error) {
@@ -117,4 +197,63 @@ func (r *effectRepository) GetInventory(ctx context.Context, userID string) ([]*
 		Where("user_id = ?", userID).
 		Scan(ctx)
 	return inventory, err
+}
+
+func (r *effectRepository) GetRandomCardForRecipe(ctx context.Context, userID string, stars int64) (*models.Card, error) {
+	var card models.Card
+
+	log.Printf("[DEBUG] Executing GetRandomCardForRecipe - UserID: %s, Stars: %d", userID, stars)
+
+	query := r.db.NewSelect().
+		Model(&card).
+		Where("c.level = ?", stars).
+		Where("NOT EXISTS (SELECT 1 FROM user_cards uc WHERE uc.user_id = ? AND uc.card_id = c.id)", userID).
+		OrderExpr("RANDOM()").
+		Limit(1)
+
+	log.Printf("[DEBUG] Query parameters - Level: %d, UserID: %s", stars, userID)
+
+	err := query.Scan(ctx, &card)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			log.Printf("[DEBUG] No uncollected cards found with %d stars", stars)
+			return nil, fmt.Errorf("no uncollected cards found with %d stars", stars)
+		}
+		log.Printf("[ERROR] Database error: %v", err)
+		return nil, fmt.Errorf("failed to get random card: %w", err)
+	}
+
+	log.Printf("[DEBUG] Found card - ID: %d, Name: %s, Level: %d", card.ID, card.Name, card.Level)
+	return &card, nil
+}
+
+func (r *effectRepository) StoreUserRecipe(ctx context.Context, userID string, itemID string, cardIDs []int64) error {
+	recipe := &models.UserRecipe{
+		UserID:    userID,
+		ItemID:    itemID,
+		CardIDs:   cardIDs,
+		UpdatedAt: time.Now(),
+	}
+
+	_, err := r.db.NewInsert().
+		Model(recipe).
+		On("CONFLICT (user_id, item_id) DO UPDATE").
+		Set("card_ids = EXCLUDED.card_ids").
+		Set("updated_at = EXCLUDED.updated_at").
+		Exec(ctx)
+
+	return err
+}
+
+func (r *effectRepository) GetUserRecipe(ctx context.Context, userID string, itemID string) (*models.UserRecipe, error) {
+	recipe := new(models.UserRecipe)
+	err := r.db.NewSelect().
+		Model(recipe).
+		Where("user_id = ? AND item_id = ?", userID, itemID).
+		Scan(ctx)
+
+	if err != nil {
+		return nil, err
+	}
+	return recipe, nil
 }

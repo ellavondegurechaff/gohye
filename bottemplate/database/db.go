@@ -238,6 +238,7 @@ func (db *DB) InitializeSchema(ctx context.Context) error {
 		(*models.Claim)(nil),
 		(*models.EconomyStats)(nil),
 		(*models.Wishlist)(nil),
+		(*models.UserInventory)(nil),
 	}
 
 	// Create tables using Bun

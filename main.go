@@ -257,7 +257,13 @@ func main() {
 	h.Command("/shop", handlers.WrapWithLogging("shop", shopHandler.Handle))
 	h.Component("/shop_category", handlers.WrapComponentWithLogging("shop_category", shopHandler.HandleComponent))
 	h.Component("/shop_item", handlers.WrapComponentWithLogging("shop_item", shopHandler.HandleComponent))
-	h.Component("/shop_buy:", handlers.WrapComponentWithLogging("shop_buy", shopHandler.HandleComponent))
+	h.Component("/shop_buy/", handlers.WrapComponentWithLogging("shop_buy", shopHandler.HandleComponent))
+
+	// Inventory commands
+	inventoryHandler := commands.NewInventoryHandler(b, effectManager)
+	h.Command("/inventory", handlers.WrapWithLogging("inventory", inventoryHandler.Handle))
+	h.Component("/inventory_category", handlers.WrapComponentWithLogging("inventory_category", inventoryHandler.HandleComponent))
+	h.Component("/inventory_item", handlers.WrapComponentWithLogging("inventory_item", inventoryHandler.HandleComponent))
 
 	if err = b.SetupBot(h, bot.NewListenerFunc(b.OnReady), handlers.MessageHandler(b)); err != nil {
 		slog.Error("Failed to setup bot",

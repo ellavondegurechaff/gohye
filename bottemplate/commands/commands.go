@@ -29,4 +29,5 @@ var Commands = []discord.ApplicationCommandCreate{
 	Forge,
 	Work,
 	Shop,
+	Inventory,
 }

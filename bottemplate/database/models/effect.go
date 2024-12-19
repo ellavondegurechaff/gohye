@@ -43,9 +43,8 @@ type UserEffect struct {
 type UserInventory struct {
 	bun.BaseModel `bun:"table:user_inventory,alias:ui"`
 
-	ID        int64     `bun:"id,pk,autoincrement"`
-	UserID    string    `bun:"user_id,notnull"`
-	ItemID    string    `bun:"item_id,notnull"`
+	UserID    string    `bun:"user_id,pk"`
+	ItemID    string    `bun:"item_id,pk"`
 	Amount    int       `bun:"amount,notnull,default:1"`
 	CreatedAt time.Time `bun:"created_at,notnull"`
 	UpdatedAt time.Time `bun:"updated_at,notnull"`
