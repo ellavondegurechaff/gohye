@@ -325,7 +325,7 @@ func (m *Manager) PlaceBid(ctx context.Context, auctionID int64, bidderID string
 	var bidder models.User
 	err = tx.NewSelect().
 		Model(&bidder).
-		Where("id = ?", bidderID).
+		Where("discord_id = ?", bidderID).
 		For("UPDATE").
 		Scan(ctx)
 
@@ -341,7 +341,7 @@ func (m *Manager) PlaceBid(ctx context.Context, auctionID int64, bidderID string
 	_, err = tx.NewUpdate().
 		Model((*models.User)(nil)).
 		Set("balance = balance - ?", amount).
-		Where("id = ?", bidderID).
+		Where("discord_id = ?", bidderID).
 		Exec(ctx)
 
 	if err != nil {
@@ -353,7 +353,7 @@ func (m *Manager) PlaceBid(ctx context.Context, auctionID int64, bidderID string
 		_, err = tx.NewUpdate().
 			Model((*models.User)(nil)).
 			Set("balance = balance + ?", auction.CurrentPrice).
-			Where("id = ?", auction.TopBidderID).
+			Where("discord_id = ?", auction.TopBidderID).
 			Exec(ctx)
 
 		if err != nil {

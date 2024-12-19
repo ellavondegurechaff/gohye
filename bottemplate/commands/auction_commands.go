@@ -180,7 +180,6 @@ func (h *AuctionHandler) HandleBid(event *handler.CommandEvent) error {
 	auction, err = h.manager.GetAuctionByAuctionID(ctx, auctionIDStr)
 	if err != nil {
 		// If not found, try parsing as numeric ID
-
 		numericID, parseErr := strconv.ParseInt(auctionIDStr, 10, 64)
 		if parseErr == nil {
 			auction, err = h.manager.GetByID(ctx, numericID)
@@ -196,6 +195,13 @@ func (h *AuctionHandler) HandleBid(event *handler.CommandEvent) error {
 
 	err = h.manager.PlaceBid(ctx, auction.ID, event.User().ID.String(), amount)
 	if err != nil {
+		// Don't reveal the actual bid amount in the error message
+		if strings.Contains(err.Error(), "bid must be at least") {
+			return event.CreateMessage(discord.MessageCreate{
+				Content: "Your bid was too low. Try a higher amount!",
+				Flags:   discord.MessageFlagEphemeral,
+			})
+		}
 		return event.CreateMessage(discord.MessageCreate{
 			Content: fmt.Sprintf("Failed to place bid: %s", err),
 			Flags:   discord.MessageFlagEphemeral,
@@ -258,11 +264,17 @@ func (h *AuctionHandler) HandleList(event *handler.CommandEvent) error {
 		}
 		cardName := strings.Join(words, " ")
 
-		// Format auction entry with enhanced colors and new layout
-		description.WriteString(fmt.Sprintf("\u001b[36m[%s]\u001b[0m \u001b[33m%s\u001b[0m \u001b[32m[%d]\u001b[0m %s \u001b[97m%s\u001b[0m \u001b[94m[%s]\u001b[0m\n",
+		// Format auction entry with enhanced colors but hide current price
+		bidStatus := "No bids"
+		if auction.BidCount > 0 {
+			bidStatus = fmt.Sprintf("%d bid(s)", auction.BidCount)
+		}
+
+		// Modified format to hide current price
+		description.WriteString(fmt.Sprintf("\u001b[36m[%s]\u001b[0m \u001b[33m%s\u001b[0m \u001b[32m[%s]\u001b[0m %s \u001b[97m%s\u001b[0m \u001b[94m[%s]\u001b[0m\n",
 			timeStr,                         // Cyan for time
 			auction.AuctionID,               // Gold for auction ID
-			auction.CurrentPrice,            // Green for price
+			bidStatus,                       // Green for bid status instead of price
 			strings.Repeat("★", card.Level), // Stars (no color)
 			cardName,                        // Bright white for name
 			strings.ToUpper(card.ColID)))    // Light blue for collection
@@ -273,7 +285,7 @@ func (h *AuctionHandler) HandleList(event *handler.CommandEvent) error {
 		SetTitle("🏛️ Auction House").
 		SetDescription(description.String()).
 		SetColor(0x2b2d31).
-		SetFooter(fmt.Sprintf("Page 1/%d", (len(auctions)+9)/10), "")
+		SetFooter(fmt.Sprintf("Page 1/%d • Bid to reveal current price", (len(auctions)+9)/10), "")
 
 	components := []discord.ContainerComponent{
 		discord.NewActionRow(

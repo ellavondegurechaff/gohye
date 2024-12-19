@@ -16,6 +16,7 @@ type AuctionRepository interface {
 	Create(ctx context.Context, auction *models.Auction) error
 	CreateWithTx(ctx context.Context, tx bun.Tx, auction *models.Auction) error
 	GetByID(ctx context.Context, id int64) (*models.Auction, error)
+	GetByAuctionID(ctx context.Context, auctionID string) (*models.Auction, error)
 	GetActive(ctx context.Context) ([]*models.Auction, error)
 	UpdateBid(ctx context.Context, auctionID int64, bidderID string, amount int64) error
 	CompleteAuction(ctx context.Context, auctionID int64) error
@@ -24,7 +25,6 @@ type AuctionRepository interface {
 	CancelAuction(ctx context.Context, auctionID int64) error
 	GetExpiredAuctions(ctx context.Context) ([]*models.Auction, error)
 	UpdateAuctionMessage(ctx context.Context, auctionID int64, messageID string) error
-	GetByAuctionID(ctx context.Context, auctionID string) (*models.Auction, error)
 	CompleteAuctionWithTransfer(ctx context.Context, auctionID int64) error
 	GetActiveAuctionByCardAndSeller(ctx context.Context, cardID int64, sellerID string) (*models.Auction, error)
 }
@@ -317,12 +317,16 @@ func (r *auctionRepository) GetByAuctionID(ctx context.Context, auctionID string
 	auction := new(models.Auction)
 	err := r.db.NewSelect().
 		Model(auction).
-		Where("auction_id = ? AND status = ?", auctionID, models.AuctionStatusActive).
+		Where("auction_id = ?", auctionID).
 		Scan(ctx)
 
 	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, fmt.Errorf("auction not found")
+		}
 		return nil, fmt.Errorf("failed to get auction: %w", err)
 	}
+
 	return auction, nil
 }
 
