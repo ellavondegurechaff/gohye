@@ -119,25 +119,19 @@ func WeightedSearch(cards []*models.Card, filters SearchFilters) []*models.Card 
 	var results []SearchResult
 	searchTerms := strings.Fields(strings.ToLower(filters.Name))
 
+	// First pass: look for exact matches
 	for _, card := range cards {
-		// Skip if doesn't match basic filters
-		if filters.Level != 0 && card.Level != filters.Level {
-			continue
-		}
-		if filters.Collection != "" && !strings.EqualFold(card.ColID, filters.Collection) {
-			continue
-		}
-		if filters.Animated != card.Animated {
-			continue
-		}
-
 		weight := calculateEnhancedWeight(card, searchTerms)
+		if weight == WeightExactMatch {
+			// If we find an exact match, return only that card
+			return []*models.Card{card}
+		}
 		if weight > 0 {
 			results = append(results, SearchResult{Card: card, Weight: weight})
 		}
 	}
 
-	// Sort results
+	// Only proceed with partial matches if no exact match was found
 	sortResults(results, filters.SortBy, filters.SortDesc)
 
 	// Convert to card slice
@@ -156,14 +150,18 @@ func calculateEnhancedWeight(card *models.Card, terms []string) int {
 
 	weight := 0
 	cardName := strings.ToLower(card.Name)
-	cardNameNorm := strings.ReplaceAll(cardName, "_", " ")
+	cardNameNorm := strings.NewReplacer("_", " ", "-", " ").Replace(cardName)
 
-	// Check exact matches first
-	if len(terms) == 1 && cardNameNorm == terms[0] {
+	searchQuery := strings.ToLower(strings.Join(terms, " "))
+
+	if cardNameNorm == searchQuery {
 		return WeightExactMatch
 	}
 
-	// Check for partial matches
+	if strings.Contains(cardNameNorm, searchQuery) {
+		weight += WeightNameMatch
+	}
+
 	matchedTerms := 0
 	for _, term := range terms {
 		if strings.Contains(cardNameNorm, term) {
@@ -172,12 +170,10 @@ func calculateEnhancedWeight(card *models.Card, terms []string) int {
 		}
 	}
 
-	// Bonus for matching all terms
 	if matchedTerms == len(terms) {
-		weight += WeightNameMatch
+		weight += WeightNameMatch / 2
 	}
 
-	// Bonus for prefix match
 	if strings.HasPrefix(cardNameNorm, terms[0]) {
 		weight += WeightPrefixMatch
 	}
