@@ -242,7 +242,11 @@ func (h *ForgeHandler) findCard(ctx context.Context, query, userID string) (*mod
 		return nil, fmt.Errorf("failed to search for cards")
 	}
 
-	searchResults := utils.WeightedSearch(cards, query, utils.SearchModePartial)
+	filters := utils.ParseSearchQuery(query)
+	filters.SortBy = utils.SortByLevel // Prioritize higher level cards
+	filters.SortDesc = true            // Descending order
+
+	searchResults := utils.WeightedSearch(cards, filters)
 	if len(searchResults) == 0 {
 		return nil, fmt.Errorf("no cards found matching '%s'", query)
 	}

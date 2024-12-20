@@ -340,7 +340,12 @@ func handleCardByName(b *bottemplate.Bot, event *handler.CommandEvent, cardName 
 	}
 
 	// Find best matching card using weighted search
-	sortedCards := utils.WeightedSearch(cards, cardName, utils.SearchModeExact)
+	filters := utils.SearchFilters{
+		Name:     cardName,
+		SortBy:   utils.SortByLevel,
+		SortDesc: true,
+	}
+	sortedCards := utils.WeightedSearch(cards, filters)
 	if len(sortedCards) == 0 {
 		return utils.EH.CreateError(event, "Card Not Found",
 			fmt.Sprintf("No card found matching '%s'", cardName))

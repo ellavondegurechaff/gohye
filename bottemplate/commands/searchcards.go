@@ -291,7 +291,12 @@ func formatCardType(cardType string) string {
 
 // New function to sort cards by relevance
 func sortCardsByRelevance(cards []*models.Card, searchTerm string) {
-	sortedCards := utils.WeightedSearch(cards, searchTerm, utils.SearchModePartial)
+	filters := utils.SearchFilters{
+		Name:     searchTerm,
+		SortBy:   utils.SortByLevel,
+		SortDesc: true,
+	}
+	sortedCards := utils.WeightedSearch(cards, filters)
 	// Replace contents of original slice
 	copy(cards, sortedCards)
 }

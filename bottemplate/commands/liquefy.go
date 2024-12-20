@@ -103,7 +103,11 @@ func (h *LiquefyHandler) HandleLiquefy(e *handler.CommandEvent) error {
 		})
 	}
 
-	searchResults := utils.WeightedSearch(cards, query, utils.SearchModePartial)
+	filters := utils.ParseSearchQuery(query)
+	filters.SortBy = utils.SortByLevel // Prioritize higher level cards
+	filters.SortDesc = true            // Descending order
+
+	searchResults := utils.WeightedSearch(cards, filters)
 	if len(searchResults) == 0 {
 		return e.CreateMessage(discord.MessageCreate{
 			Content: fmt.Sprintf("❌ No cards found matching '%s'", query),
@@ -178,7 +182,7 @@ func (h *LiquefyHandler) HandleComponent(e *handler.ComponentEvent) error {
 	parts := strings.Split(e.Data.CustomID(), "/")
 	if len(parts) != 4 {
 		return e.UpdateMessage(discord.MessageUpdate{
-			Content:    utils.Ptr("❌ Invalid interaction"),
+			Content:    utils.Ptr("��� Invalid interaction"),
 			Components: &[]discord.ContainerComponent{},
 		})
 	}

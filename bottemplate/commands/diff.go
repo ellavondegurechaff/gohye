@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"sort"
 	"strings"
 	"time"
 
@@ -91,20 +90,13 @@ func DiffHandler(b *bottemplate.Bot) handler.CommandHandler {
 
 		// Apply search filter if provided
 		if query != "" {
-			filteredCards := utils.WeightedSearch(diffCards, query, utils.SearchModePartial)
+			filters := utils.ParseSearchQuery(query)
+			filteredCards := utils.WeightedSearch(diffCards, filters)
 			if len(filteredCards) == 0 {
 				return utils.EH.CreateErrorEmbed(e, fmt.Sprintf("No cards match the query: %s", query))
 			}
 			diffCards = filteredCards
 		}
-
-		// Sort cards by level (descending) and name (ascending)
-		sort.Slice(diffCards, func(i, j int) bool {
-			if diffCards[i].Level != diffCards[j].Level {
-				return diffCards[i].Level > diffCards[j].Level
-			}
-			return diffCards[i].Name < diffCards[j].Name
-		})
 
 		totalPages := int(math.Ceil(float64(len(diffCards)) / float64(utils.CardsPerPage)))
 

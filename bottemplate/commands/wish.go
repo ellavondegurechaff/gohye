@@ -120,7 +120,12 @@ func handleWishOne(ctx context.Context, b *bottemplate.Bot, e *handler.CommandEv
 		return fmt.Errorf("failed to search for cards")
 	}
 
-	searchResults := utils.WeightedSearch(cards, query, utils.SearchModeExact)
+	filters := utils.SearchFilters{
+		Name:     query,
+		SortBy:   utils.SortByLevel,
+		SortDesc: true,
+	}
+	searchResults := utils.WeightedSearch(cards, filters)
 	if len(searchResults) == 0 {
 		return fmt.Errorf("no cards found matching '%s'", query)
 	}
@@ -175,7 +180,12 @@ func handleWishMany(ctx context.Context, b *bottemplate.Bot, e *handler.CommandE
 		return fmt.Errorf("failed to search for cards")
 	}
 
-	searchResults := utils.WeightedSearch(cards, query, utils.SearchModePartial)
+	filters := utils.SearchFilters{
+		Name:     query,
+		SortBy:   utils.SortByLevel,
+		SortDesc: true,
+	}
+	searchResults := utils.WeightedSearch(cards, filters)
 	if len(searchResults) == 0 {
 		return fmt.Errorf("no cards found matching '%s'", query)
 	}
@@ -246,7 +256,12 @@ func handleWishRemove(ctx context.Context, b *bottemplate.Bot, e *handler.Comman
 	}
 
 	// Use WeightedSearch to find the best match from wished cards
-	searchResults := utils.WeightedSearch(wishedCards, query, utils.SearchModePartial)
+	filters := utils.SearchFilters{
+		Name:     query,
+		SortBy:   utils.SortByLevel,
+		SortDesc: true,
+	}
+	searchResults := utils.WeightedSearch(wishedCards, filters)
 	if len(searchResults) == 0 {
 		return fmt.Errorf("no matching cards found in your wishlist for '%s'", query)
 	}

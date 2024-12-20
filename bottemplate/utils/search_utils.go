@@ -32,37 +32,115 @@ const (
 	WeightPartialMatch    = 10
 )
 
-// WeightedSearch performs a weighted search on cards based on search terms
-func WeightedSearch(cards []*models.Card, searchTerm string, mode SearchMode) []*models.Card {
-	if searchTerm == "" {
-		return cards
+// SearchFilters represents all possible search criteria
+type SearchFilters struct {
+	Query      string // Raw search query
+	Name       string // Card name
+	Level      int    // Card level (1-5)
+	Collection string // Collection ID
+	Animated   bool   // Animated cards only
+	Favorites  bool   // Favorited cards only
+	SortBy     string // Sort criteria
+	SortDesc   bool   // Sort direction
+}
+
+// SortOptions defines available sorting methods
+const (
+	SortByLevel = "level"
+	SortByName  = "name"
+	SortByCol   = "collection"
+	SortByDate  = "date"
+)
+
+// ParseSearchQuery parses a user's search query into structured filters
+func ParseSearchQuery(query string) SearchFilters {
+	filters := SearchFilters{
+		Query:    query,
+		SortBy:   SortByLevel, // Default sort
+		SortDesc: true,        // Default descending
 	}
 
-	searchTermLower := strings.ToLower(searchTerm)
-	searchWords := strings.FieldsFunc(searchTermLower, func(r rune) bool {
-		return r == ' ' || r == '_'
-	})
+	terms := strings.Fields(strings.ToLower(query))
+	for i := 0; i < len(terms); i++ {
+		term := terms[i]
+
+		// Handle sort commands
+		if strings.HasPrefix(term, "<") || strings.HasPrefix(term, ">") {
+			sortType := strings.TrimPrefix(strings.TrimPrefix(term, "<"), ">")
+			switch sortType {
+			case "level", "star":
+				filters.SortBy = SortByLevel
+			case "name":
+				filters.SortBy = SortByName
+			case "col":
+				filters.SortBy = SortByCol
+			case "date":
+				filters.SortBy = SortByDate
+			}
+			filters.SortDesc = strings.HasPrefix(term, ">")
+			continue
+		}
+
+		// Handle special filters
+		switch {
+		case term == "-gif":
+			filters.Animated = false
+		case term == "gif":
+			filters.Animated = true
+		case strings.HasPrefix(term, "-"):
+			// Negative collection filter
+			filters.Collection = strings.TrimPrefix(term, "-")
+		case term[0] >= '1' && term[0] <= '5' && len(term) == 1:
+			// Level filter
+			filters.Level, _ = strconv.Atoi(term)
+		case term == "fav":
+			filters.Favorites = true
+		case term == "-fav":
+			filters.Favorites = false
+		default:
+			// Add to name search if not a special term
+			if filters.Name == "" {
+				filters.Name = term
+			} else {
+				filters.Name += " " + term
+			}
+		}
+	}
+
+	return filters
+}
+
+// WeightedSearch performs an enhanced search with better matching
+func WeightedSearch(cards []*models.Card, filters SearchFilters) []*models.Card {
+	if len(cards) == 0 {
+		return nil
+	}
 
 	var results []SearchResult
+	searchTerms := strings.Fields(strings.ToLower(filters.Name))
+
 	for _, card := range cards {
-		weight := calculateSearchWeight(card, searchTermLower, searchWords, mode)
+		// Skip if doesn't match basic filters
+		if filters.Level != 0 && card.Level != filters.Level {
+			continue
+		}
+		if filters.Collection != "" && !strings.EqualFold(card.ColID, filters.Collection) {
+			continue
+		}
+		if filters.Animated != card.Animated {
+			continue
+		}
+
+		weight := calculateEnhancedWeight(card, searchTerms)
 		if weight > 0 {
 			results = append(results, SearchResult{Card: card, Weight: weight})
 		}
 	}
 
-	sortSearchResults(results)
+	// Sort results
+	sortResults(results, filters.SortBy, filters.SortDesc)
 
-	if mode == SearchModeExact {
-		var highConfidenceResults []SearchResult
-		for _, result := range results {
-			if result.Weight >= WeightNameMatch {
-				highConfidenceResults = append(highConfidenceResults, result)
-			}
-		}
-		results = highConfidenceResults
-	}
-
+	// Convert to card slice
 	sortedCards := make([]*models.Card, len(results))
 	for i, result := range results {
 		sortedCards[i] = result.Card
@@ -71,69 +149,58 @@ func WeightedSearch(cards []*models.Card, searchTerm string, mode SearchMode) []
 	return sortedCards
 }
 
-func calculateSearchWeight(card *models.Card, fullTerm string, terms []string, mode SearchMode) int {
+func calculateEnhancedWeight(card *models.Card, terms []string) int {
+	if len(terms) == 0 {
+		return WeightPartialMatch // Return all cards when no search terms
+	}
+
 	weight := 0
+	cardName := strings.ToLower(card.Name)
+	cardNameNorm := strings.ReplaceAll(cardName, "_", " ")
 
-	nameLower := strings.ToLower(card.Name)
-	nameNormalized := strings.ReplaceAll(nameLower, "_", " ")
-	fullTermNormalized := strings.ReplaceAll(fullTerm, "_", " ")
+	// Check exact matches first
+	if len(terms) == 1 && cardNameNorm == terms[0] {
+		return WeightExactMatch
+	}
 
-	colIDLower := strings.ToLower(card.ColID)
-
-	switch mode {
-	case SearchModeExact:
-		if nameNormalized == fullTermNormalized {
-			weight += WeightExactMatch
-		} else if strings.Contains(nameNormalized, fullTermNormalized) {
-			weight += WeightNameMatch
-		}
-
-		if colIDLower == fullTermNormalized {
-			weight += WeightCollectionMatch
-		}
-
-	case SearchModePartial:
-		matchedTerms := 0
-		for _, term := range terms {
-			termNorm := strings.TrimSpace(term)
-			if termNorm == "" {
-				continue
-			}
-
-			if strings.Contains(nameNormalized, termNorm) {
-				weight += WeightPartialMatch
-				matchedTerms++
-			}
-
-			if strings.Contains(colIDLower, termNorm) {
-				weight += WeightPartialMatch / 2
-				matchedTerms++
-			}
-
-			if level, err := strconv.Atoi(termNorm); err == nil && level == card.Level {
-				weight += WeightLevelMatch
-				matchedTerms++
-			}
-		}
-
-		if matchedTerms == len(terms) {
-			weight += WeightExactMatch / 2
+	// Check for partial matches
+	matchedTerms := 0
+	for _, term := range terms {
+		if strings.Contains(cardNameNorm, term) {
+			weight += WeightPartialMatch
+			matchedTerms++
 		}
 	}
 
-	if len(terms) > 0 && strings.HasPrefix(nameNormalized, terms[0]) {
+	// Bonus for matching all terms
+	if matchedTerms == len(terms) {
+		weight += WeightNameMatch
+	}
+
+	// Bonus for prefix match
+	if strings.HasPrefix(cardNameNorm, terms[0]) {
 		weight += WeightPrefixMatch
 	}
 
 	return weight
 }
 
-func sortSearchResults(results []SearchResult) {
+func sortResults(results []SearchResult, sortBy string, desc bool) {
 	sort.Slice(results, func(i, j int) bool {
-		if results[i].Weight != results[j].Weight {
-			return results[i].Weight > results[j].Weight
+		var less bool
+		switch sortBy {
+		case SortByLevel:
+			less = results[i].Card.Level < results[j].Card.Level
+		case SortByName:
+			less = strings.ToLower(results[i].Card.Name) < strings.ToLower(results[j].Card.Name)
+		case SortByCol:
+			less = strings.ToLower(results[i].Card.ColID) < strings.ToLower(results[j].Card.ColID)
+		default:
+			less = results[i].Weight < results[j].Weight
 		}
-		// If weights are equal, sort alphabetically
-		return strings.ToLower(results[i].Card.Name) < strings.ToLower(results[j].Card.Name)
+		if desc {
+			return !less
+		}
+		return less
 	})
 }

@@ -56,7 +56,11 @@ func SummonHandler(b *bottemplate.Bot) handler.CommandHandler {
 		}
 
 		// Use weighted search to find the best match
-		searchResults := utils.WeightedSearch(cards, query, utils.SearchModeExact)
+		filters := utils.ParseSearchQuery(query)
+		filters.SortBy = utils.SortByLevel // Prioritize higher level cards
+		filters.SortDesc = true            // Descending order
+
+		searchResults := utils.WeightedSearch(cards, filters)
 		if len(searchResults) == 0 {
 			return e.CreateMessage(discord.MessageCreate{
 				Embeds: []discord.Embed{

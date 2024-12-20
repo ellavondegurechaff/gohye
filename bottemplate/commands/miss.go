@@ -66,7 +66,11 @@ func MissHandler(b *bottemplate.Bot) handler.CommandHandler {
 		// Apply search filter if provided
 		query := strings.TrimSpace(e.SlashCommandInteractionData().String("card_query"))
 		if query != "" {
-			filteredCards := utils.WeightedSearch(missingCards, query, utils.SearchModePartial)
+			filters := utils.ParseSearchQuery(query)
+			filters.SortBy = utils.SortByLevel // Prioritize higher level cards
+			filters.SortDesc = true            // Descending order
+
+			filteredCards := utils.WeightedSearch(missingCards, filters)
 			if len(filteredCards) == 0 {
 				return utils.EH.CreateErrorEmbed(e, fmt.Sprintf("No missing cards match the query: %s", query))
 			}

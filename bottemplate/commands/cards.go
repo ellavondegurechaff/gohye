@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"sort"
 	"strings"
 
 	"github.com/disgoorg/bot-template/bottemplate"
@@ -18,13 +17,13 @@ import (
 var Cards = discord.SlashCommandCreate{
 	Name:        "cards",
 	Description: "View your card collection",
-	Options: append(utils.CommonFilterOptions,
-		discord.ApplicationCommandOptionBool{
-			Name:        "favorites",
-			Description: "Show only favorite cards",
+	Options: []discord.ApplicationCommandOption{
+		discord.ApplicationCommandOptionString{
+			Name:        "query",
+			Description: "Search query (e.g., '5 gif winter -aespa >level')",
 			Required:    false,
 		},
-	),
+	},
 }
 
 func CardsHandler(b *bottemplate.Bot) handler.CommandHandler {
@@ -38,81 +37,85 @@ func CardsHandler(b *bottemplate.Bot) handler.CommandHandler {
 			return utils.EH.CreateErrorEmbed(event, "No cards found")
 		}
 
-		// Extract filters into common structure
-		filters := utils.FilterInfo{
-			Name:       strings.TrimSpace(event.SlashCommandInteractionData().String("name")),
-			Level:      int(event.SlashCommandInteractionData().Int("level")),
-			Tags:       strings.TrimSpace(event.SlashCommandInteractionData().String("tags")),
-			Collection: strings.TrimSpace(event.SlashCommandInteractionData().String("collection")),
-			Animated:   event.SlashCommandInteractionData().Bool("animated"),
-			Favorites:  event.SlashCommandInteractionData().Bool("favorites"),
-		}
+		// Get search query and parse filters
+		query := strings.TrimSpace(event.SlashCommandInteractionData().String("query"))
+		filters := utils.ParseSearchQuery(query)
 
-		var filteredCards []*models.UserCard
+		// Add logging
+		fmt.Printf("Search Query: %q\n", query)
+		fmt.Printf("Parsed Filters: %+v\n", filters)
+
+		// Convert UserCards to Cards for searching
+		var cards []*models.Card
+		cardMap := make(map[string]*models.UserCard) // Map to store UserCard data
+
 		for _, userCard := range userCards {
 			cardData, err := b.CardRepository.GetByID(context.Background(), userCard.CardID)
 			if err != nil {
+				fmt.Printf("Error getting card %d: %v\n", userCard.CardID, err)
 				continue
 			}
+			cards = append(cards, cardData)
+			cardMap[fmt.Sprintf("%d", cardData.ID)] = userCard // Convert ID to string
+		}
 
-			// Apply filters
-			if filters.Name != "" && !strings.Contains(strings.ToLower(cardData.Name), strings.ToLower(filters.Name)) {
-				continue
-			}
-			if filters.Level != 0 && cardData.Level != filters.Level {
-				continue
-			}
-			if filters.Tags != "" && !contains(cardData.Tags, filters.Tags) {
-				continue
-			}
-			if filters.Collection != "" && !strings.Contains(strings.ToLower(cardData.ColID), strings.ToLower(filters.Collection)) {
-				continue
-			}
-			if filters.Animated && !cardData.Animated {
-				continue
-			}
-			if filters.Favorites && !userCard.Favorite {
-				continue
-			}
+		fmt.Printf("Total cards before filtering: %d\n", len(cards))
 
-			filteredCards = append(filteredCards, userCard)
+		// Apply search filters
+		filteredCards := utils.WeightedSearch(cards, filters)
+		fmt.Printf("Cards after search filter: %d\n", len(filteredCards))
+
+		// Apply favorites filter if requested (only for cards command)
+		if filters.Favorites {
+			var favoritedCards []*models.Card
+			for _, card := range filteredCards {
+				cardIDStr := fmt.Sprintf("%d", card.ID)
+				if userCard, ok := cardMap[cardIDStr]; ok {
+					fmt.Printf("Checking favorite for card %s: %v\n", cardIDStr, userCard.Favorite)
+					if userCard.Favorite {
+						favoritedCards = append(favoritedCards, card)
+					}
+				}
+			}
+			filteredCards = favoritedCards
+			fmt.Printf("Cards after favorites filter: %d\n", len(filteredCards))
 		}
 
 		if len(filteredCards) == 0 {
-			return utils.EH.CreateErrorEmbed(event, "No cards match your filters")
+			return utils.EH.CreateErrorEmbed(event, "No cards match your search")
 		}
 
-		// Sort cards by level (descending) and then by name
-		sort.Slice(filteredCards, func(i, j int) bool {
-			cardI, _ := b.CardRepository.GetByID(context.Background(), filteredCards[i].CardID)
-			cardJ, _ := b.CardRepository.GetByID(context.Background(), filteredCards[j].CardID)
-
-			if cardI.Level != cardJ.Level {
-				return cardI.Level > cardJ.Level // Descending order
+		// Map filtered cards back to UserCards for display
+		var displayCards []*models.UserCard
+		for _, card := range filteredCards {
+			for _, userCard := range userCards {
+				if userCard.CardID == card.ID {
+					displayCards = append(displayCards, userCard)
+					break
+				}
 			}
-			return cardI.Name < cardJ.Name // Alphabetical order for same level
-		})
+		}
 
-		totalPages := int(math.Ceil(float64(len(filteredCards)) / float64(utils.CardsPerPage)))
+		totalPages := int(math.Ceil(float64(len(displayCards)) / float64(utils.CardsPerPage)))
 
 		return b.Paginator.Create(event.Respond, paginator.Pages{
 			ID:      event.ID().String(),
 			Creator: event.User().ID,
 			PageFunc: func(page int, embed *discord.EmbedBuilder) {
 				startIdx := page * utils.CardsPerPage
-				endIdx := min(startIdx+utils.CardsPerPage, len(filteredCards))
+				endIdx := min(startIdx+utils.CardsPerPage, len(displayCards))
 
-				description := formatCardsDescription(b, filteredCards[startIdx:endIdx])
+				description := formatCardsDescription(b, displayCards[startIdx:endIdx])
 
-				if utils.HasActiveFilters(filters) {
-					description = utils.BuildFilterDescription(filters) + "\n\n" + description
+				if query != "" {
+					description = fmt.Sprintf("```md\n# Search Query\n* %s\n```\n\n%s", query, description)
 				}
 
 				embed.
 					SetTitle("My Collection").
 					SetDescription(description).
 					SetColor(0x2B2D31).
-					SetFooter(fmt.Sprintf("Page %d/%d • Total: %d", page+1, totalPages, len(filteredCards)), "")
+					SetFooter(fmt.Sprintf("Page %d/%d • Total: %d", page+1, totalPages, len(displayCards)), "")
 			},
 			Pages:      totalPages,
 			ExpireMode: paginator.ExpireModeAfterLastUsage,

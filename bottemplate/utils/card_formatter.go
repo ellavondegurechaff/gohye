@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"fmt"
 	"strings"
 	"unicode"
 )
@@ -11,6 +12,7 @@ type CardDisplayInfo struct {
 	FormattedCollection string
 	ImageURL            string
 	Stars               string
+	Hyperlink           string
 }
 
 // FormatCardName converts names like "hoot_taeyeon" to "Hoot Taeyeon"
@@ -47,11 +49,13 @@ func FormatCollectionName(colID string) string {
 
 // GetCardDisplayInfo formats all card information for display
 func GetCardDisplayInfo(cardName string, colID string, level int, groupType string, spacesConfig SpacesConfig) CardDisplayInfo {
+	imageURL := spacesConfig.GetImageURL(cardName, colID, level, groupType)
 	return CardDisplayInfo{
 		FormattedName:       FormatCardName(cardName),
 		FormattedCollection: FormatCollectionName(colID),
-		ImageURL:            spacesConfig.GetImageURL(cardName, colID, level, groupType),
+		ImageURL:            imageURL,
 		Stars:               GetStarsDisplay(level),
+		Hyperlink:           fmt.Sprintf("[%s](%s)", FormatCardName(cardName), imageURL),
 	}
 }
 

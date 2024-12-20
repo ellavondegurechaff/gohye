@@ -45,7 +45,11 @@ func HasHandler(b *bottemplate.Bot) handler.CommandHandler {
 			return utils.EH.CreateErrorEmbed(e, "Failed to search for cards")
 		}
 
-		searchResults := utils.WeightedSearch(cards, query, utils.SearchModePartial)
+		filters := utils.ParseSearchQuery(query)
+		filters.SortBy = utils.SortByLevel
+		filters.SortDesc = true
+
+		searchResults := utils.WeightedSearch(cards, filters)
 		if len(searchResults) == 0 {
 			return utils.EH.CreateErrorEmbed(e, fmt.Sprintf("No cards found matching '%s'", query))
 		}
