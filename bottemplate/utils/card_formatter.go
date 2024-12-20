@@ -108,7 +108,7 @@ func FormatCardEntry(displayInfo CardDisplayInfo, favorite bool, animated bool, 
 		}
 	}
 
-	return fmt.Sprintf("* %s %s%s `%s`",
+	return fmt.Sprintf("* %s %s%s `[%s]`",
 		displayInfo.Stars,
 		displayInfo.Hyperlink,
 		icons.String(),

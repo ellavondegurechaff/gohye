@@ -3,7 +3,6 @@ package commands
 import (
 	"context"
 	"fmt"
-	"sort"
 	"strings"
 	"time"
 
@@ -304,6 +303,8 @@ func handleWishList(ctx context.Context, b *bottemplate.Bot, e *handler.CommandE
 	}
 
 	query := e.SlashCommandInteractionData().String("card_query")
+	// Parse the search query into filters
+	filters := utils.ParseSearchQuery(query)
 
 	wishlist, err := b.WishlistRepository.GetByUserID(ctx, targetUser.ID.String())
 	if err != nil {
@@ -315,7 +316,9 @@ func handleWishList(ctx context.Context, b *bottemplate.Bot, e *handler.CommandE
 	}
 
 	var description strings.Builder
-	description.WriteString("```ansi\n")
+	if query != "" {
+		description.WriteString(fmt.Sprintf("🔎`%s`\n\n", query))
+	}
 
 	// Get all cards for reference
 	cards, err := b.CardRepository.GetAll(ctx)
@@ -323,11 +326,19 @@ func handleWishList(ctx context.Context, b *bottemplate.Bot, e *handler.CommandE
 		return fmt.Errorf("failed to fetch cards")
 	}
 
-	// Create a map for faster card lookups
-	cardMap := make(map[int64]*models.Card)
-	for _, card := range cards {
-		cardMap[card.ID] = card
+	// Create a map of wished cards
+	wishedCards := make([]*models.Card, 0)
+	for _, wish := range wishlist {
+		for _, card := range cards {
+			if card.ID == wish.CardID {
+				wishedCards = append(wishedCards, card)
+				break
+			}
+		}
 	}
+
+	// Use WeightedSearch to filter the wished cards
+	displayedCards := utils.WeightedSearch(wishedCards, filters)
 
 	// Get user's owned cards
 	userCards, err := b.UserCardRepository.GetAllByUserID(ctx, targetUser.ID.String())
@@ -341,27 +352,10 @@ func handleWishList(ctx context.Context, b *bottemplate.Bot, e *handler.CommandE
 		ownedCards[uc.CardID] = true
 	}
 
-	var displayedCards []*models.Card
-	for _, wish := range wishlist {
-		if card, exists := cardMap[wish.CardID]; exists {
-			if query == "" || strings.Contains(strings.ToLower(card.Name), strings.ToLower(query)) {
-				displayedCards = append(displayedCards, card)
-			}
-		}
-	}
-
-	// Sort cards by level and name
-	sort.Slice(displayedCards, func(i, j int) bool {
-		if displayedCards[i].Level != displayedCards[j].Level {
-			return displayedCards[i].Level > displayedCards[j].Level
-		}
-		return displayedCards[i].Name < displayedCards[j].Name
-	})
-
 	for _, card := range displayedCards {
-		ownedMark := "❌"
+		ownedMark := "`❌`"
 		if ownedCards[card.ID] {
-			ownedMark = "✅"
+			ownedMark = "`✅`"
 		}
 
 		cardInfo := utils.GetCardDisplayInfo(
@@ -372,14 +366,17 @@ func handleWishList(ctx context.Context, b *bottemplate.Bot, e *handler.CommandE
 			b.SpacesService.GetSpacesConfig(),
 		)
 
-		description.WriteString(fmt.Sprintf("%s \x1b[32m%s\x1b[0m [%s] %s\n",
-			ownedMark,
-			cardInfo.FormattedName,
-			strings.Repeat("⭐", card.Level),
-			cardInfo.FormattedCollection))
-	}
+		// Format card entry with hyperlink
+		entry := utils.FormatCardEntry(
+			cardInfo,
+			false, // not favorite for wishlist
+			card.Animated,
+			0,         // amount is 0 for wishlist
+			ownedMark, // add owned mark as extra info
+		)
 
-	description.WriteString("```")
+		description.WriteString(entry + "\n")
+	}
 
 	embed := discord.NewEmbedBuilder().
 		SetTitle(fmt.Sprintf("%s's Wishlist", targetUser.Username)).

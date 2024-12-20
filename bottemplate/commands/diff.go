@@ -29,7 +29,7 @@ var Diff = discord.SlashCommandCreate{
 					Required:    true,
 				},
 				discord.ApplicationCommandOptionString{
-					Name:        "card_query",
+					Name:        "query",
 					Description: "Filter cards by name, collection, or other attributes",
 					Required:    false,
 				},
@@ -45,7 +45,7 @@ var Diff = discord.SlashCommandCreate{
 					Required:    true,
 				},
 				discord.ApplicationCommandOptionString{
-					Name:        "card_query",
+					Name:        "query",
 					Description: "Filter cards by name, collection, or other attributes",
 					Required:    false,
 				},
@@ -63,7 +63,7 @@ func DiffHandler(b *bottemplate.Bot) handler.CommandHandler {
 		subCmd := *data.SubCommandName
 
 		targetUser := data.User("user")
-		query := strings.TrimSpace(data.String("card_query"))
+		query := strings.TrimSpace(data.String("query"))
 
 		var diffCards []*models.Card
 		var title string
@@ -89,9 +89,10 @@ func DiffHandler(b *bottemplate.Bot) handler.CommandHandler {
 		}
 
 		// Apply search filter if provided
+		var filteredCards []*models.Card
 		if query != "" {
 			filters := utils.ParseSearchQuery(query)
-			filteredCards := utils.WeightedSearch(diffCards, filters)
+			filteredCards = utils.WeightedSearch(diffCards, filters)
 			if len(filteredCards) == 0 {
 				return utils.EH.CreateErrorEmbed(e, fmt.Sprintf("No cards match the query: %s", query))
 			}
@@ -109,27 +110,31 @@ func DiffHandler(b *bottemplate.Bot) handler.CommandHandler {
 				pageCards := diffCards[startIdx:endIdx]
 
 				var description strings.Builder
-				description.WriteString("```ansi\n")
 
 				if query != "" {
-					description.WriteString(fmt.Sprintf("Filtering by: \x1b[33m%s\x1b[0m\n\n", query))
+					description.WriteString(fmt.Sprintf("🔍`%s`\n\n", query))
 				}
 
 				for _, card := range pageCards {
-					animatedIcon := ""
-					if card.Animated {
-						animatedIcon = "✨"
-					}
+					// Get formatted display info
+					displayInfo := utils.GetCardDisplayInfo(
+						card.Name,
+						card.ColID,
+						card.Level,
+						"", // groupType not needed for display
+						b.SpacesService.GetSpacesConfig(),
+					)
 
-					description.WriteString(fmt.Sprintf("%s \x1b[32m%s\x1b[0m%s [%s]\n",
-						strings.Repeat("⭐", card.Level),
-						utils.FormatCardName(card.Name),
-						animatedIcon,
-						strings.Trim(utils.FormatCollectionName(card.ColID), "[]"),
-					))
+					// Format card entry with hyperlink
+					entry := utils.FormatCardEntry(
+						displayInfo,
+						false, // not favorite for diff
+						card.Animated,
+						0, // amount is 0 for diff
+					)
+
+					description.WriteString(entry + "\n")
 				}
-
-				description.WriteString("```")
 
 				embed.
 					SetTitle(title).

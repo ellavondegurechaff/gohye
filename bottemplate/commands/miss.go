@@ -96,27 +96,31 @@ func MissHandler(b *bottemplate.Bot) handler.CommandHandler {
 				pageCards := missingCards[startIdx:endIdx]
 
 				var description strings.Builder
-				description.WriteString("```ansi\n")
 
 				if query != "" {
-					description.WriteString(fmt.Sprintf("Filtering by: \x1b[33m%s\x1b[0m\n\n", query))
+					description.WriteString(fmt.Sprintf("🔍`%s`\n\n", query))
 				}
 
 				for _, card := range pageCards {
-					animatedIcon := ""
-					if card.Animated {
-						animatedIcon = "✨"
-					}
+					// Get formatted display info
+					displayInfo := utils.GetCardDisplayInfo(
+						card.Name,
+						card.ColID,
+						card.Level,
+						"",                                // If GroupType isn't needed, pass empty string
+						b.SpacesService.GetSpacesConfig(), // Use SpacesService to get config
+					)
 
-					description.WriteString(fmt.Sprintf("%s \x1b[32m%s\x1b[0m%s [%s]\n",
-						strings.Repeat("⭐", card.Level),
-						utils.FormatCardName(card.Name),
-						animatedIcon,
-						strings.Trim(utils.FormatCollectionName(card.ColID), "[]"),
-					))
+					// Format card entry with hyperlink
+					entry := utils.FormatCardEntry(
+						displayInfo,
+						false, // not favorite since it's missing
+						card.Animated,
+						0, // amount is 0 since it's missing
+					)
+
+					description.WriteString(entry + "\n")
 				}
-
-				description.WriteString("```")
 
 				embed.
 					SetTitle("Missing Cards").
