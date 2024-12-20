@@ -4,7 +4,7 @@ import "time"
 
 const (
 	// Pagination
-	CardsPerPage = 10
+	CardsPerPage = 7
 
 	// Search Related
 	SearchTimeout   = 10 * time.Second

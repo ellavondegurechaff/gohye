@@ -108,7 +108,7 @@ func CardsHandler(b *bottemplate.Bot) handler.CommandHandler {
 				description := formatCardsDescription(b, displayCards[startIdx:endIdx])
 
 				if query != "" {
-					description = fmt.Sprintf("```md\n# Search Query\n* %s\n```\n\n%s", query, description)
+					description = fmt.Sprintf("`🔍 %s`\n\n%s", query, description)
 				}
 
 				embed.
@@ -126,7 +126,6 @@ func CardsHandler(b *bottemplate.Bot) handler.CommandHandler {
 // Format cards description for display
 func formatCardsDescription(b *bottemplate.Bot, cards []*models.UserCard) string {
 	var description strings.Builder
-	description.WriteString("```md\n")
 
 	for _, userCard := range cards {
 		cardData, err := b.CardRepository.GetByID(context.Background(), userCard.CardID)
@@ -134,35 +133,23 @@ func formatCardsDescription(b *bottemplate.Bot, cards []*models.UserCard) string
 			continue
 		}
 
-		// Format the card entry
-		starRating := strings.Repeat("⭐", cardData.Level)
-		favoriteIcon := ""
-		if userCard.Favorite {
-			favoriteIcon = "❤️"
-		}
+		displayInfo := utils.GetCardDisplayInfo(
+			cardData.Name,
+			cardData.ColID,
+			cardData.Level,
+			utils.GetGroupType(cardData.Tags),
+			b.SpacesService.GetSpacesConfig(),
+		)
 
-		animatedIcon := ""
-		if cardData.Animated {
-			animatedIcon = "✨"
-		}
-
-		// Add amount if more than 1
-		amountText := ""
-		if userCard.Amount > 1 {
-			amountText = fmt.Sprintf(" x%d", userCard.Amount)
-		}
-
-		description.WriteString(fmt.Sprintf("* %s %s %s%s%s [%s]\n",
-			starRating,
-			utils.FormatCardName(cardData.Name),
-			favoriteIcon,
-			animatedIcon,
-			amountText,
-			strings.Trim(utils.FormatCollectionName(cardData.ColID), "[]"),
+		description.WriteString(utils.FormatCardEntry(
+			displayInfo,
+			userCard.Favorite,
+			cardData.Animated,
+			int(userCard.Amount),
 		))
+		description.WriteString("\n")
 	}
 
-	description.WriteString("```")
 	return description.String()
 }
 

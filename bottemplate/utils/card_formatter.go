@@ -62,9 +62,9 @@ func GetCardDisplayInfo(cardName string, colID string, level int, groupType stri
 // GetStarsDisplay returns stars based on level (1-5)
 func GetStarsDisplay(level int) string {
 	if level < 1 || level > 5 {
-		return "✧"
+		return "`✧`"
 	}
-	return strings.Repeat("⭐", level)
+	return fmt.Sprintf("`%s`", strings.Repeat("★", level))
 }
 
 // formatTags optimizes group type formatting
@@ -85,4 +85,33 @@ type SpacesConfig struct {
 	Region      string
 	CardRoot    string
 	GetImageURL func(cardName string, colID string, level int, groupType string) string
+}
+
+// FormatCardEntry formats a single card entry with hyperlink and icons
+func FormatCardEntry(displayInfo CardDisplayInfo, favorite bool, animated bool, amount int, extraInfo ...string) string {
+	var icons strings.Builder
+
+	if favorite {
+		icons.WriteString(" `❤️`")
+	}
+	if animated {
+		icons.WriteString(" `✨`")
+	}
+	if amount > 1 {
+		icons.WriteString(fmt.Sprintf(" `x%d`", amount))
+	}
+
+	// Add any extra info (like diff percentage, miss count, etc.)
+	for _, info := range extraInfo {
+		if info != "" {
+			icons.WriteString(" " + info)
+		}
+	}
+
+	return fmt.Sprintf("* %s %s%s `%s`",
+		displayInfo.Stars,
+		displayInfo.Hyperlink,
+		icons.String(),
+		strings.Trim(displayInfo.FormattedCollection, "[]"),
+	)
 }
