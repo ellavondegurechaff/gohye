@@ -56,7 +56,6 @@ func (h *ForgeHandler) HandleForge(e *handler.CommandEvent) error {
 	if err != nil {
 		return e.CreateMessage(discord.MessageCreate{
 			Content: fmt.Sprintf("❌ Error finding first card: %v", err),
-			Flags:   discord.MessageFlagEphemeral,
 		})
 	}
 
@@ -65,7 +64,6 @@ func (h *ForgeHandler) HandleForge(e *handler.CommandEvent) error {
 	if err != nil {
 		return e.CreateMessage(discord.MessageCreate{
 			Content: fmt.Sprintf("❌ Error finding second card: %v", err),
-			Flags:   discord.MessageFlagEphemeral,
 		})
 	}
 
@@ -73,14 +71,12 @@ func (h *ForgeHandler) HandleForge(e *handler.CommandEvent) error {
 	if card1.Level != card2.Level {
 		return e.CreateMessage(discord.MessageCreate{
 			Content: "❌ Cards must be of the same level to forge",
-			Flags:   discord.MessageFlagEphemeral,
 		})
 	}
 
 	if card1.ID == card2.ID {
 		return e.CreateMessage(discord.MessageCreate{
 			Content: "❌ You must use two different cards to forge",
-			Flags:   discord.MessageFlagEphemeral,
 		})
 	}
 
@@ -89,7 +85,6 @@ func (h *ForgeHandler) HandleForge(e *handler.CommandEvent) error {
 	if err != nil {
 		return e.CreateMessage(discord.MessageCreate{
 			Content: fmt.Sprintf("❌ Error calculating forge cost: %v", err),
-			Flags:   discord.MessageFlagEphemeral,
 		})
 	}
 
@@ -97,20 +92,41 @@ func (h *ForgeHandler) HandleForge(e *handler.CommandEvent) error {
 }
 
 func (h *ForgeHandler) showForgeConfirmation(e *handler.CommandEvent, card1, card2 *models.Card, cost int64) error {
+	// Get group type from card tags
+	groupType := "girlgroups" // default
+	for _, tag := range card1.Tags {
+		if tag == "boygroups" {
+			groupType = "boygroups"
+			break
+		}
+	}
+
+	config := utils.SpacesConfig{
+		Bucket:   h.bot.SpacesService.GetBucket(),
+		Region:   h.bot.SpacesService.GetRegion(),
+		CardRoot: h.bot.SpacesService.GetCardRoot(),
+		GetImageURL: func(cardName string, colID string, level int, groupType string) string {
+			return h.bot.SpacesService.GetCardImageURL(cardName, colID, level, groupType)
+		},
+	}
+
+	card1Display := utils.GetCardDisplayInfo(card1.Name, card1.ColID, card1.Level, groupType, config)
+	card2Display := utils.GetCardDisplayInfo(card2.Name, card2.ColID, card2.Level, groupType, config)
+
 	embed := discord.NewEmbedBuilder().
 		SetTitle("⚔️ Confirm Forging").
 		SetColor(0x2b2d31).
-		SetDescription(fmt.Sprintf("```md\n"+
-			"## Cards to Forge\n"+
-			"1. %s (%s) %s\n"+
-			"2. %s (%s) %s\n"+
-			"\n## Details\n"+
-			"* Level: %s\n"+
-			"* Cost: %d 💰\n"+
-			"* Result: Random %s card%s\n"+
-			"```\n⚠️ Warning: This action cannot be undone!",
-			card1.Name, card1.ColID, strings.Repeat("⭐", card1.Level),
-			card2.Name, card2.ColID, strings.Repeat("⭐", card2.Level),
+		SetDescription(fmt.Sprintf("# Forge Details\n\n"+
+			"## Selected Cards\n"+
+			"• [%s](%s) %s\n"+
+			"• [%s](%s) %s\n\n"+
+			"## Forge Information\n"+
+			"• Level: %s\n"+
+			"• Cost: %d 💰\n"+
+			"• Result: Random %s card%s\n\n"+
+			"⚠️ **Warning:** This action cannot be undone!",
+			card1Display.FormattedName, card1Display.ImageURL, card1Display.FormattedCollection,
+			card2Display.FormattedName, card2Display.ImageURL, card2Display.FormattedCollection,
 			strings.Repeat("⭐", card1.Level),
 			cost,
 			strings.Repeat("⭐", card1.Level),
@@ -119,18 +135,13 @@ func (h *ForgeHandler) showForgeConfirmation(e *handler.CommandEvent, card1, car
 		Build()
 
 	actionRow := discord.NewActionRow(
-		discord.NewSuccessButton(
-			"Confirm",
-			fmt.Sprintf("/forge/confirm/%d/%d", card1.ID, card2.ID)),
-		discord.NewDangerButton(
-			"Cancel",
-			fmt.Sprintf("/forge/cancel/%d/%d", card1.ID, card2.ID)),
+		discord.NewSuccessButton("Confirm", fmt.Sprintf("/forge/confirm/%d/%d", card1.ID, card2.ID)),
+		discord.NewDangerButton("Cancel", fmt.Sprintf("/forge/cancel/%d/%d", card1.ID, card2.ID)),
 	)
 
 	return e.CreateMessage(discord.MessageCreate{
 		Embeds:     []discord.Embed{embed},
 		Components: []discord.ContainerComponent{actionRow},
-		Flags:      discord.MessageFlagEphemeral,
 	})
 }
 
@@ -173,18 +184,30 @@ func (h *ForgeHandler) HandleComponent(e *handler.ComponentEvent) error {
 			})
 		}
 
+		// Get group type from card tags
+		groupType := "girlgroups" // default
+		for _, tag := range newCard.Tags {
+			if tag == "boygroups" {
+				groupType = "boygroups"
+				break
+			}
+		}
+
+		config := h.bot.SpacesService.GetSpacesConfig()
+		cardDisplay := utils.GetCardDisplayInfo(newCard.Name, newCard.ColID, newCard.Level, groupType, config)
+
 		embed := discord.NewEmbedBuilder().
 			SetTitle("⚔️ Forge Successful").
 			SetColor(0x57F287).
-			SetDescription(fmt.Sprintf("```md\n"+
-				"## Result\n"+
-				"* New Card: %s\n"+
-				"* Collection: %s\n"+
-				"* Level: %s\n"+
-				"```",
-				newCard.Name,
-				newCard.ColID,
-				strings.Repeat("���", newCard.Level))).
+			SetDescription(fmt.Sprintf("## Result\n"+
+				"• Name: [%s](%s)\n"+
+				"• Collection: %s\n"+
+				"• Level: %s",
+				cardDisplay.FormattedName,
+				cardDisplay.ImageURL,
+				cardDisplay.FormattedCollection,
+				strings.Repeat("⭐", newCard.Level))).
+			SetImage(cardDisplay.ImageURL).
 			SetTimestamp(time.Now()).
 			Build()
 
@@ -194,8 +217,15 @@ func (h *ForgeHandler) HandleComponent(e *handler.ComponentEvent) error {
 		})
 
 	case "cancel":
+		embed := discord.NewEmbedBuilder().
+			SetTitle("Forge Cancelled").
+			SetDescription("The forging process has been cancelled.").
+			SetColor(0xED4245).
+			SetTimestamp(time.Now()).
+			Build()
+
 		return e.UpdateMessage(discord.MessageUpdate{
-			Content:    utils.Ptr("❌ Forge cancelled."),
+			Embeds:     &[]discord.Embed{embed},
 			Components: &[]discord.ContainerComponent{},
 		})
 
@@ -213,9 +243,6 @@ func (h *ForgeHandler) findCard(ctx context.Context, query, userID string, exclu
 		return nil, fmt.Errorf("please provide a card name")
 	}
 
-	// Parse the query to get search filters
-	filters := utils.ParseSearchQuery(query)
-
 	// Get all user's cards first
 	userCards, err := h.bot.UserCardRepository.GetAllByUserID(ctx, userID)
 	if err != nil {
@@ -232,21 +259,56 @@ func (h *ForgeHandler) findCard(ctx context.Context, query, userID string, exclu
 		if err != nil {
 			continue
 		}
-		// Skip the excluded card
 		if cardData.ID == excludeCardID {
 			continue
 		}
 		cards = append(cards, cardData)
 	}
 
-	// Search within user's owned cards
-	searchResults := utils.WeightedSearch(cards, filters)
-	if len(searchResults) == 0 {
-		return nil, fmt.Errorf("no matching cards found in your collection")
+	// Try filter-based search first (for queries like "-2")
+	if strings.HasPrefix(query, "-") {
+		filters := utils.ParseSearchQuery(query)
+		searchResults := utils.WeightedSearch(cards, filters)
+		if len(searchResults) > 0 {
+			return searchResults[0], nil
+		}
 	}
 
-	// Return the best match
-	return searchResults[0], nil
+	// Try direct name search
+	normalizedQuery := strings.ToLower(strings.TrimSpace(strings.ReplaceAll(query, "_", " ")))
+	queryWords := strings.Fields(normalizedQuery)
+
+	// First try exact match
+	for _, card := range cards {
+		cardName := strings.ToLower(strings.ReplaceAll(card.Name, "_", " "))
+		if cardName == normalizedQuery {
+			return card, nil
+		}
+	}
+
+	// Then try matching all words in any order
+	for _, card := range cards {
+		cardName := strings.ToLower(strings.ReplaceAll(card.Name, "_", " "))
+		allWordsMatch := true
+		for _, word := range queryWords {
+			if !strings.Contains(cardName, word) {
+				allWordsMatch = false
+				break
+			}
+		}
+		if allWordsMatch {
+			return card, nil
+		}
+	}
+
+	// If no direct matches found, try weighted search as last resort
+	filters := utils.ParseSearchQuery(query)
+	searchResults := utils.WeightedSearch(cards, filters)
+	if len(searchResults) > 0 {
+		return searchResults[0], nil
+	}
+
+	return nil, fmt.Errorf("no matching cards found in your collection")
 }
 
 func getSameCollectionBonus(card1, card2 *models.Card) string {

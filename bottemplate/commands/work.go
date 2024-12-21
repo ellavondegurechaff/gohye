@@ -38,7 +38,7 @@ func NewWorkHandler(b *bottemplate.Bot) *WorkHandler {
 	return &WorkHandler{bot: b}
 }
 
-const workCooldown = 5 * time.Minute
+const workCooldown = 10 * time.Second
 
 func (h *WorkHandler) HandleWork(e *handler.CommandEvent) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -179,18 +179,24 @@ func (h *WorkHandler) handleJobAccept(e *handler.ComponentEvent, jobType string)
 }
 
 func createTrainingGameEmbed(userID string, e *handler.ComponentEvent) (discord.Embed, []discord.ContainerComponent) {
-	// K-pop Dance Practice patterns
 	patterns := []string{"🕺", "💃", "👋", "💫"}
-	state := createGameState("training", 5, len(patterns))
+	state := createGameState("training", 4, len(patterns))
 	state.Moves = patterns
 	state.ShowSequence = true
 
-	buttons := make([]discord.InteractiveComponent, len(patterns))
-	for i, pattern := range patterns {
-		buttons[i] = discord.NewSecondaryButton(pattern, fmt.Sprintf("work/game/training/%d", i))
+	// Create two rows of buttons for better mobile layout
+	buttonsRow1 := make([]discord.InteractiveComponent, 2)
+	buttonsRow2 := make([]discord.InteractiveComponent, 2)
+
+	for i := 0; i < 2; i++ {
+		buttonsRow1[i] = discord.NewSecondaryButton(patterns[i], fmt.Sprintf("work/game/training/%d", i))
+		buttonsRow2[i] = discord.NewSecondaryButton(patterns[i+2], fmt.Sprintf("work/game/training/%d", i+2))
 	}
 
-	components := []discord.ContainerComponent{discord.NewActionRow(buttons...)}
+	components := []discord.ContainerComponent{
+		discord.NewActionRow(buttonsRow1...),
+		discord.NewActionRow(buttonsRow2...),
+	}
 	state.Buttons = components
 
 	sequence := make([]string, len(state.Sequence))
@@ -198,49 +204,14 @@ func createTrainingGameEmbed(userID string, e *handler.ComponentEvent) (discord.
 		sequence[i] = patterns[idx]
 	}
 
-	instructions := `🎵 K-pop Dance Practice
-
-Learn this dance sequence:
-%s
-
-Each move represents:
-🕺 - Basic Step
-💃 - Spin Move
-👋 - Wave Motion
-💫 - Special Move
-
-The sequence will disappear in 5 seconds!`
-
-	embed := discord.NewEmbedBuilder().
-		SetTitle("🎭 K-pop Dance Practice").
-		SetDescription(fmt.Sprintf(instructions, strings.Join(sequence, " "))).
-		SetColor(0x2b2d31).
-		Build()
+	embed := createGameEmbed("🎭 Dance Practice", sequence, "Remember the moves!", patterns)
 
 	// Store initial state
 	stateMutex.Lock()
 	gameStates[userID] = state
 	stateMutex.Unlock()
 
-	// Start goroutine to hide sequence
-	go func(eventRef *handler.ComponentEvent, gameState *GameState) {
-		time.Sleep(5 * time.Second)
-		stateMutex.Lock()
-		if state, exists := gameStates[userID]; exists && state == gameState {
-			state.ShowSequence = false
-			eventRef.UpdateMessage(discord.MessageUpdate{
-				Embeds: &[]discord.Embed{
-					discord.NewEmbedBuilder().
-						SetTitle("🎭 K-pop Dance Practice").
-						SetDescription("Time to perform the dance sequence!").
-						SetColor(0x2b2d31).
-						Build(),
-				},
-				Components: &state.Buttons,
-			})
-		}
-		stateMutex.Unlock()
-	}(e, state)
+	go hideSequence(e, state, userID, "🎭 Dance Practice")
 
 	return embed, components
 }
@@ -251,54 +222,44 @@ func createDanceGameEmbed(userID string, e *handler.ComponentEvent) (discord.Emb
 	state.Moves = moves
 	state.ShowSequence = true
 
-	buttons := make([]discord.InteractiveComponent, len(moves))
-	for i, move := range moves {
-		buttons[i] = discord.NewSecondaryButton(move, fmt.Sprintf("work/game/dance/%d", i))
+	// Create two rows for mobile layout
+	buttonsRow1 := make([]discord.InteractiveComponent, 2)
+	buttonsRow2 := make([]discord.InteractiveComponent, 2)
+
+	for i := 0; i < 2; i++ {
+		buttonsRow1[i] = discord.NewSecondaryButton(moves[i], fmt.Sprintf("work/game/dance/%d", i))
+		buttonsRow2[i] = discord.NewSecondaryButton(moves[i+2], fmt.Sprintf("work/game/dance/%d", i+2))
 	}
 
-	components := []discord.ContainerComponent{discord.NewActionRow(buttons...)}
+	components := []discord.ContainerComponent{
+		discord.NewActionRow(buttonsRow1...),
+		discord.NewActionRow(buttonsRow2...),
+	}
 	state.Buttons = components
-
-	stateMutex.Lock()
-	gameStates[userID] = state
-	stateMutex.Unlock()
 
 	sequence := make([]string, len(state.Sequence))
 	for i, idx := range state.Sequence {
 		sequence[i] = moves[idx]
 	}
 
-	embed := discord.NewEmbedBuilder().
-		SetTitle("🎵 Dance Practice").
-		SetDescription(fmt.Sprintf("Memorize this dance sequence:\n%s\n\nThe sequence will disappear in 5 seconds!",
-			strings.Join(sequence, " "))).
-		SetColor(0x2b2d31).
-		Build()
+	embed := createGameEmbed("💃 Choreography", sequence, "Follow the arrows!", moves)
 
-	// Start goroutine to hide sequence after 5 seconds
-	go func(event *handler.ComponentEvent) {
-		time.Sleep(5 * time.Second)
-		stateMutex.Lock()
-		if state, exists := gameStates[userID]; exists {
-			state.ShowSequence = false
-			// Add message update using the event
-			event.UpdateMessage(discord.MessageUpdate{
-				Content:    utils.Ptr("Time to repeat the sequence!"),
-				Components: &state.Buttons,
-			})
-		}
-		stateMutex.Unlock()
-	}(e)
+	stateMutex.Lock()
+	gameStates[userID] = state
+	stateMutex.Unlock()
+
+	go hideSequence(e, state, userID, "💃 Choreography")
 
 	return embed, components
 }
 
 func createVocalGameEmbed(userID string, e *handler.ComponentEvent) (discord.Embed, []discord.ContainerComponent) {
-	notes := []string{"🔉 Low", "🔊 Mid", "📢 High"}
+	notes := []string{"🔉", "🔊", "📢"}
 	state := createGameState("vocal", 4, len(notes))
 	state.Moves = notes
 	state.ShowSequence = true
 
+	// Single row for 3 buttons
 	buttons := make([]discord.InteractiveComponent, len(notes))
 	for i, note := range notes {
 		buttons[i] = discord.NewSecondaryButton(note, fmt.Sprintf("work/game/vocal/%d", i))
@@ -307,86 +268,100 @@ func createVocalGameEmbed(userID string, e *handler.ComponentEvent) (discord.Emb
 	components := []discord.ContainerComponent{discord.NewActionRow(buttons...)}
 	state.Buttons = components
 
-	stateMutex.Lock()
-	gameStates[userID] = state
-	stateMutex.Unlock()
-
 	sequence := make([]string, len(state.Sequence))
 	for i, idx := range state.Sequence {
 		sequence[i] = notes[idx]
 	}
 
-	embed := discord.NewEmbedBuilder().
-		SetTitle("🎤 Vocal Training").
-		SetDescription(fmt.Sprintf("Follow this note sequence:\n%s\n\nThe sequence will disappear in 5 seconds!",
-			strings.Join(sequence, " → "))).
-		SetColor(0x2b2d31).
-		Build()
+	embed := createGameEmbed("🎤 Vocal Training", sequence, "Match the notes!", notes)
 
-	// Start goroutine to hide sequence after 5 seconds
-	go func(event *handler.ComponentEvent) {
-		time.Sleep(5 * time.Second)
-		stateMutex.Lock()
-		if state, exists := gameStates[userID]; exists {
-			state.ShowSequence = false
-			// Update message without sequence
-			event.UpdateMessage(discord.MessageUpdate{
-				Content:    utils.Ptr("Time to repeat the sequence!"),
-				Components: &state.Buttons,
-			})
-		}
-		stateMutex.Unlock()
-	}(e)
+	stateMutex.Lock()
+	gameStates[userID] = state
+	stateMutex.Unlock()
+
+	go hideSequence(e, state, userID, "🎤 Vocal Training")
 
 	return embed, components
 }
 
 func createMixingGameEmbed(userID string, e *handler.ComponentEvent) (discord.Embed, []discord.ContainerComponent) {
-	controls := []string{"🎚️ Bass", "🔊 Volume", "🎛️ Treble", "🎮 Effects"}
+	controls := []string{"🎚️", "🔊", "🎛️", "🎮"}
 	state := createGameState("mix", 4, len(controls))
 	state.Moves = controls
 	state.ShowSequence = true
 
-	buttons := make([]discord.InteractiveComponent, len(controls))
-	for i, control := range controls {
-		buttons[i] = discord.NewSecondaryButton(control, fmt.Sprintf("work/game/mix/%d", i))
+	// Create two rows for mobile layout
+	buttonsRow1 := make([]discord.InteractiveComponent, 2)
+	buttonsRow2 := make([]discord.InteractiveComponent, 2)
+
+	for i := 0; i < 2; i++ {
+		buttonsRow1[i] = discord.NewSecondaryButton(controls[i], fmt.Sprintf("work/game/mix/%d", i))
+		buttonsRow2[i] = discord.NewSecondaryButton(controls[i+2], fmt.Sprintf("work/game/mix/%d", i+2))
 	}
 
-	components := []discord.ContainerComponent{discord.NewActionRow(buttons...)}
+	components := []discord.ContainerComponent{
+		discord.NewActionRow(buttonsRow1...),
+		discord.NewActionRow(buttonsRow2...),
+	}
 	state.Buttons = components
-
-	stateMutex.Lock()
-	gameStates[userID] = state
-	stateMutex.Unlock()
 
 	sequence := make([]string, len(state.Sequence))
 	for i, idx := range state.Sequence {
 		sequence[i] = controls[idx]
 	}
 
-	embed := discord.NewEmbedBuilder().
-		SetTitle("🎛️ Studio Mixing").
-		SetDescription(fmt.Sprintf("Adjust these controls in order:\n%s\n\nThe sequence will disappear in 5 seconds!",
-			strings.Join(sequence, " → "))).
-		SetColor(0x2b2d31).
-		Build()
+	embed := createGameEmbed("🎛️ Studio Mixing", sequence, "Adjust the controls!", controls)
 
-	// Start goroutine to hide sequence after 5 seconds
-	go func() {
-		time.Sleep(5 * time.Second)
-		stateMutex.Lock()
-		if state, exists := gameStates[userID]; exists {
-			state.ShowSequence = false
-			// Update the message to hide sequence
-			e.UpdateMessage(discord.MessageUpdate{
-				Content:    utils.Ptr("Time to repeat the sequence!"),
-				Components: &state.Buttons,
-			})
-		}
-		stateMutex.Unlock()
-	}()
+	stateMutex.Lock()
+	gameStates[userID] = state
+	stateMutex.Unlock()
+
+	go hideSequence(e, state, userID, "🎛️ Studio Mixing")
 
 	return embed, components
+}
+
+// Helper function to create consistent game embeds
+func createGameEmbed(title string, sequence []string, instruction string, moves []string) discord.Embed {
+	var description strings.Builder
+	description.WriteString("```ansi\n")
+	description.WriteString(fmt.Sprintf("\x1b[1;36m%s\x1b[0m\n\n", instruction))
+	description.WriteString(fmt.Sprintf("\x1b[1;33mSequence:\x1b[0m %s\n\n", strings.Join(sequence, " ")))
+	description.WriteString("\x1b[1;32mControls:\x1b[0m\n")
+	for i, move := range moves {
+		if i > 0 && i%2 == 0 {
+			description.WriteString("\n")
+		}
+		description.WriteString(fmt.Sprintf("%s  ", move))
+	}
+	description.WriteString("\n```\n_Sequence disappears in 5s!_")
+
+	return discord.NewEmbedBuilder().
+		SetTitle(title).
+		SetDescription(description.String()).
+		SetColor(0x2b2d31).
+		Build()
+}
+
+// Helper function to handle sequence hiding
+func hideSequence(e *handler.ComponentEvent, state *GameState, userID string, title string) {
+	time.Sleep(5 * time.Second)
+	stateMutex.Lock()
+	defer stateMutex.Unlock()
+
+	if currentState, exists := gameStates[userID]; exists && currentState == state {
+		state.ShowSequence = false
+		e.UpdateMessage(discord.MessageUpdate{
+			Embeds: &[]discord.Embed{
+				discord.NewEmbedBuilder().
+					SetTitle(title).
+					SetDescription("Time to repeat the sequence!").
+					SetColor(0x2b2d31).
+					Build(),
+			},
+			Components: &state.Buttons,
+		})
+	}
 }
 
 type GameState struct {
@@ -425,7 +400,7 @@ func (h *WorkHandler) handleGameAction(e *handler.ComponentEvent, parts []string
 	state, exists := gameStates[userID]
 	if !exists || state.Type != gameType {
 		return e.UpdateMessage(discord.MessageUpdate{
-			Content:    utils.Ptr("❌ Game session expired - Please start a new job"),
+			Content:    utils.Ptr("Game session expired - Please start a new job"),
 			Components: &[]discord.ContainerComponent{},
 		})
 	}
@@ -434,7 +409,6 @@ func (h *WorkHandler) handleGameAction(e *handler.ComponentEvent, parts []string
 	remainingCount := len(state.Sequence)
 
 	if correct {
-		// Add the correct move to progress
 		state.Progress = append(state.Progress, state.Moves[choice])
 
 		if remainingCount == 0 {
@@ -442,36 +416,27 @@ func (h *WorkHandler) handleGameAction(e *handler.ComponentEvent, parts []string
 			return h.handleSuccess(e)
 		}
 
-		// Build progress display
-		var progressBuilder strings.Builder
-		progressBuilder.WriteString("Your progress:\n\n")
+		// Build compact horizontal progress display
+		progressStr := fmt.Sprintf("Progress: %s | %s",
+			strings.Join(state.Progress, " "),
+			strings.Repeat("□ ", remainingCount),
+		)
 
-		// Show completed moves with numbers
-		for i, move := range state.Progress {
-			progressBuilder.WriteString(fmt.Sprintf("%d. ✅ %s\n", i+1, move))
-		}
-
-		// Show next required move
-		if remainingCount > 0 {
-			progressBuilder.WriteString(fmt.Sprintf("\nNext move (%d/%d):\n❓ ???",
-				len(state.Progress)+1,
-				len(state.Progress)+remainingCount))
-		}
-
-		// Add game-specific UI elements
+		// Add game-specific message
+		var gameMsg string
 		switch state.Type {
 		case "vocal":
-			progressBuilder.WriteString("\n\n🎤 Keep the rhythm going!")
+			gameMsg = "🎤 Keep the rhythm!"
 		case "dance":
-			progressBuilder.WriteString("\n\n💃 Keep dancing!")
+			gameMsg = "💃 Keep dancing!"
 		case "mix":
-			progressBuilder.WriteString("\n\n🎛️ Keep mixing!")
-		case "choreo":
-			progressBuilder.WriteString("\n\n🎭 Keep the flow!")
+			gameMsg = "🎛️ Keep mixing!"
+		case "training":
+			gameMsg = "🎭 Keep practicing!"
 		}
 
 		return e.UpdateMessage(discord.MessageUpdate{
-			Content:    utils.Ptr(progressBuilder.String()),
+			Content:    utils.Ptr(fmt.Sprintf("%s\n%s", progressStr, gameMsg)),
 			Components: &state.Buttons,
 			Embeds:     &[]discord.Embed{},
 		})
@@ -479,9 +444,23 @@ func (h *WorkHandler) handleGameAction(e *handler.ComponentEvent, parts []string
 
 	// Handle incorrect move
 	delete(gameStates, userID)
+
+	// Build the actual sequence that was shown
+	var actualSequence []string
+	for _, idx := range state.Sequence {
+		actualSequence = append(actualSequence, state.Moves[idx])
+	}
+
+	failEmbed := discord.NewEmbedBuilder().
+		SetTitle("❌ Game Over!").
+		SetDescription(fmt.Sprintf("**Sequence:** %s\n**Progress:** %s",
+			strings.Join(actualSequence, " "),
+			strings.Join(state.Progress, " "))).
+		SetColor(0xff0000).
+		Build()
+
 	return e.UpdateMessage(discord.MessageUpdate{
-		Content: utils.Ptr(fmt.Sprintf("❌ Game Over!\nIncorrect move! The sequence was:\n%s",
-			strings.Join(state.Moves, " → "))),
+		Embeds:     &[]discord.Embed{failEmbed},
 		Components: &[]discord.ContainerComponent{},
 	})
 }
@@ -566,7 +545,7 @@ func (h *WorkHandler) handleSuccess(e *handler.ComponentEvent) error {
 				Inline: utils.Ptr(true),
 			},
 		).
-		SetFooter("Come back in 5 minutes to work again!", "").
+		SetFooter("Come back in 10 seconds to work again!", "").
 		SetTimestamp(time.Now()).
 		Build()
 
