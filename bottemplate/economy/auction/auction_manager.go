@@ -26,6 +26,7 @@ const (
 	MinAuctionTime  = 10 * time.Second
 	IDLength        = 4
 	maxRetries      = 5
+	AntiSnipeTime   = 10 * time.Second
 )
 
 type Manager struct {
@@ -368,14 +369,26 @@ func (m *Manager) PlaceBid(ctx context.Context, auctionID int64, bidderID string
 		}
 	}
 
-	// Update auction with new bid
+	now := time.Now()
+	timeUntilEnd := auction.EndTime.Sub(now)
+
+	// If bid is placed in last 10 seconds, extend the auction
+	if timeUntilEnd <= AntiSnipeTime {
+		auction.EndTime = now.Add(AntiSnipeTime)
+
+		// Reschedule auction end
+		go m.scheduleAuctionEnd(auctionID, AntiSnipeTime)
+	}
+
+	// Update auction with new bid and potentially extended end time
 	_, err = tx.NewUpdate().
 		Model((*models.Auction)(nil)).
 		Set("top_bidder_id = ?", bidderID).
 		Set("current_price = ?", amount).
 		Set("previous_bidder_id = ?", auction.TopBidderID).
 		Set("previous_bid_amount = ?", auction.CurrentPrice).
-		Set("last_bid_time = ?", time.Now()).
+		Set("last_bid_time = ?", now).
+		Set("end_time = ?", auction.EndTime).
 		Set("bid_count = bid_count + 1").
 		Where("id = ?", auctionID).
 		Exec(ctx)
