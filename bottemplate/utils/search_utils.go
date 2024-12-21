@@ -34,14 +34,14 @@ const (
 
 // SearchFilters represents all possible search criteria
 type SearchFilters struct {
-	Query      string // Raw search query
-	Name       string // Card name
-	Levels     []int  // Change from single Level to Levels slice
-	Collection string // Collection ID
-	Animated   bool   // Animated cards only
-	Favorites  bool   // Favorited cards only
-	SortBy     string // Sort criteria
-	SortDesc   bool   // Sort direction
+	Query       string
+	Name        string
+	Levels      []int
+	Collections []string
+	Animated    bool
+	Favorites   bool
+	SortBy      string
+	SortDesc    bool
 }
 
 // SortOptions defines available sorting methods
@@ -55,10 +55,11 @@ const (
 // ParseSearchQuery parses a user's search query into structured filters
 func ParseSearchQuery(query string) SearchFilters {
 	filters := SearchFilters{
-		Query:    query,
-		SortBy:   SortByLevel,
-		SortDesc: true,
-		Levels:   make([]int, 0),
+		Query:       query,
+		SortBy:      SortByLevel,
+		SortDesc:    true,
+		Levels:      make([]int, 0),
+		Collections: make([]string, 0),
 	}
 
 	terms := strings.Fields(strings.ToLower(query))
@@ -96,7 +97,7 @@ func ParseSearchQuery(query string) SearchFilters {
 				continue
 			}
 			// If not a level, treat as collection filter
-			filters.Collection = strings.TrimPrefix(term, "-")
+			filters.Collections = append(filters.Collections, strings.TrimPrefix(term, "-"))
 		case term[0] >= '1' && term[0] <= '5' && len(term) == 1:
 			// Single digit level filter without dash
 			level, _ := strconv.Atoi(term)
@@ -128,7 +129,22 @@ func WeightedSearch(cards []*models.Card, filters SearchFilters) []*models.Card 
 	searchTerms := strings.Fields(strings.ToLower(filters.Name))
 
 	for _, card := range cards {
-		// Check level filter first
+		// Check collection filters first
+		if len(filters.Collections) > 0 {
+			collectionMatch := false
+			cardColID := strings.ToLower(card.ColID)
+			for _, collection := range filters.Collections {
+				if strings.Contains(cardColID, strings.ToLower(collection)) {
+					collectionMatch = true
+					break
+				}
+			}
+			if !collectionMatch {
+				continue // Skip this card if collection doesn't match
+			}
+		}
+
+		// Check level filter
 		if len(filters.Levels) > 0 {
 			levelMatch := false
 			for _, level := range filters.Levels {
@@ -138,7 +154,7 @@ func WeightedSearch(cards []*models.Card, filters SearchFilters) []*models.Card 
 				}
 			}
 			if !levelMatch {
-				continue // Skip this card if level doesn't match
+				continue
 			}
 		}
 
