@@ -46,6 +46,8 @@ type SearchFilters struct {
 	PromoOnly   bool
 	MultiOnly   bool
 	UserID      string
+	BoyGroups   bool
+	GirlGroups  bool
 }
 
 // SortOptions defines available sorting methods
@@ -122,6 +124,12 @@ func ParseSearchQuery(query string) SearchFilters {
 			filters.Animated = false
 		case term == "gif":
 			filters.Animated = true
+		case term == "-boygroups":
+			filters.BoyGroups = true
+			continue // Skip adding to collections
+		case term == "-girlgroups":
+			filters.GirlGroups = true
+			continue // Skip adding to collections
 		case strings.HasPrefix(term, "-"):
 			// Check if it's a level filter
 			levelStr := strings.TrimPrefix(term, "-")
@@ -162,6 +170,33 @@ func WeightedSearch(cards []*models.Card, filters SearchFilters) []*models.Card 
 	searchTerms := strings.Fields(strings.ToLower(filters.Name))
 
 	for _, card := range cards {
+		// Check tag filters first
+		if filters.BoyGroups {
+			hasTag := false
+			for _, tag := range card.Tags {
+				if tag == "boygroups" {
+					hasTag = true
+					break
+				}
+			}
+			if !hasTag {
+				continue
+			}
+		}
+
+		if filters.GirlGroups {
+			hasTag := false
+			for _, tag := range card.Tags {
+				if tag == "girlgroups" {
+					hasTag = true
+					break
+				}
+			}
+			if !hasTag {
+				continue
+			}
+		}
+
 		// Check collection filters first
 		if len(filters.Collections) > 0 {
 			collectionMatch := false
