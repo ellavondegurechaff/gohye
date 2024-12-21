@@ -44,6 +44,8 @@ type SearchFilters struct {
 	SortBy      string
 	SortDesc    bool
 	PromoOnly   bool
+	MultiOnly   bool
+	UserID      string
 }
 
 // SortOptions defines available sorting methods
@@ -111,6 +113,9 @@ func ParseSearchQuery(query string) SearchFilters {
 
 		// Handle special filters
 		switch {
+		case term == "-multi":
+			filters.MultiOnly = true
+			continue // Skip adding to collections
 		case term == "-promo":
 			filters.PromoOnly = true
 		case term == "-gif":
@@ -287,4 +292,29 @@ func sortResults(results []SearchResult, sortBy string, desc bool) {
 
 		return less
 	})
+}
+
+// WeightedSearchWithMulti performs a search that can filter for cards with multiple copies
+func WeightedSearchWithMulti(cards []*models.Card, filters SearchFilters, userCards map[int64]*models.UserCard) []*models.Card {
+	if len(cards) == 0 {
+		return nil
+	}
+
+	// Use existing WeightedSearch first
+	baseResults := WeightedSearch(cards, filters)
+
+	// If multi filter is not enabled, return base results
+	if !filters.MultiOnly {
+		return baseResults
+	}
+
+	// Filter for cards with multiple copies
+	var multiResults []*models.Card
+	for _, card := range baseResults {
+		if userCard, exists := userCards[card.ID]; exists && userCard.Amount > 1 {
+			multiResults = append(multiResults, card)
+		}
+	}
+
+	return multiResults
 }

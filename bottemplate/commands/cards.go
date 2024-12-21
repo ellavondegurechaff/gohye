@@ -47,7 +47,7 @@ func CardsHandler(b *bottemplate.Bot) handler.CommandHandler {
 
 		// Convert UserCards to Cards for searching
 		var cards []*models.Card
-		cardMap := make(map[string]*models.UserCard) // Map to store UserCard data
+		cardMap := make(map[int64]*models.UserCard) // Changed from string to int64 key
 
 		for _, userCard := range userCards {
 			cardData, err := b.CardRepository.GetByID(context.Background(), userCard.CardID)
@@ -56,38 +56,41 @@ func CardsHandler(b *bottemplate.Bot) handler.CommandHandler {
 				continue
 			}
 			cards = append(cards, cardData)
-			cardMap[fmt.Sprintf("%d", cardData.ID)] = userCard // Convert ID to string
+			cardMap[cardData.ID] = userCard // Store with int64 key directly
 		}
 
 		fmt.Printf("Total cards before filtering: %d\n", len(cards))
 
 		// Apply search filters
-		filteredCards := utils.WeightedSearch(cards, filters)
-		fmt.Printf("Cards after search filter: %d\n", len(filteredCards))
+		var results []*models.Card
+		if filters.MultiOnly {
+			results = utils.WeightedSearchWithMulti(cards, filters, cardMap)
+		} else {
+			results = utils.WeightedSearch(cards, filters)
+		}
+		fmt.Printf("Cards after search filter: %d\n", len(results))
 
 		// Apply favorites filter if requested (only for cards command)
 		if filters.Favorites {
 			var favoritedCards []*models.Card
-			for _, card := range filteredCards {
-				cardIDStr := fmt.Sprintf("%d", card.ID)
-				if userCard, ok := cardMap[cardIDStr]; ok {
-					fmt.Printf("Checking favorite for card %s: %v\n", cardIDStr, userCard.Favorite)
+			for _, card := range results {
+				if userCard, ok := cardMap[card.ID]; ok {
 					if userCard.Favorite {
 						favoritedCards = append(favoritedCards, card)
 					}
 				}
 			}
-			filteredCards = favoritedCards
-			fmt.Printf("Cards after favorites filter: %d\n", len(filteredCards))
+			results = favoritedCards
+			fmt.Printf("Cards after favorites filter: %d\n", len(results))
 		}
 
-		if len(filteredCards) == 0 {
+		if len(results) == 0 {
 			return utils.EH.CreateErrorEmbed(event, "No cards match your search")
 		}
 
 		// Map filtered cards back to UserCards for display
 		var displayCards []*models.UserCard
-		for _, card := range filteredCards {
+		for _, card := range results {
 			for _, userCard := range userCards {
 				if userCard.CardID == card.ID {
 					displayCards = append(displayCards, userCard)
