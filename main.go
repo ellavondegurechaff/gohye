@@ -280,7 +280,8 @@ func main() {
 	auctionManager := auction.NewManager(
 		repositories.NewAuctionRepository(db.BunDB()),
 		repositories.NewUserCardRepository(db.BunDB()),
-		b.Client, // Now b.Client is properly initialized
+		b.CardRepository,
+		b.Client,
 	)
 
 	// Store the auction manager in the bot instance

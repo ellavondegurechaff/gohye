@@ -14,6 +14,8 @@ import (
 
 	"github.com/disgoorg/bot-template/bottemplate/database/models"
 	"github.com/disgoorg/bot-template/bottemplate/database/repositories"
+	"github.com/disgoorg/bot-template/bottemplate/economy"
+	"github.com/disgoorg/bot-template/bottemplate/utils"
 	"github.com/disgoorg/disgo/bot"
 	"github.com/uptrace/bun"
 )
@@ -29,6 +31,7 @@ const (
 type Manager struct {
 	repo            repositories.AuctionRepository
 	UserCardRepo    repositories.UserCardRepository
+	cardRepo        repositories.CardRepository
 	activeAuctions  sync.Map
 	notifier        *AuctionNotifier
 	client          bot.Client
@@ -39,12 +42,15 @@ type Manager struct {
 	mu              sync.Mutex
 }
 
-func NewManager(repo repositories.AuctionRepository, userCardRepo repositories.UserCardRepository, client bot.Client) *Manager {
+func NewManager(repo repositories.AuctionRepository, userCardRepo repositories.UserCardRepository, cardRepo repositories.CardRepository, client bot.Client) *Manager {
 	if repo == nil {
 		panic("auction repository cannot be nil")
 	}
 	if userCardRepo == nil {
 		panic("user card repository cannot be nil")
+	}
+	if cardRepo == nil {
+		panic("card repository cannot be nil")
 	}
 	if client == nil {
 		panic("discord client cannot be nil")
@@ -55,6 +61,7 @@ func NewManager(repo repositories.AuctionRepository, userCardRepo repositories.U
 	m := &Manager{
 		repo:            repo,
 		UserCardRepo:    userCardRepo,
+		cardRepo:        cardRepo,
 		client:          client,
 		notifier:        notifier,
 		minBidIncrement: MinBidIncrement,
@@ -869,4 +876,78 @@ func (m *Manager) cleanupExpiredAuctions(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+func (m *Manager) GetMarketPrice(ctx context.Context, cardID int64) (int64, error) {
+	// Get recent auction history for this card
+	auctions, err := m.repo.GetRecentCompletedAuctions(ctx, cardID, 5)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get auction history: %w", err)
+	}
+
+	if len(auctions) == 0 {
+		// If no auction history, use base price calculation
+		card, err := m.cardRepo.GetByID(ctx, cardID)
+		if err != nil {
+			return economy.MinPrice, nil
+		}
+
+		basePrice := economy.InitialBasePrice * int64(math.Pow(economy.LevelMultiplier, float64(card.Level-1)))
+		return basePrice, nil
+	}
+
+	// Calculate average price from recent auctions
+	var totalPrice int64
+	for _, a := range auctions {
+		totalPrice += a.CurrentPrice
+	}
+	avgPrice := totalPrice / int64(len(auctions))
+
+	// Ensure price is within bounds
+	if avgPrice < economy.MinPrice {
+		return economy.MinPrice, nil
+	}
+	if avgPrice > economy.MaxPrice {
+		return economy.MaxPrice, nil
+	}
+
+	return avgPrice, nil
+}
+
+func (m *Manager) GetUserCardByName(ctx context.Context, userID string, cardName string) (*models.UserCard, error) {
+	// First get all user's cards
+	userCards, err := m.UserCardRepo.GetAllByUserID(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user cards: %w", err)
+	}
+
+	// Get all cards for searching
+	cards, err := m.cardRepo.GetAll(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get cards: %w", err)
+	}
+
+	// Create a map of owned cards for quick lookup
+	ownedCards := make(map[int64]*models.UserCard)
+	for _, uc := range userCards {
+		if uc.Amount > 0 {
+			ownedCards[uc.CardID] = uc
+		}
+	}
+
+	// Use weighted search on all cards
+	filters := utils.ParseSearchQuery(cardName)
+	filters.SortBy = utils.SortByLevel
+	filters.SortDesc = true
+
+	searchResults := utils.WeightedSearch(cards, filters)
+
+	// Find the first matching card that the user owns
+	for _, result := range searchResults {
+		if userCard, ok := ownedCards[result.ID]; ok {
+			return userCard, nil
+		}
+	}
+
+	return nil, fmt.Errorf("no matching owned cards found")
 }

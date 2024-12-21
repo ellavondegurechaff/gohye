@@ -23,9 +23,9 @@ var AuctionCommand = discord.SlashCommandCreate{
 			Name:        "create",
 			Description: "Create a new auction",
 			Options: []discord.ApplicationCommandOption{
-				discord.ApplicationCommandOptionInt{
-					Name:        "card_id",
-					Description: "The ID of the card to auction",
+				discord.ApplicationCommandOptionString{
+					Name:        "card_name",
+					Description: "The name of the card to auction",
 					Required:    true,
 				},
 				discord.ApplicationCommandOptionInt{
@@ -86,6 +86,10 @@ func (h *AuctionHandler) Register(r handler.Router) {
 		r.Command("/bid", h.HandleBid)
 		r.Command("/list", h.HandleList)
 	})
+
+	// Component patterns must start with /
+	r.Component("/auction/confirm", h.HandleConfirmation)
+	r.Component("/auction/cancel", h.HandleCancel)
 }
 
 func (h *AuctionHandler) HandleCreate(event *handler.CommandEvent) error {
@@ -93,77 +97,59 @@ func (h *AuctionHandler) HandleCreate(event *handler.CommandEvent) error {
 	defer cancel()
 
 	data := event.SlashCommandInteractionData()
-	cardID := int64(data.Int("card_id"))
+	cardName := data.String("card_name")
 	startPrice := int64(data.Int("start_price"))
 	duration := time.Duration(data.Int("duration")) * time.Second
 
-	if err := event.DeferCreateMessage(false); err != nil {
-		return fmt.Errorf("failed to defer message: %w", err)
-	}
-
-	// Get card details first for the error message
-	card, err := h.cardRepo.GetByID(ctx, cardID)
+	// Get user's matching card using the weighted search
+	userCard, err := h.manager.GetUserCardByName(ctx, event.User().ID.String(), cardName)
 	if err != nil {
-		_, err = event.CreateFollowupMessage(discord.MessageCreate{
-			Embeds: []discord.Embed{
-				discord.NewEmbedBuilder().
-					SetTitle("❌ Error").
-					SetDescription("Card not found in the database").
-					SetColor(0xFF0000).
-					Build(),
-			},
-			Flags: discord.MessageFlagEphemeral,
+		return event.CreateMessage(discord.MessageCreate{
+			Content: fmt.Sprintf("❌ %v", err),
+			Flags:   discord.MessageFlagEphemeral,
 		})
-		return err
 	}
 
-	// Check card ownership
-	userCard, err := h.manager.UserCardRepo.GetByUserIDAndCardID(ctx, event.User().ID.String(), cardID)
-	if err != nil || userCard == nil || userCard.Amount <= 0 {
-		_, err = event.CreateFollowupMessage(discord.MessageCreate{
-			Embeds: []discord.Embed{
-				discord.NewEmbedBuilder().
-					SetTitle("❌ Card Not Owned").
-					SetDescription(fmt.Sprintf("You don't own the card: **%s** (ID: %d)\nTry checking your inventory to see which cards you own",
-						card.Name, cardID)).
-					SetColor(0xFF0000).
-					Build(),
-			},
-			Flags: discord.MessageFlagEphemeral,
-		})
-		return err
-	}
-
-	// Create auction
-	auction, err := h.manager.CreateAuction(ctx, cardID, event.User().ID.String(), startPrice, duration)
+	// Get card details
+	card, err := h.cardRepo.GetByID(ctx, userCard.CardID)
 	if err != nil {
-		_, err = event.CreateFollowupMessage(discord.MessageCreate{
-			Embeds: []discord.Embed{
-				discord.NewEmbedBuilder().
-					SetTitle("❌ Auction Creation Failed").
-					SetDescription(fmt.Sprintf("Failed to create auction: %s", err)).
-					SetColor(0xFF0000).
-					Build(),
-			},
-			Flags: discord.MessageFlagEphemeral,
+		return event.CreateMessage(discord.MessageCreate{
+			Content: "Failed to get card details",
+			Flags:   discord.MessageFlagEphemeral,
 		})
-		return err
 	}
 
-	// Success message
-	_, err = event.CreateFollowupMessage(discord.MessageCreate{
-		Embeds: []discord.Embed{
-			discord.NewEmbedBuilder().
-				SetTitle("✅ Auction Created").
-				SetDescription(fmt.Sprintf("Successfully created auction #%s for **%s**", auction.AuctionID, card.Name)).
-				SetColor(0x00FF00).
-				AddField("Start Price", fmt.Sprintf("%d 💰", startPrice), true).
-				AddField("Duration", fmt.Sprintf("%d hours", int(duration.Hours())), true).
-				Build(),
-		},
-		Flags: discord.MessageFlagEphemeral,
+	// Create confirmation embed
+	embed := discord.NewEmbedBuilder().
+		SetTitle("🏛️ Confirm Auction Creation").
+		SetDescription(fmt.Sprintf("Please confirm that you want to create an auction for **%s**", card.Name)).
+		AddField("Card", fmt.Sprintf("%s %s", strings.Repeat("★", card.Level), card.Name), false).
+		AddField("Start Price", fmt.Sprintf("%d 💰", startPrice), true).
+		AddField("Duration", formatDuration(duration), true).
+		AddField("Collection", strings.ToUpper(card.ColID), true).
+		SetColor(0x2b2d31).
+		SetFooter("This auction will be visible to all users", "").
+		Build()
+
+	// Create confirmation buttons
+	components := []discord.ContainerComponent{
+		discord.NewActionRow(
+			discord.NewSuccessButton(
+				"Confirm",
+				fmt.Sprintf("/auction/confirm/%d/%d/%d", card.ID, startPrice, int64(duration.Seconds())),
+			),
+			discord.NewDangerButton(
+				"Cancel",
+				"/auction/cancel",
+			),
+		),
+	}
+
+	return event.CreateMessage(discord.MessageCreate{
+		Embeds:     []discord.Embed{embed},
+		Components: components,
+		Flags:      discord.MessageFlagEphemeral,
 	})
-	return err
 }
 
 func (h *AuctionHandler) HandleBid(event *handler.CommandEvent) error {
@@ -297,5 +283,18 @@ func (h *AuctionHandler) HandleList(event *handler.CommandEvent) error {
 	return event.CreateMessage(discord.MessageCreate{
 		Embeds:     []discord.Embed{embed.Build()},
 		Components: components,
+	})
+}
+
+func (h *AuctionHandler) HandleCancel(event *handler.ComponentEvent) error {
+	return event.UpdateMessage(discord.MessageUpdate{
+		Embeds: &[]discord.Embed{
+			discord.NewEmbedBuilder().
+				SetTitle("❌ Auction Cancelled").
+				SetDescription("The auction creation was cancelled.").
+				SetColor(0xFF0000).
+				Build(),
+		},
+		Components: &[]discord.ContainerComponent{},
 	})
 }

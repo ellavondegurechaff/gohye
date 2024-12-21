@@ -29,6 +29,7 @@ type AuctionRepository interface {
 	GetActiveAuctionByCardAndSeller(ctx context.Context, cardID int64, sellerID string) (*models.Auction, error)
 	CompleteAuctionWithTransferAndGet(ctx context.Context, auctionID int64) (*models.Auction, error)
 	handleWinningBidTransfer(ctx context.Context, tx bun.Tx, auction *models.Auction) error
+	GetRecentCompletedAuctions(ctx context.Context, cardID int64, limit int) ([]*models.Auction, error)
 }
 
 type auctionRepository struct {
@@ -622,4 +623,22 @@ func (r *auctionRepository) handleWinningBidTransfer(ctx context.Context, tx bun
 		slog.Int64("new_balance", seller.Balance))
 
 	return nil
+}
+
+func (r *auctionRepository) GetRecentCompletedAuctions(ctx context.Context, cardID int64, limit int) ([]*models.Auction, error) {
+	var auctions []*models.Auction
+	err := r.db.NewSelect().
+		Model(&auctions).
+		Where("card_id = ?", cardID).
+		Where("status = ?", models.AuctionStatusCompleted).
+		Where("top_bidder_id IS NOT NULL"). // Only include successful auctions
+		OrderExpr("end_time DESC").
+		Limit(limit).
+		Scan(ctx)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to get recent completed auctions: %w", err)
+	}
+
+	return auctions, nil
 }

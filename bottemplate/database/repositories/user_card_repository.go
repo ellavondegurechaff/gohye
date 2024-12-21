@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/disgoorg/bot-template/bottemplate/database/models"
+	"github.com/disgoorg/bot-template/bottemplate/utils"
 	"github.com/uptrace/bun"
 )
 
@@ -24,6 +25,7 @@ type UserCardRepository interface {
 	GetFavorites(ctx context.Context, userID string) ([]*models.UserCard, error)
 	GetUserCard(ctx context.Context, userID string, cardID int64) (*models.UserCard, error)
 	CleanupZeroAmountCards(ctx context.Context) error
+	GetUserCardsByName(ctx context.Context, userID string, cardName string) ([]*models.UserCard, error)
 }
 
 type userCardRepository struct {
@@ -168,4 +170,62 @@ func (r *userCardRepository) CleanupZeroAmountCards(ctx context.Context) error {
 	rowsAffected, _ := result.RowsAffected()
 	log.Printf("[INFO] Cleaned up %d cards with zero amount", rowsAffected)
 	return nil
+}
+
+func (r *userCardRepository) GetUserCardsByName(ctx context.Context, userID string, cardName string) ([]*models.UserCard, error) {
+	// First get all user's cards
+	var userCards []*models.UserCard
+	err := r.db.NewSelect().
+		Model(&userCards).
+		Where("user_cards.user_id = ? AND user_cards.amount > 0", userID).
+		Scan(ctx)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user cards: %w", err)
+	}
+
+	// Get all card details
+	var cards []*models.Card
+	err = r.db.NewSelect().
+		Model(&cards).
+		Where("id IN (?)", bun.In(collectCardIDs(userCards))).
+		Scan(ctx)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to get card details: %w", err)
+	}
+
+	// Create a map of card details
+	cardMap := make(map[int64]*models.Card)
+	for _, card := range cards {
+		cardMap[card.ID] = card
+	}
+
+	// Use weighted search on the cards
+	searchResults := utils.WeightedSearch(cards, utils.ParseSearchQuery(cardName))
+	if len(searchResults) == 0 {
+		return nil, nil
+	}
+
+	// Return the user cards corresponding to the matched cards
+	var matchedUserCards []*models.UserCard
+	for _, card := range searchResults {
+		for _, userCard := range userCards {
+			if userCard.CardID == card.ID {
+				matchedUserCards = append(matchedUserCards, userCard)
+				break
+			}
+		}
+	}
+
+	return matchedUserCards, nil
+}
+
+// Helper function to collect card IDs
+func collectCardIDs(userCards []*models.UserCard) []int64 {
+	ids := make([]int64, len(userCards))
+	for i, uc := range userCards {
+		ids[i] = uc.CardID
+	}
+	return ids
 }
