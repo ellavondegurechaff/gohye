@@ -3,7 +3,6 @@ package commands
 import (
 	"context"
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
 
@@ -19,8 +18,8 @@ var Summon = discord.SlashCommandCreate{
 	Description: "✨ Summon a card from your collection",
 	Options: []discord.ApplicationCommandOption{
 		discord.ApplicationCommandOptionString{
-			Name:        "query",
-			Description: "Card ID or name to summon",
+			Name:        "name",
+			Description: "Name of the card to summon from your collection",
 			Required:    true,
 		},
 	},
@@ -28,20 +27,27 @@ var Summon = discord.SlashCommandCreate{
 
 func SummonHandler(b *bottemplate.Bot) handler.CommandHandler {
 	return func(e *handler.CommandEvent) error {
-		query := e.SlashCommandInteractionData().String("query")
+		cardName := e.SlashCommandInteractionData().String("name")
+		userID := e.User().ID.String()
 
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
-		// Try parsing as ID first
-		if cardID, err := strconv.ParseInt(query, 10, 64); err == nil {
-			card, err := b.CardRepository.GetByID(ctx, cardID)
-			if err == nil {
-				return displayCard(e, card, b)
-			}
+		// Get user's cards
+		userCards, err := b.UserCardRepository.GetAllByUserID(ctx, userID)
+		if err != nil {
+			return e.CreateMessage(discord.MessageCreate{
+				Embeds: []discord.Embed{
+					{
+						Title:       "❌ Error",
+						Description: "Failed to fetch your collection",
+						Color:       utils.ErrorColor,
+					},
+				},
+			})
 		}
 
-		// If not ID or card not found, search by name
+		// Get all cards to match against
 		cards, err := b.CardRepository.GetAll(ctx)
 		if err != nil {
 			return e.CreateMessage(discord.MessageCreate{
@@ -55,29 +61,45 @@ func SummonHandler(b *bottemplate.Bot) handler.CommandHandler {
 			})
 		}
 
-		// Use weighted search to find the best match
-		filters := utils.ParseSearchQuery(query)
-		filters.SortBy = utils.SortByLevel // Prioritize higher level cards
-		filters.SortDesc = true            // Descending order
+		// Create a map of owned card IDs for quick lookup
+		ownedCards := make(map[int64]*models.UserCard)
+		for _, uc := range userCards {
+			if uc.Amount > 0 {
+				ownedCards[uc.CardID] = uc
+			}
+		}
 
+		// Use weighted search to find the best match among owned cards
+		filters := utils.ParseSearchQuery(cardName)
+		filters.SortBy = utils.SortByLevel
+		filters.SortDesc = true
+
+		var matchedCard *models.Card
 		searchResults := utils.WeightedSearch(cards, filters)
-		if len(searchResults) == 0 {
+
+		for _, card := range searchResults {
+			if _, owned := ownedCards[card.ID]; owned {
+				matchedCard = card
+				break
+			}
+		}
+
+		if matchedCard == nil {
 			return e.CreateMessage(discord.MessageCreate{
 				Embeds: []discord.Embed{
 					{
 						Title:       "❌ Card Not Found",
-						Description: fmt.Sprintf("```diff\n- No cards found matching '%s'\n```", query),
+						Description: fmt.Sprintf("```diff\n- No matching cards found in your collection for '%s'\n```", cardName),
 						Color:       utils.ErrorColor,
 						Footer: &discord.EmbedFooter{
-							Text: "Try /searchcards to find valid cards",
+							Text: "Try /inventory to see your available cards",
 						},
 					},
 				},
 			})
 		}
 
-		// Use the best match
-		return displayCard(e, searchResults[0], b)
+		return displayCard(e, matchedCard, b)
 	}
 }
 

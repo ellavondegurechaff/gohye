@@ -56,8 +56,8 @@ const (
 func ParseSearchQuery(query string) SearchFilters {
 	filters := SearchFilters{
 		Query:    query,
-		SortBy:   SortByLevel, // Default sort
-		SortDesc: true,        // Default descending
+		SortBy:   SortByLevel, // Default to level sorting
+		SortDesc: true,        // Default to descending order
 	}
 
 	terms := strings.Fields(strings.ToLower(query))
@@ -184,19 +184,32 @@ func calculateEnhancedWeight(card *models.Card, terms []string) int {
 func sortResults(results []SearchResult, sortBy string, desc bool) {
 	sort.Slice(results, func(i, j int) bool {
 		var less bool
-		switch sortBy {
-		case SortByLevel:
+
+		// Primary sort by level (descending)
+		if results[i].Card.Level != results[j].Card.Level {
 			less = results[i].Card.Level < results[j].Card.Level
-		case SortByName:
-			less = strings.ToLower(results[i].Card.Name) < strings.ToLower(results[j].Card.Name)
-		case SortByCol:
-			less = strings.ToLower(results[i].Card.ColID) < strings.ToLower(results[j].Card.ColID)
-		default:
-			less = results[i].Weight < results[j].Weight
+			return !less // Descending order for levels
 		}
-		if desc {
-			return !less
+
+		// Secondary sort by name (ascending)
+		less = strings.ToLower(results[i].Card.Name) < strings.ToLower(results[j].Card.Name)
+
+		// If explicit sort criteria is provided, use that instead
+		if sortBy != SortByLevel {
+			switch sortBy {
+			case SortByName:
+				less = strings.ToLower(results[i].Card.Name) < strings.ToLower(results[j].Card.Name)
+			case SortByCol:
+				less = strings.ToLower(results[i].Card.ColID) < strings.ToLower(results[j].Card.ColID)
+			default:
+				less = results[i].Weight < results[j].Weight
+			}
+
+			if desc {
+				return !less
+			}
 		}
+
 		return less
 	})
 }
