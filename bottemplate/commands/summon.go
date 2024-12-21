@@ -105,15 +105,43 @@ func SummonHandler(b *bottemplate.Bot) handler.CommandHandler {
 
 // displayCard handles the card display logic
 func displayCard(e *handler.CommandEvent, card *models.Card, b *bottemplate.Bot) error {
+	// Add initial debug log
+	fmt.Printf("Displaying card: ID=%d, Name=%s, Animated=%v\n", card.ID, card.Name, card.Animated)
 
 	config := utils.SpacesConfig{
 		Bucket:   b.SpacesService.GetBucket(),
 		Region:   b.SpacesService.GetRegion(),
 		CardRoot: b.SpacesService.GetCardRoot(),
 		GetImageURL: func(cardName string, colID string, level int, groupType string) string {
-			return b.SpacesService.GetCardImageURL(cardName, colID, level, groupType)
+			// Get base URL without any extension
+			baseURL := strings.TrimSuffix(b.SpacesService.GetCardImageURL(cardName, colID, level, groupType), ".jpg")
+
+			// Add the correct extension
+			extension := ".jpg"
+			if card.Animated {
+				extension = ".gif"
+				fmt.Printf("Card is animated, using .gif extension\n")
+			}
+
+			fullURL := baseURL + extension
+
+			// Log URL construction details
+			fmt.Printf("Image URL construction:\n"+
+				"- Base URL: %s\n"+
+				"- Extension: %s\n"+
+				"- Full URL: %s\n",
+				baseURL, extension, fullURL)
+
+			return fullURL
 		},
 	}
+
+	// Log spaces configuration
+	fmt.Printf("Spaces Configuration:\n"+
+		"- Bucket: %s\n"+
+		"- Region: %s\n"+
+		"- Card Root: %s\n",
+		config.Bucket, config.Region, config.CardRoot)
 
 	cardInfo := utils.GetCardDisplayInfo(
 		card.Name,
@@ -123,9 +151,15 @@ func displayCard(e *handler.CommandEvent, card *models.Card, b *bottemplate.Bot)
 		config,
 	)
 
+	// Log card display info
+	fmt.Printf("Card Display Info:\n"+
+		"- Formatted Name: %s\n"+
+		"- Image URL: %s\n"+
+		"- Collection: %s\n",
+		cardInfo.FormattedName, cardInfo.ImageURL, cardInfo.FormattedCollection)
+
 	timestamp := fmt.Sprintf("<t:%d:R>", time.Now().Unix())
 
-	// Create embed with image
 	embed := discord.Embed{
 		Title: cardInfo.FormattedName,
 		Color: utils.GetColorByLevel(card.Level),
@@ -152,9 +186,20 @@ func displayCard(e *handler.CommandEvent, card *models.Card, b *bottemplate.Bot)
 		},
 	}
 
-	return e.CreateMessage(discord.MessageCreate{
+	// Log final embed details
+	fmt.Printf("Creating embed with image URL: %s\n", cardInfo.ImageURL)
+
+	err := e.CreateMessage(discord.MessageCreate{
 		Embeds: []discord.Embed{embed},
 	})
+
+	if err != nil {
+		fmt.Printf("Error creating message: %v\n", err)
+		return err
+	}
+
+	fmt.Printf("Successfully sent card embed\n")
+	return nil
 }
 
 // Helper functions for card formatting and display
