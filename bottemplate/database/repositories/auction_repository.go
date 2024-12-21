@@ -30,6 +30,7 @@ type AuctionRepository interface {
 	CompleteAuctionWithTransferAndGet(ctx context.Context, auctionID int64) (*models.Auction, error)
 	handleWinningBidTransfer(ctx context.Context, tx bun.Tx, auction *models.Auction) error
 	GetRecentCompletedAuctions(ctx context.Context, cardID int64, limit int) ([]*models.Auction, error)
+	AuctionIDExists(ctx context.Context, auctionID string) (bool, error)
 }
 
 type auctionRepository struct {
@@ -641,4 +642,13 @@ func (r *auctionRepository) GetRecentCompletedAuctions(ctx context.Context, card
 	}
 
 	return auctions, nil
+}
+
+func (r *auctionRepository) AuctionIDExists(ctx context.Context, auctionID string) (bool, error) {
+	exists, err := r.db.NewSelect().
+		Model((*models.Auction)(nil)).
+		Where("auction_id = ?", auctionID).
+		Exists(ctx)
+
+	return exists, err
 }

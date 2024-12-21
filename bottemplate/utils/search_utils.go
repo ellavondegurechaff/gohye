@@ -36,7 +36,7 @@ const (
 type SearchFilters struct {
 	Query      string // Raw search query
 	Name       string // Card name
-	Level      int    // Card level (1-5)
+	Levels     []int  // Change from single Level to Levels slice
 	Collection string // Collection ID
 	Animated   bool   // Animated cards only
 	Favorites  bool   // Favorited cards only
@@ -56,8 +56,9 @@ const (
 func ParseSearchQuery(query string) SearchFilters {
 	filters := SearchFilters{
 		Query:    query,
-		SortBy:   SortByLevel, // Default to level sorting
-		SortDesc: true,        // Default to descending order
+		SortBy:   SortByLevel,
+		SortDesc: true,
+		Levels:   make([]int, 0),
 	}
 
 	terms := strings.Fields(strings.ToLower(query))
@@ -88,11 +89,18 @@ func ParseSearchQuery(query string) SearchFilters {
 		case term == "gif":
 			filters.Animated = true
 		case strings.HasPrefix(term, "-"):
-			// Negative collection filter
+			// Check if it's a level filter
+			levelStr := strings.TrimPrefix(term, "-")
+			if level, err := strconv.Atoi(levelStr); err == nil && level >= 1 && level <= 5 {
+				filters.Levels = append(filters.Levels, level)
+				continue
+			}
+			// If not a level, treat as collection filter
 			filters.Collection = strings.TrimPrefix(term, "-")
 		case term[0] >= '1' && term[0] <= '5' && len(term) == 1:
-			// Level filter
-			filters.Level, _ = strconv.Atoi(term)
+			// Single digit level filter without dash
+			level, _ := strconv.Atoi(term)
+			filters.Levels = append(filters.Levels, level)
 		case term == "fav":
 			filters.Favorites = true
 		case term == "-fav":
@@ -119,11 +127,23 @@ func WeightedSearch(cards []*models.Card, filters SearchFilters) []*models.Card 
 	var results []SearchResult
 	searchTerms := strings.Fields(strings.ToLower(filters.Name))
 
-	// First pass: look for exact matches
 	for _, card := range cards {
+		// Check level filter first
+		if len(filters.Levels) > 0 {
+			levelMatch := false
+			for _, level := range filters.Levels {
+				if card.Level == level {
+					levelMatch = true
+					break
+				}
+			}
+			if !levelMatch {
+				continue // Skip this card if level doesn't match
+			}
+		}
+
 		weight := calculateEnhancedWeight(card, searchTerms)
 		if weight == WeightExactMatch {
-			// If we find an exact match, return only that card
 			return []*models.Card{card}
 		}
 		if weight > 0 {

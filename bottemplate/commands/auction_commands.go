@@ -154,7 +154,7 @@ func (h *AuctionHandler) HandleCreate(event *handler.CommandEvent) error {
 
 func (h *AuctionHandler) HandleBid(event *handler.CommandEvent) error {
 	data := event.SlashCommandInteractionData()
-	auctionIDStr := data.String("auction_id")
+	auctionIDStr := strings.ToUpper(data.String("auction_id"))
 	amount := int64(data.Int("amount"))
 
 	ctx := context.Background()

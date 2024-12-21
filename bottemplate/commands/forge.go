@@ -52,7 +52,7 @@ func (h *ForgeHandler) HandleForge(e *handler.CommandEvent) error {
 	userID := strconv.FormatInt(int64(e.User().ID), 10)
 
 	// Find first card
-	card1, err := h.findCard(ctx, query1, userID)
+	card1, err := h.findCard(ctx, query1, userID, 0)
 	if err != nil {
 		return e.CreateMessage(discord.MessageCreate{
 			Content: fmt.Sprintf("❌ Error finding first card: %v", err),
@@ -60,8 +60,8 @@ func (h *ForgeHandler) HandleForge(e *handler.CommandEvent) error {
 		})
 	}
 
-	// Find second card
-	card2, err := h.findCard(ctx, query2, userID)
+	// Find second card, excluding the first card
+	card2, err := h.findCard(ctx, query2, userID, card1.ID)
 	if err != nil {
 		return e.CreateMessage(discord.MessageCreate{
 			Content: fmt.Sprintf("❌ Error finding second card: %v", err),
@@ -184,7 +184,7 @@ func (h *ForgeHandler) HandleComponent(e *handler.ComponentEvent) error {
 				"```",
 				newCard.Name,
 				newCard.ColID,
-				strings.Repeat("⭐", newCard.Level))).
+				strings.Repeat("���", newCard.Level))).
 			SetTimestamp(time.Now()).
 			Build()
 
@@ -207,59 +207,45 @@ func (h *ForgeHandler) HandleComponent(e *handler.ComponentEvent) error {
 	}
 }
 
-func (h *ForgeHandler) findCard(ctx context.Context, query, userID string) (*models.Card, error) {
-	// Try parsing as ID first
-	if cardID, err := strconv.ParseInt(query, 10, 64); err == nil {
-		card, err := h.bot.CardRepository.GetByID(ctx, cardID)
-		if err == nil {
-			userCard, err := h.bot.UserCardRepository.GetByUserIDAndCardID(ctx, userID, cardID)
-			if err != nil {
-				return nil, fmt.Errorf("error checking card ownership: %v", err)
-			}
-			if userCard == nil || userCard.Amount <= 0 {
-				return nil, fmt.Errorf("you don't own this card")
-			}
-			return card, nil
-		}
+func (h *ForgeHandler) findCard(ctx context.Context, query, userID string, excludeCardID int64) (*models.Card, error) {
+	// Handle empty query
+	if query == "" {
+		return nil, fmt.Errorf("please provide a card name")
 	}
 
-	// Try exact match
-	card, err := h.bot.CardRepository.GetByQuery(ctx, query)
-	if err == nil && card != nil {
-		userCard, err := h.bot.UserCardRepository.GetByUserIDAndCardID(ctx, userID, card.ID)
-		if err != nil {
-			return nil, fmt.Errorf("error checking card ownership: %v", err)
-		}
-		if userCard == nil || userCard.Amount <= 0 {
-			return nil, fmt.Errorf("you don't own this card")
-		}
-		return card, nil
-	}
-
-	// Try fuzzy search
-	cards, err := h.bot.CardRepository.GetAll(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to search for cards")
-	}
-
+	// Parse the query to get search filters
 	filters := utils.ParseSearchQuery(query)
-	filters.SortBy = utils.SortByLevel // Prioritize higher level cards
-	filters.SortDesc = true            // Descending order
 
+	// Get all user's cards first
+	userCards, err := h.bot.UserCardRepository.GetAllByUserID(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("error fetching your cards: %v", err)
+	}
+
+	// Convert UserCards to Cards for searching
+	var cards []*models.Card
+	for _, userCard := range userCards {
+		if userCard.Amount <= 0 {
+			continue
+		}
+		cardData, err := h.bot.CardRepository.GetByID(ctx, userCard.CardID)
+		if err != nil {
+			continue
+		}
+		// Skip the excluded card
+		if cardData.ID == excludeCardID {
+			continue
+		}
+		cards = append(cards, cardData)
+	}
+
+	// Search within user's owned cards
 	searchResults := utils.WeightedSearch(cards, filters)
 	if len(searchResults) == 0 {
-		return nil, fmt.Errorf("no cards found matching '%s'", query)
+		return nil, fmt.Errorf("no matching cards found in your collection")
 	}
 
-	userCard, err := h.bot.UserCardRepository.GetByUserIDAndCardID(ctx, userID, searchResults[0].ID)
-	if err != nil {
-		return nil, fmt.Errorf("error checking ownership: %v", err)
-	}
-
-	if userCard == nil || userCard.Amount <= 0 {
-		return nil, fmt.Errorf("you don't own this card")
-	}
-
+	// Return the best match
 	return searchResults[0], nil
 }
 

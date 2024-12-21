@@ -4,10 +4,11 @@ import (
 	"context"
 	"crypto/rand"
 	"database/sql"
-	"encoding/base32"
+	"encoding/binary"
 	"fmt"
 	"log/slog"
 	"math"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -24,7 +25,7 @@ const (
 	MinBidIncrement = 100
 	MaxAuctionTime  = 24 * time.Hour
 	MinAuctionTime  = 10 * time.Second
-	IDLength        = 4
+	IDLength        = 6
 	maxRetries      = 5
 	AntiSnipeTime   = 10 * time.Second
 )
@@ -100,7 +101,7 @@ func (m *Manager) CreateAuction(ctx context.Context, cardID int64, sellerID stri
 		slog.Duration("duration", duration))
 
 	// Generate auction ID first
-	auctionID, err := m.generateAuctionID()
+	auctionID, err := m.generateAuctionID(ctx, cardID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate auction ID: %w", err)
 	}
@@ -781,28 +782,79 @@ func (m *Manager) Shutdown() {
 	}
 }
 
-// Generate a unique 4-character auction ID
-func (m *Manager) generateAuctionID() (string, error) {
-	for i := 0; i < maxRetries; i++ {
-		// Generate 3 random bytes (24 bits)
-		bytes := make([]byte, 3)
+// Generate a unique auction ID based on card name
+func (m *Manager) generateAuctionID(ctx context.Context, cardID int64) (string, error) {
+	// Get card details
+	card, err := m.cardRepo.GetByID(ctx, cardID)
+	if err != nil {
+		return "", fmt.Errorf("failed to get card details: %w", err)
+	}
+
+	// Create base for the auction ID
+	words := strings.Fields(card.Name)
+	var prefix string
+	if len(words) >= 2 {
+		// Take first letter of first two words
+		prefix = strings.ToUpper(string(words[0][0]) + string(words[1][0]))
+	} else if len(words) == 1 {
+		// Take first two letters of single word
+		if len(words[0]) >= 2 {
+			prefix = strings.ToUpper(words[0][:2])
+		} else {
+			prefix = strings.ToUpper(words[0] + "X")
+		}
+	}
+
+	// Add collection identifier
+	prefix += strings.ToUpper(card.ColID[:1])
+
+	// Add level indicator
+	prefix += strconv.Itoa(card.Level)
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// Try to generate a unique suffix
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		// Generate 2 random bytes for the suffix
+		bytes := make([]byte, 2)
 		if _, err := rand.Read(bytes); err != nil {
 			return "", fmt.Errorf("failed to generate random bytes: %w", err)
 		}
 
-		// Encode using base32 (5 bits per character)
-		encoded := base32.StdEncoding.EncodeToString(bytes)
+		// Convert to base36 (alphanumeric) and take first 2 characters
+		suffix := strings.ToUpper(base36encode(bytes))[:2]
 
-		// Take first 4 characters and convert to uppercase
-		id := strings.ToUpper(encoded[:IDLength])
+		// Combine prefix and suffix
+		id := prefix + suffix
 
-		// Check if ID is already in use
-		if _, exists := m.usedIDs.LoadOrStore(id, true); !exists {
+		// Check if ID exists in database
+		exists, err := m.repo.AuctionIDExists(ctx, id)
+		if err != nil {
+			return "", fmt.Errorf("failed to check auction ID existence: %w", err)
+		}
+
+		// If ID doesn't exist, use it
+		if !exists {
 			return id, nil
 		}
 	}
 
 	return "", fmt.Errorf("failed to generate unique auction ID after %d attempts", maxRetries)
+}
+
+// Helper function to encode bytes to base36
+func base36encode(bytes []byte) string {
+	const alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+	result := ""
+	number := binary.BigEndian.Uint16(bytes)
+
+	for number > 0 {
+		result = string(alphabet[number%36]) + result
+		number /= 36
+	}
+
+	return result
 }
 
 func (m *Manager) GetAuctionByAuctionID(ctx context.Context, auctionID string) (*models.Auction, error) {
