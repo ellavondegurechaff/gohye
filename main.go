@@ -22,6 +22,7 @@ import (
 	"github.com/disgoorg/bot-template/bottemplate/handlers"
 	"github.com/disgoorg/bot-template/bottemplate/logger"
 	"github.com/disgoorg/bot-template/bottemplate/services"
+	"github.com/disgoorg/bot-template/bottemplate/utils"
 	"github.com/disgoorg/disgo/bot"
 	"github.com/disgoorg/disgo/handler"
 )
@@ -113,6 +114,17 @@ func main() {
 	b.CollectionRepository = repositories.NewCollectionRepository(b.DB.BunDB())
 	b.EconomyStatsRepository = repositories.NewEconomyStatsRepository(b.DB.BunDB())
 	b.WishlistRepository = repositories.NewWishlistRepository(b.DB.BunDB())
+
+	// Initialize collection cache for promo filtering
+	collections, err := b.CollectionRepository.GetAll(ctx)
+	if err != nil {
+		slog.Error("Failed to load collections for cache",
+			slog.String("error", err.Error()))
+		os.Exit(-1)
+	}
+	utils.InitializeCollectionInfo(collections)
+	slog.Info("Collection cache initialized successfully",
+		slog.Int("collections_loaded", len(collections)))
 
 	// Then initialize Auction Manager with all required dependencies
 	// auctionRepo := repositories.NewAuctionRepository(b.DB.BunDB())

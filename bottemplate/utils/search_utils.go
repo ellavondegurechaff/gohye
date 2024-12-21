@@ -4,6 +4,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/disgoorg/bot-template/bottemplate/database/models"
 )
@@ -42,6 +43,7 @@ type SearchFilters struct {
 	Favorites   bool
 	SortBy      string
 	SortDesc    bool
+	PromoOnly   bool
 }
 
 // SortOptions defines available sorting methods
@@ -51,6 +53,30 @@ const (
 	SortByCol   = "collection"
 	SortByDate  = "date"
 )
+
+// CollectionInfo stores collection metadata for efficient lookups
+type CollectionInfo struct {
+	IsPromo bool
+}
+
+var collectionCache sync.Map
+
+// InitializeCollectionInfo caches collection information for efficient searching
+func InitializeCollectionInfo(collections []*models.Collection) {
+	for _, collection := range collections {
+		collectionCache.Store(collection.ID, CollectionInfo{
+			IsPromo: collection.Promo,
+		})
+	}
+}
+
+// getCollectionInfo retrieves cached collection information
+func getCollectionInfo(colID string) (CollectionInfo, bool) {
+	if info, ok := collectionCache.Load(colID); ok {
+		return info.(CollectionInfo), true
+	}
+	return CollectionInfo{}, false
+}
 
 // ParseSearchQuery parses a user's search query into structured filters
 func ParseSearchQuery(query string) SearchFilters {
@@ -85,6 +111,8 @@ func ParseSearchQuery(query string) SearchFilters {
 
 		// Handle special filters
 		switch {
+		case term == "-promo":
+			filters.PromoOnly = true
 		case term == "-gif":
 			filters.Animated = false
 		case term == "gif":
@@ -140,7 +168,15 @@ func WeightedSearch(cards []*models.Card, filters SearchFilters) []*models.Card 
 				}
 			}
 			if !collectionMatch {
-				continue // Skip this card if collection doesn't match
+				continue
+			}
+		}
+
+		// Check promo filter if enabled
+		if filters.PromoOnly {
+			// Get collection info from cache
+			if colInfo, exists := getCollectionInfo(card.ColID); !exists || !colInfo.IsPromo {
+				continue
 			}
 		}
 
@@ -159,15 +195,18 @@ func WeightedSearch(cards []*models.Card, filters SearchFilters) []*models.Card 
 		}
 
 		weight := calculateEnhancedWeight(card, searchTerms)
-		if weight == WeightExactMatch {
-			return []*models.Card{card}
-		}
-		if weight > 0 {
+		if len(searchTerms) == 0 {
+			// If no search terms, include all cards that passed filters
+			results = append(results, SearchResult{Card: card, Weight: WeightPartialMatch})
+		} else if weight > 0 {
+			if weight == WeightExactMatch {
+				return []*models.Card{card}
+			}
 			results = append(results, SearchResult{Card: card, Weight: weight})
 		}
 	}
 
-	// Only proceed with partial matches if no exact match was found
+	// Sort results
 	sortResults(results, filters.SortBy, filters.SortDesc)
 
 	// Convert to card slice
