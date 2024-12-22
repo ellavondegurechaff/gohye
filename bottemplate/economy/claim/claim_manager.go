@@ -5,6 +5,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/disgoorg/bot-template/bottemplate/database/models"
 )
 
 type Manager struct {
@@ -17,6 +19,7 @@ type Manager struct {
 	cooldownPeriod  time.Duration
 	lockDuration    time.Duration // Added as configurable parameter
 	sessionTimeout  time.Duration
+	claimCards      sync.Map // stores messageID -> []models.Card
 }
 
 func NewManager(cooldownPeriod time.Duration) *Manager {
@@ -64,13 +67,11 @@ func (m *Manager) ReleaseClaim(userID string) {
 	m.activeClaimLock.Delete(userID)
 	m.activeUsers.Delete(userID)
 	m.claimOwners.Delete(userID)
-	// Clean up message ownership entries for this user
-	m.messageOwners.Range(func(key, value interface{}) bool {
-		if value.(string) == userID {
-			m.messageOwners.Delete(key)
-		}
-		return true
-	})
+	m.messageOwners.Delete(userID)
+	m.claimCards.Delete(userID)
+
+	// Set cooldown
+	m.claimCooldowns.Store(userID, time.Now().Add(m.cooldownPeriod))
 }
 
 func (m *Manager) SetClaimCooldown(userID string) {
@@ -171,4 +172,15 @@ func (m *Manager) IsMessageOwner(messageID string, userID string) bool {
 		return owner.(string) == userID
 	}
 	return false
+}
+
+func (m *Manager) StoreClaimCards(messageID string, cards []*models.Card) {
+	m.claimCards.Store(messageID, cards)
+}
+
+func (m *Manager) GetClaimCards(messageID string) []*models.Card {
+	if cards, ok := m.claimCards.Load(messageID); ok {
+		return cards.([]*models.Card)
+	}
+	return nil
 }

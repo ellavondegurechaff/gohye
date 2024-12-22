@@ -228,9 +228,9 @@ func main() {
 	h.Command("/cards", handlers.WrapWithLogging("cards", commands.CardsHandler(b)))
 	h.Command("/price-stats", handlers.WrapWithLogging("price-stats", commands.PriceStatsHandler(b)))
 	h.Component("/details/", handlers.WrapComponentWithLogging("price-details", commands.PriceDetailsHandler(b)))
-	h.Component("/claim/", handlers.WrapComponentWithLogging("claim", commands.ClaimButtonHandler(b)))
+	// h.Component("/claim/", handlers.WrapComponentWithLogging("claim", commands.ClaimButtonHandler(b)))
 	h.Command("/metrics", handlers.WrapWithLogging("metrics", commands.MetricsHandler(b)))
-	h.Command("/claim", handlers.WrapWithLogging("claim", commands.ClaimHandler(b)))
+	h.Command("/claim", handlers.WrapWithLogging("claim", commands.NewClaimHandler(b).HandleCommand))
 	h.Command("/fixduplicates", handlers.WrapWithLogging("fixduplicates", commands.FixDuplicatesHandler(b)))
 	h.Command("/levelup", handlers.WrapWithLogging("levelup", commands.LevelUpHandler(b)))
 	h.Command("/analyze-economy", handlers.WrapWithLogging("analyze-economy", commands.AnalyzeEconomyHandler(b)))
@@ -276,6 +276,12 @@ func main() {
 	h.Command("/inventory", handlers.WrapWithLogging("inventory", inventoryHandler.Handle))
 	h.Component("/inventory_category", handlers.WrapComponentWithLogging("inventory_category", inventoryHandler.HandleComponent))
 	h.Component("/inventory_item", handlers.WrapComponentWithLogging("inventory_item", inventoryHandler.HandleComponent))
+
+	// Claim commands
+	claimHandler := commands.NewClaimHandler(b)
+	h.Command("/claim", handlers.WrapWithLogging("claim", claimHandler.HandleCommand))
+	h.Component("/claim/next/", handlers.WrapComponentWithLogging("claim", claimHandler.HandleComponent))
+	h.Component("/claim/prev/", handlers.WrapComponentWithLogging("claim", claimHandler.HandleComponent))
 
 	if err = b.SetupBot(h, bot.NewListenerFunc(b.OnReady), handlers.MessageHandler(b)); err != nil {
 		slog.Error("Failed to setup bot",

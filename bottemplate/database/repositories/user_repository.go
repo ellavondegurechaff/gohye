@@ -2,6 +2,8 @@ package repositories
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
@@ -19,6 +21,7 @@ type UserRepository interface {
 	GetTopUsers(ctx context.Context, limit int) ([]*models.User, error)
 	GetUsers(ctx context.Context) ([]*models.User, error)
 	UpdateLastWork(ctx context.Context, discordID string) error
+	GetBalance(ctx context.Context, userID string) (int64, error)
 }
 
 type userRepository struct {
@@ -117,4 +120,21 @@ func (r *userRepository) UpdateLastWork(ctx context.Context, discordID string) e
 		return fmt.Errorf("failed to update last_work: %w", err)
 	}
 	return nil
+}
+
+func (r *userRepository) GetBalance(ctx context.Context, userID string) (int64, error) {
+	var user models.User
+	err := r.db.NewSelect().
+		Model(&user).
+		Where("id = ?", userID).
+		Scan(ctx)
+
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return 0, nil
+		}
+		return 0, err
+	}
+
+	return user.Balance, nil
 }

@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"log"
+	"log/slog"
 	"math/rand"
 	"strconv"
 	"strings"
@@ -20,7 +20,25 @@ import (
 
 var Claim = discord.SlashCommandCreate{
 	Name:        "claim",
-	Description: "✨ Claim a random card from the collection!",
+	Description: "✨ Claim cards from the collection!",
+	Options: []discord.ApplicationCommandOption{
+		discord.ApplicationCommandOptionInt{
+			Name:        "count",
+			Description: "Number of cards to claim (1-10)",
+			Required:    false,
+			MinValue:    utils.Ptr(1),
+			MaxValue:    utils.Ptr(10),
+		},
+		discord.ApplicationCommandOptionString{
+			Name:        "group_type",
+			Description: "Type of group to claim from",
+			Required:    false,
+			Choices: []discord.ApplicationCommandOptionChoiceString{
+				{Name: "Girl Groups", Value: "girlgroups"},
+				{Name: "Boy Groups", Value: "boygroups"},
+			},
+		},
+	},
 }
 
 func getCardImageURL(card *models.Card, bot *bottemplate.Bot) string {
@@ -47,70 +65,174 @@ func getCardImageURL(card *models.Card, bot *bottemplate.Bot) string {
 	return cardInfo.ImageURL
 }
 
-func ClaimHandler(b *bottemplate.Bot) handler.CommandHandler {
-	return func(e *handler.CommandEvent) error {
-		userID := e.User().ID.String()
+type ClaimHandler struct {
+	bot *bottemplate.Bot
+}
 
-		// Add timeout context for the entire claim operation
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
+func NewClaimHandler(b *bottemplate.Bot) *ClaimHandler {
+	return &ClaimHandler{
+		bot: b,
+	}
+}
 
-		// Check for existing session first
-		if b.ClaimManager.HasActiveSession(userID) {
-			return utils.EH.CreateError(e, "Error",
-				"You already have an active claim session. Please finish or cancel it first.")
+func (h *ClaimHandler) HandleCommand(e *handler.CommandEvent) error {
+	userID := e.User().ID.String()
+
+	// Get options
+	count := 1 // Default to 1 if not specified
+	if countOption, ok := e.SlashCommandInteractionData().OptInt("count"); ok {
+		count = int(countOption)
+	}
+
+	// Get cards
+	cards, err := h.bot.CardRepository.GetAll(context.Background())
+	if err != nil {
+		return utils.EH.CreateError(e, "Error", "Failed to fetch cards")
+	}
+
+	// Filter and select cards
+	var selectedCards []*models.Card
+	for i := 0; i < count; i++ {
+		card := selectRandomCard(cards)
+		if card != nil {
+			selectedCards = append(selectedCards, card)
 		}
+	}
 
-		// Check if user can claim
-		if canClaim, cooldown := b.ClaimManager.CanClaim(userID); !canClaim {
-			return utils.EH.CreateError(e, "Cooldown",
-				fmt.Sprintf("Please wait %s before claiming again",
-					cooldown.Round(time.Second)))
-		}
+	if len(selectedCards) == 0 {
+		return utils.EH.CreateError(e, "Error", "No cards available")
+	}
 
-		// Try to acquire lock - DON'T use defer here
-		if !b.ClaimManager.LockClaim(userID) {
-			return utils.EH.CreateError(e, "Error",
-				"Another claim is already in progress. Please wait.")
-		}
+	// Create the initial embed
+	var cardList strings.Builder
+	cardList.WriteString("**✨ New Cards**\n")
 
-		// If we fail after this point, we should release the lock
-		if err := e.DeferCreateMessage(false); err != nil {
-			b.ClaimManager.ReleaseClaim(userID) // Release lock on error
-			return fmt.Errorf("failed to defer message: %w", err)
-		}
+	// Show all cards in list
+	for _, card := range selectedCards {
+		stars := utils.GetStarsDisplay(card.Level)
+		collection := fmt.Sprintf("`%s`", strings.ToLower(card.ColID))
+		cardList.WriteString(fmt.Sprintf("%s [%s](%s) %s\n",
+			stars,
+			utils.FormatCardName(card.Name),
+			getCardImageURL(card, h.bot),
+			collection))
+	}
 
-		// Use the timeout context for database operations
-		cards, err := b.CardRepository.GetAll(ctx)
-		if err != nil {
-			b.ClaimManager.ReleaseClaim(userID) // Release lock on error
-			return utils.EH.CreateError(e, "Error", "Failed to fetch cards")
-		}
+	// Create navigation buttons with user ID encoded in custom ID
+	components := []discord.ContainerComponent{
+		discord.NewActionRow(
+			discord.NewPrimaryButton("◀ Previous", fmt.Sprintf("/claim/prev/%s/0", userID)),
+			discord.NewPrimaryButton("Next ▶", fmt.Sprintf("/claim/next/%s/0", userID)),
+		),
+	}
 
-		if len(cards) == 0 {
-			b.ClaimManager.ReleaseClaim(userID) // Release lock on error
-			return utils.EH.CreateError(e, "Error", "No cards available")
-		}
+	// Create initial embed
+	embed := discord.NewEmbedBuilder().
+		SetDescription(cardList.String()).
+		SetColor(utils.SuccessColor).
+		SetImage(getCardImageURL(selectedCards[0], h.bot)).
+		SetFooter(fmt.Sprintf("Card 1/%d • Claimed by %s", len(selectedCards), e.User().Username), "")
 
-		randomCard := selectRandomCard(cards)
+	return e.CreateMessage(discord.MessageCreate{
+		Embeds:     []discord.Embed{embed.Build()},
+		Components: components,
+	})
+}
 
-		embed := createClaimEmbed(randomCard, b)
-		components := createClaimComponents(randomCard.ID)
+func (h *ClaimHandler) HandleComponent(e *handler.ComponentEvent) error {
+	data := e.Data.(discord.ButtonInteractionData)
+	customID := data.CustomID()
 
-		// After sending the message, register the message ownership
-		resp, err := e.UpdateInteractionResponse(discord.MessageUpdate{
-			Embeds:     &[]discord.Embed{embed},
-			Components: &[]discord.ContainerComponent{components},
-		})
-		if err != nil {
-			b.ClaimManager.ReleaseClaim(userID)
-			return err
-		}
+	slog.Info("Claim component interaction received",
+		slog.String("custom_id", customID),
+		slog.String("user_id", e.User().ID.String()))
 
-		// Register the message owner
-		b.ClaimManager.RegisterMessageOwner(resp.ID.String(), userID)
+	// Parse the custom ID to get user ID and current page
+	parts := strings.Split(customID, "/")
+	if len(parts) != 5 {
+		slog.Error("Invalid custom ID format",
+			slog.String("custom_id", customID),
+			slog.Int("parts_length", len(parts)))
 		return nil
 	}
+
+	claimerID := parts[3]
+	currentPage, err := strconv.Atoi(parts[4])
+	if err != nil {
+		slog.Error("Failed to parse page number",
+			slog.String("page_str", parts[4]),
+			slog.String("error", err.Error()))
+		return nil
+	}
+
+	// Check if the user clicking is the one who claimed
+	if e.User().ID.String() != claimerID {
+		return e.CreateMessage(discord.MessageCreate{
+			Content: "Only the user who claimed these cards can navigate through them.",
+			Flags:   discord.MessageFlagEphemeral,
+		})
+	}
+
+	// Get the message
+	msg := e.Message
+
+	if len(msg.Embeds) == 0 {
+		return nil
+	}
+
+	// Parse the footer to get total cards count
+	footer := msg.Embeds[0].Footer
+	if footer == nil {
+		return nil
+	}
+
+	// Extract total pages from footer text (format: "Card X/Y • Claimed by username")
+	totalPages := 0
+	fmt.Sscanf(footer.Text, "Card %d/%d", &currentPage, &totalPages)
+
+	// Calculate new page
+	newPage := currentPage
+	if strings.HasPrefix(customID, "/claim/next/") {
+		newPage = (currentPage % totalPages) + 1
+	} else if strings.HasPrefix(customID, "/claim/prev/") {
+		newPage = ((currentPage - 2 + totalPages) % totalPages) + 1
+	}
+
+	// Get card URLs from description
+	var cardURLs []string
+	lines := strings.Split(msg.Embeds[0].Description, "\n")
+	for _, line := range lines {
+		if strings.Contains(line, "](") {
+			start := strings.Index(line, "](") + 2
+			end := strings.Index(line[start:], ")")
+			if end > 0 {
+				cardURLs = append(cardURLs, line[start:start+end])
+			}
+		}
+	}
+
+	if len(cardURLs) == 0 || newPage > len(cardURLs) {
+		return nil
+	}
+
+	// Update embed with new page
+	embed := msg.Embeds[0]
+	embed.Footer.Text = fmt.Sprintf("Card %d/%d • Claimed by %s", newPage, totalPages, e.User().Username)
+	embed.Image.URL = cardURLs[newPage-1]
+
+	// Update components with new page number
+	components := []discord.ContainerComponent{
+		discord.NewActionRow(
+			discord.NewPrimaryButton("◀ Previous", fmt.Sprintf("/claim/prev/%s/%d", claimerID, newPage-1)),
+			discord.NewPrimaryButton("Next ▶", fmt.Sprintf("/claim/next/%s/%d", claimerID, newPage-1)),
+		),
+	}
+
+	// Update message
+	return e.UpdateMessage(discord.MessageUpdate{
+		Embeds:     &[]discord.Embed{embed},
+		Components: &components,
+	})
 }
 
 func selectRandomCard(cards []*models.Card) *models.Card {
@@ -163,200 +285,29 @@ func selectRandomCard(cards []*models.Card) *models.Card {
 	return eligibleCards[rand.Intn(len(eligibleCards))]
 }
 
-func createClaimComponents(cardID int64) discord.ContainerComponent {
-	return discord.NewActionRow(
-		discord.NewPrimaryButton("✨ Claim", fmt.Sprintf("/claim/%d", cardID)),
-		discord.NewSecondaryButton("🎲 Reroll", "/claim/reroll"),
-		discord.NewDangerButton("❌ Cancel", "/claim/cancel"),
-	)
-}
-
-func createClaimEmbed(card *models.Card, b *bottemplate.Bot) discord.Embed {
-	return discord.NewEmbedBuilder().
-		SetTitle(utils.FormatCardName(card.Name)).
-		SetDescription(fmt.Sprintf("```md\n"+
-			"# Card Information\n"+
-			"* Collection: %s\n"+
-			"* Level: %s\n"+
-			"* ID: #%d\n"+
-			"%s\n"+
-			"```",
-			utils.FormatCollectionName(card.ColID),
-			utils.GetStarsDisplay(card.Level),
-			card.ID,
-			utils.GetAnimatedTag(card.Animated))).
-		SetColor(utils.GetColorByLevel(card.Level)).
-		SetImage(getCardImageURL(card, b)).
-		Build()
-}
-
-func handleReroll(e *handler.ComponentEvent, b *bottemplate.Bot) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	cards, err := b.CardRepository.GetAll(ctx)
-	if err != nil {
-		return e.CreateMessage(discord.MessageCreate{
-			Embeds: []discord.Embed{{
-				Title:       "❌ Error",
-				Description: "Failed to fetch cards",
-				Color:       utils.ErrorColor,
-			}},
-		})
-	}
-
-	randomCard := selectRandomCard(cards)
-	embed := createClaimEmbed(randomCard, b)
-	components := createClaimComponents(randomCard.ID)
-
-	return e.UpdateMessage(discord.MessageUpdate{
-		Embeds:     &[]discord.Embed{embed},
-		Components: &[]discord.ContainerComponent{components},
-	})
-}
-
-func handleCancel(e *handler.ComponentEvent, b *bottemplate.Bot) error {
-	userID := e.User().ID.String()
-	defer b.ClaimManager.ReleaseClaim(userID) // Release lock when cancelled
-
-	return e.UpdateMessage(discord.MessageUpdate{
-		Components: &[]discord.ContainerComponent{
-			discord.NewActionRow(
-				discord.NewPrimaryButton("✨ Claim", "claimed").WithDisabled(true),
-				discord.NewSecondaryButton("🎲 Reroll", "rerolled").WithDisabled(true),
-				discord.NewDangerButton("❌ Cancel", "cancelled").WithDisabled(true),
-			),
-		},
-		Embeds: &[]discord.Embed{{
-			Description: "Claim cancelled",
-			Color:       utils.ErrorColor,
-		}},
-	})
-}
-
-func ClaimButtonHandler(b *bottemplate.Bot) handler.ComponentHandler {
-	return func(e *handler.ComponentEvent) error {
-		data, ok := e.Data.(discord.ButtonInteractionData)
-		if !ok {
-			return fmt.Errorf("invalid interaction type")
-		}
-
-		userID := e.User().ID.String()
-		messageID := e.Message.ID.String()
-
-		// Check if this user owns this specific claim message
-		if !b.ClaimManager.IsMessageOwner(messageID, userID) {
-			return e.CreateMessage(discord.MessageCreate{
-				Embeds: []discord.Embed{{
-					Description: "This claim session belongs to another user.",
-					Color:       utils.ErrorColor,
-				}},
-				Flags: discord.MessageFlagEphemeral,
-			})
-		}
-
-		// Don't try to acquire a new lock for button interactions
-		// Instead, verify the user has an active session
-		if !b.ClaimManager.HasActiveSession(userID) {
-			return e.CreateMessage(discord.MessageCreate{
-				Embeds: []discord.Embed{{
-					Description: "No active claim session found. Please start a new claim.",
-					Color:       utils.ErrorColor,
-				}},
-				Flags: discord.MessageFlagEphemeral,
-			})
-		}
-
-		action := strings.TrimPrefix(data.CustomID(), "/claim/")
-		var err error
-		switch action {
-		case "reroll":
-			err = handleReroll(e, b)
-		case "cancel":
-			err = handleCancel(e, b) // Pass bot instance to access ClaimManager
-		default:
-			err = handleClaim(e, b, action)
-		}
-
-		if err != nil {
-			// Release lock on error
-			b.ClaimManager.ReleaseClaim(userID)
-			return e.CreateMessage(discord.MessageCreate{
-				Embeds: []discord.Embed{{
-					Description: fmt.Sprintf("Error processing claim: %v", err),
-					Color:       utils.ErrorColor,
-				}},
-				Flags: discord.MessageFlagEphemeral,
-			})
-		}
-		return nil
-	}
-}
-
-func handleClaim(e *handler.ComponentEvent, b *bottemplate.Bot, cardIDStr string) error {
-	userID := e.User().ID.String()
-	defer b.ClaimManager.ReleaseClaim(userID)
-
-	log.Printf("[DEBUG] [CLAIM] Attempting to claim card: %s", cardIDStr)
-
-	cardID, err := strconv.ParseInt(cardIDStr, 10, 64)
-	if err != nil {
-		log.Printf("[ERROR] [CLAIM] Invalid card ID format: %v", err)
-		return e.UpdateMessage(discord.MessageUpdate{
-			Embeds: &[]discord.Embed{{
-				Description: "Invalid card ID",
-				Color:       utils.ErrorColor,
-			}},
-			Components: &[]discord.ContainerComponent{},
-		})
-	}
-
-	if canClaim, cooldown := b.ClaimManager.CanClaim(userID); !canClaim {
-		log.Printf("[DEBUG] [CLAIM] User %s on cooldown for %s", userID, cooldown)
-		return e.UpdateMessage(discord.MessageUpdate{
-			Embeds: &[]discord.Embed{{
-				Description: fmt.Sprintf("Please wait %s before claiming again", cooldown.Round(time.Second)),
-				Color:       utils.ErrorColor,
-			}},
-			Components: &[]discord.ContainerComponent{},
-		})
-	}
-
-	ctx := context.Background()
-
-	// First, check if user already has this card
-	userCard, err := b.UserCardRepository.GetUserCard(ctx, userID, cardID)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		log.Printf("[ERROR] [CLAIM] Failed to check existing card: %v", err)
-		return e.UpdateMessage(discord.MessageUpdate{
-			Embeds: &[]discord.Embed{{
-				Description: "Failed to process claim",
-				Color:       utils.ErrorColor,
-			}},
-			Components: &[]discord.ContainerComponent{},
-		})
-	}
-
-	// Start transaction
+func claimCard(ctx context.Context, b *bottemplate.Bot, cardID int64, userID string) error {
 	tx, err := b.DB.BunDB().BeginTx(ctx, nil)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to start transaction: %w", err)
 	}
 	defer tx.Rollback()
 
-	var amount int64
+	// Get existing user card if any
+	userCard, err := b.UserCardRepository.GetUserCard(ctx, userID, cardID)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("failed to check existing card: %w", err)
+	}
+
 	if userCard != nil {
 		// Update existing card
-		amount = userCard.Amount + 1
 		_, err = tx.NewUpdate().
 			Model((*models.UserCard)(nil)).
-			Set("amount = ?", amount).
+			Set("amount = amount + 1").
 			Set("updated_at = ?", time.Now()).
 			Where("user_id = ? AND card_id = ?", userID, cardID).
 			Exec(ctx)
 	} else {
-		// Create new card entry
-		amount = 1
+		// Create new user card
 		userCard = &models.UserCard{
 			UserID:    userID,
 			CardID:    cardID,
@@ -369,14 +320,7 @@ func handleClaim(e *handler.ComponentEvent, b *bottemplate.Bot, cardIDStr string
 	}
 
 	if err != nil {
-		log.Printf("[ERROR] [CLAIM] Failed to update user card: %v", err)
-		return e.UpdateMessage(discord.MessageUpdate{
-			Embeds: &[]discord.Embed{{
-				Description: "Failed to process claim",
-				Color:       utils.ErrorColor,
-			}},
-			Components: &[]discord.ContainerComponent{},
-		})
+		return fmt.Errorf("failed to update/create user card: %w", err)
 	}
 
 	// Create claim record
@@ -389,81 +333,8 @@ func handleClaim(e *handler.ComponentEvent, b *bottemplate.Bot, cardIDStr string
 
 	_, err = tx.NewInsert().Model(claim).Exec(ctx)
 	if err != nil {
-		log.Printf("[ERROR] [CLAIM] Failed to create claim record: %v", err)
-		return e.UpdateMessage(discord.MessageUpdate{
-			Embeds: &[]discord.Embed{{
-				Description: "Failed to process claim",
-				Color:       utils.ErrorColor,
-			}},
-			Components: &[]discord.ContainerComponent{},
-		})
+		return fmt.Errorf("failed to create claim record: %w", err)
 	}
 
-	if err := tx.Commit(); err != nil {
-		log.Printf("[ERROR] [CLAIM] Failed to commit transaction: %v", err)
-		return e.UpdateMessage(discord.MessageUpdate{
-			Embeds: &[]discord.Embed{{
-				Description: "Failed to process claim",
-				Color:       utils.ErrorColor,
-			}},
-			Components: &[]discord.ContainerComponent{},
-		})
-	}
-
-	// After successful claim, fetch the card details
-	card, err := b.CardRepository.GetByID(ctx, cardID)
-	if err != nil {
-		log.Printf("[ERROR] [CLAIM] Failed to fetch card details: %v", err)
-		return e.UpdateMessage(discord.MessageUpdate{
-			Embeds: &[]discord.Embed{{
-				Description: "Failed to fetch card details",
-				Color:       utils.ErrorColor,
-			}},
-			Components: &[]discord.ContainerComponent{},
-		})
-	}
-
-	log.Printf("[INFO] [CLAIM] Successfully claimed card #%d for user %s (Total: %d)", cardID, userID, amount)
-	b.ClaimManager.SetClaimCooldown(userID)
-
-	// Update the original message to show it's been claimed
-	timestamp := fmt.Sprintf("<t:%d:R>", time.Now().Unix())
-	return e.UpdateMessage(discord.MessageUpdate{
-		Embeds: &[]discord.Embed{{
-			Title: utils.FormatCardName(card.Name),
-			Description: fmt.Sprintf("🎉 **CLAIMED!** 🎉\n\n"+
-				"```md\n"+
-				"# Card Information\n"+
-				"* Collection: %s\n"+
-				"* Level: %s\n"+
-				"* ID: #%d\n"+
-				"* Amount: %dx\n"+
-				"%s\n"+
-				"```\n"+
-				"> 🏆 Congratulations <@%s>!\n"+
-				"> 📈 You now have %dx of this card in your collection!",
-				utils.FormatCollectionName(card.ColID),
-				utils.GetStarsDisplay(card.Level),
-				card.ID,
-				amount,
-				utils.GetAnimatedTag(card.Animated),
-				userID,
-				amount),
-			Color: utils.SuccessColor,
-			Image: &discord.EmbedResource{
-				URL: getCardImageURL(card, b),
-			},
-			Footer: &discord.EmbedFooter{
-				Text:    fmt.Sprintf("Claimed by %s • %s", e.User().Username, timestamp),
-				IconURL: e.User().EffectiveAvatarURL(),
-			},
-		}},
-		Components: &[]discord.ContainerComponent{
-			discord.NewActionRow(
-				discord.NewPrimaryButton("✨ Claimed!", fmt.Sprintf("/claim/%d", cardID)).WithDisabled(true),
-				discord.NewSecondaryButton("🎲 Rerolled", "/claim/reroll").WithDisabled(true),
-				discord.NewDangerButton("❌ Cancelled", "/claim/cancel").WithDisabled(true),
-			),
-		},
-	})
+	return tx.Commit()
 }
