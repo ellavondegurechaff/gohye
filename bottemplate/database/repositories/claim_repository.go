@@ -24,6 +24,7 @@ type ClaimRepository interface {
 	GetClaimCost(ctx context.Context, userID string) (int64, error)
 	GetClaimInfo(ctx context.Context, userID string) (*ClaimInfo, error)
 	GetBasePrice() int64
+	ResetDailyClaims(ctx context.Context, tx bun.Tx, userID string) error
 }
 
 type claimRepository struct {
@@ -49,13 +50,24 @@ func (r *claimRepository) GetUserClaimsInPeriod(ctx context.Context, userID stri
 	var stats models.ClaimStats
 	err := r.db.NewSelect().
 		Model(&stats).
-		Where("user_id = ? AND DATE(last_claim_date) = CURRENT_DATE", userID).
+		Where("user_id = ?", userID).
 		Scan(ctx)
 
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, nil
 	}
 	if err != nil {
+		return 0, err
+	}
+
+	var user models.User
+	err = r.db.NewSelect().
+		Model(&user).
+		Column("last_daily").
+		Where("discord_id = ?", userID).
+		Scan(ctx)
+
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return 0, err
 	}
 
@@ -210,4 +222,17 @@ func (r *claimRepository) calculateClaimCost() int64 {
 
 func (r *claimRepository) GetBasePrice() int64 {
 	return r.basePrice
+}
+
+func (r *claimRepository) ResetDailyClaims(ctx context.Context, tx bun.Tx, userID string) error {
+	_, err := tx.NewUpdate().
+		Model(&models.ClaimStats{}).
+		Set("daily_claims = 0").
+		Where("user_id = ?", userID).
+		Exec(ctx)
+
+	if err != nil {
+		return fmt.Errorf("failed to reset daily claims: %w", err)
+	}
+	return nil
 }

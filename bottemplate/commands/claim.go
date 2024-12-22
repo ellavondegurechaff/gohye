@@ -123,7 +123,7 @@ func (h *ClaimHandler) HandleCommand(e *handler.CommandEvent) error {
 	// Check if user can afford all claims
 	if claimInfo.Balance < totalCost {
 		return utils.EH.CreateError(e, "Error",
-			fmt.Sprintf("Insufficient balance. You need %d ⭐ for %d claims", totalCost, count))
+			fmt.Sprintf("Insufficient balance. You need %d ❄ for %d claims", totalCost, count))
 	}
 
 	// Begin transaction
@@ -162,7 +162,7 @@ func (h *ClaimHandler) HandleCommand(e *handler.CommandEvent) error {
 	cardList.WriteString("**✨ New Cards**\n\n")
 	for _, card := range selectedCards {
 		stars := utils.GetStarsDisplay(card.Level)
-		collection := fmt.Sprintf("[`%s`]", strings.ToLower(card.ColID))
+		collection := fmt.Sprintf("`[%s]`", strings.ToUpper(card.ColID))
 
 		// Check if user already has it
 		var userCard models.UserCard
@@ -229,13 +229,13 @@ func (h *ClaimHandler) HandleCommand(e *handler.CommandEvent) error {
 		}
 	}
 
-	// Build the final receipt with cumulative daily spent
+	// Build the final receipt
 	receiptText := fmt.Sprintf("```md\n"+
 		"# Receipt\n"+
-		"• Spent: %d ⭐\n"+
-		"• Balance: %d ⭐\n"+
+		"• Spent: %d \n"+
+		"• Balance: %d \n"+
 		"• Remaining Claims: %d\n"+
-		"• Next Claim Cost: %d ⭐\n"+
+		"• Next Claim Cost: %d \n"+
 		"```",
 		todaysSpent,
 		updatedClaimInfo.Balance,
@@ -248,7 +248,7 @@ func (h *ClaimHandler) HandleCommand(e *handler.CommandEvent) error {
 		SetColor(utils.SuccessColor).
 		SetImage(getCardImageURL(selectedCards[0], h.bot)).
 		SetFooter(fmt.Sprintf("Card 1/%d • Claimed by %s", len(selectedCards), e.User().Username), "").
-		AddField("📝 Receipt", receiptText, false)
+		AddField("", receiptText, false)
 
 	components := []discord.ContainerComponent{
 		discord.NewActionRow(

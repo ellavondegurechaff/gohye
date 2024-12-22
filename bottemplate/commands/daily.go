@@ -33,8 +33,8 @@ func DailyHandler(b *bottemplate.Bot) handler.CommandHandler {
 		}
 
 		// Check cooldown
-		if time.Since(user.LastDaily) < 20*time.Hour {
-			remaining := time.Until(user.LastDaily.Add(20 * time.Hour)).Round(time.Second)
+		if time.Since(user.LastDaily) < 60*time.Second {
+			remaining := time.Until(user.LastDaily.Add(60 * time.Second)).Round(time.Second)
 			return utils.EH.CreateErrorEmbed(e, fmt.Sprintf("You can claim your daily reward again in %s.", remaining))
 		}
 
@@ -51,6 +51,16 @@ func DailyHandler(b *bottemplate.Bot) handler.CommandHandler {
 			return utils.EH.CreateErrorEmbed(e, "Failed to claim daily reward. Please try again later.")
 		}
 		defer tx.Rollback()
+
+		// Reset daily claims when claiming daily reward
+		if err := b.ClaimRepository.ResetDailyClaims(ctx, tx, user.DiscordID); err != nil {
+			slog.Error("Failed to reset daily claims",
+				slog.String("type", "db"),
+				slog.String("discord_id", user.DiscordID),
+				slog.Any("error", err),
+			)
+			return utils.EH.CreateErrorEmbed(e, "Failed to claim daily reward. Please try again later.")
+		}
 
 		if err := b.UserRepository.UpdateBalance(ctx, user.DiscordID, user.Balance+reward); err != nil {
 			slog.Error("Failed to update user balance",
