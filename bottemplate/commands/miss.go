@@ -63,13 +63,25 @@ func MissHandler(b *bottemplate.Bot) handler.CommandHandler {
 			return utils.EH.CreateErrorEmbed(e, "You own all available cards! 🎉")
 		}
 
-		// Sort cards by level (descending) and name (ascending)
-		sort.Slice(missingCards, func(i, j int) bool {
-			if missingCards[i].Level != missingCards[j].Level {
-				return missingCards[i].Level > missingCards[j].Level
+		// Apply search filter if provided
+		query := strings.TrimSpace(e.SlashCommandInteractionData().String("card_query"))
+		if query != "" {
+			// Parse and apply search filters
+			filters := utils.ParseSearchQuery(query)
+			missingCards = utils.WeightedSearch(missingCards, filters)
+
+			if len(missingCards) == 0 {
+				return utils.EH.CreateErrorEmbed(e, "No missing cards found matching your search criteria.")
 			}
-			return strings.ToLower(missingCards[i].Name) < strings.ToLower(missingCards[j].Name)
-		})
+		} else {
+			// Default sorting by level and name when no query is provided
+			sort.Slice(missingCards, func(i, j int) bool {
+				if missingCards[i].Level != missingCards[j].Level {
+					return missingCards[i].Level > missingCards[j].Level
+				}
+				return strings.ToLower(missingCards[i].Name) < strings.ToLower(missingCards[j].Name)
+			})
+		}
 
 		totalPages := int(math.Ceil(float64(len(missingCards)) / float64(utils.CardsPerPage)))
 		startIdx := 0
@@ -82,18 +94,17 @@ func MissHandler(b *bottemplate.Bot) handler.CommandHandler {
 			SetColor(0x2B2D31).
 			SetFooter(fmt.Sprintf("Page 1/%d • Total Missing: %d", totalPages, len(missingCards)), "")
 
-		// Apply search filter if provided
-		query := strings.TrimSpace(e.SlashCommandInteractionData().String("card_query"))
+		// Add search query to description if provided
 		if query != "" {
 			embed.SetDescription(fmt.Sprintf("🔍`%s`\n\n%s", query, embed.Description))
 		}
 
-		// Create the navigation buttons
+		// Create the navigation buttons with query included in custom ID
 		components := []discord.ContainerComponent{
 			discord.NewActionRow(
-				discord.NewSecondaryButton("◀ Previous", fmt.Sprintf("/miss/prev/%s/0", e.User().ID.String())),
-				discord.NewSecondaryButton("Next ▶", fmt.Sprintf("/miss/next/%s/0", e.User().ID.String())),
-				discord.NewSecondaryButton("📋 Copy Page", fmt.Sprintf("/miss/copy/%s/0", e.User().ID.String())),
+				discord.NewSecondaryButton("◀ Previous", fmt.Sprintf("/miss/prev/%s/0/%s", e.User().ID.String(), query)),
+				discord.NewSecondaryButton("Next ▶", fmt.Sprintf("/miss/next/%s/0/%s", e.User().ID.String(), query)),
+				discord.NewSecondaryButton("📋 Copy Page", fmt.Sprintf("/miss/copy/%s/0/%s", e.User().ID.String(), query)),
 			),
 		}
 
@@ -152,7 +163,7 @@ func MissComponentHandler(b *bottemplate.Bot) handler.ComponentHandler {
 		customID := data.CustomID()
 
 		parts := strings.Split(customID, "/")
-		if len(parts) != 5 {
+		if len(parts) < 6 {
 			return nil
 		}
 
@@ -162,6 +173,9 @@ func MissComponentHandler(b *bottemplate.Bot) handler.ComponentHandler {
 			return nil
 		}
 
+		// Get the query from the custom ID
+		query := strings.Join(parts[5:], "/")
+
 		// Only the original user can interact
 		if e.User().ID.String() != userID {
 			return e.CreateMessage(discord.MessageCreate{
@@ -170,7 +184,6 @@ func MissComponentHandler(b *bottemplate.Bot) handler.ComponentHandler {
 			})
 		}
 
-		// Get all cards and user's cards again to ensure up-to-date data
 		ctx := context.Background()
 		allCards, err := b.CardRepository.GetAll(ctx)
 		if err != nil {
@@ -202,13 +215,19 @@ func MissComponentHandler(b *bottemplate.Bot) handler.ComponentHandler {
 			}
 		}
 
-		// Sort missing cards
-		sort.Slice(missingCards, func(i, j int) bool {
-			if missingCards[i].Level != missingCards[j].Level {
-				return missingCards[i].Level > missingCards[j].Level
-			}
-			return strings.ToLower(missingCards[i].Name) < strings.ToLower(missingCards[j].Name)
-		})
+		// Apply search filters if query exists
+		if query != "" {
+			filters := utils.ParseSearchQuery(query)
+			missingCards = utils.WeightedSearch(missingCards, filters)
+		} else {
+			// Default sorting by level and name when no query is provided
+			sort.Slice(missingCards, func(i, j int) bool {
+				if missingCards[i].Level != missingCards[j].Level {
+					return missingCards[i].Level > missingCards[j].Level
+				}
+				return strings.ToLower(missingCards[i].Name) < strings.ToLower(missingCards[j].Name)
+			})
+		}
 
 		totalPages := int(math.Ceil(float64(len(missingCards)) / float64(utils.CardsPerPage)))
 
@@ -239,14 +258,17 @@ func MissComponentHandler(b *bottemplate.Bot) handler.ComponentHandler {
 		// Update the embed
 		embed := e.Message.Embeds[0]
 		embed.Description = formatMissingCardsDescription(missingCards[startIdx:endIdx], b)
+		if query != "" {
+			embed.Description = fmt.Sprintf("🔍`%s`\n\n%s", query, embed.Description)
+		}
 		embed.Footer.Text = fmt.Sprintf("Page %d/%d • Total Missing: %d", newPage+1, totalPages, len(missingCards))
 
-		// Update the navigation buttons
+		// Update the navigation buttons with the same query
 		components := []discord.ContainerComponent{
 			discord.NewActionRow(
-				discord.NewSecondaryButton("◀ Previous", fmt.Sprintf("/miss/prev/%s/%d", userID, newPage)),
-				discord.NewSecondaryButton("Next ▶", fmt.Sprintf("/miss/next/%s/%d", userID, newPage)),
-				discord.NewSecondaryButton("📋 Copy Page", fmt.Sprintf("/miss/copy/%s/%d", userID, newPage)),
+				discord.NewSecondaryButton("◀ Previous", fmt.Sprintf("/miss/prev/%s/%d/%s", userID, newPage, query)),
+				discord.NewSecondaryButton("Next ▶", fmt.Sprintf("/miss/next/%s/%d/%s", userID, newPage, query)),
+				discord.NewSecondaryButton("📋 Copy Page", fmt.Sprintf("/miss/copy/%s/%d/%s", userID, newPage, query)),
 			),
 		}
 
