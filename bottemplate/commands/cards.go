@@ -100,6 +100,7 @@ func CardsHandler(b *bottemplate.Bot) handler.CommandHandler {
 			discord.NewActionRow(
 				discord.NewSecondaryButton("◀ Previous", fmt.Sprintf("/cards/prev/%s/0", event.User().ID.String())),
 				discord.NewSecondaryButton("Next ▶", fmt.Sprintf("/cards/next/%s/0", event.User().ID.String())),
+				discord.NewSecondaryButton("📋 Copy Page", fmt.Sprintf("/cards/copy/%s/0", event.User().ID.String())),
 			),
 		}
 
@@ -185,6 +186,29 @@ func CardsComponentHandler(b *bottemplate.Bot) handler.ComponentHandler {
 			})
 		}
 
+		// Handle copy button separately
+		if strings.HasPrefix(customID, "/cards/copy/") {
+			userCards, err := b.UserCardRepository.GetAllByUserID(context.Background(), userID)
+			if err != nil {
+				return e.CreateMessage(discord.MessageCreate{
+					Content: "Failed to fetch cards",
+					Flags:   discord.MessageFlagEphemeral,
+				})
+			}
+
+			sortUserCards(userCards, b)
+
+			startIdx := currentPage * utils.CardsPerPage
+			endIdx := min(startIdx+utils.CardsPerPage, len(userCards))
+
+			copyText := formatCopyText(userCards[startIdx:endIdx], b)
+
+			return e.CreateMessage(discord.MessageCreate{
+				Content: "```\n" + copyText + "```",
+				Flags:   discord.MessageFlagEphemeral,
+			})
+		}
+
 		// Get the user's cards again
 		userCards, err := b.UserCardRepository.GetAllByUserID(context.Background(), userID)
 		if err != nil {
@@ -221,6 +245,7 @@ func CardsComponentHandler(b *bottemplate.Bot) handler.ComponentHandler {
 			discord.NewActionRow(
 				discord.NewSecondaryButton("◀ Previous", fmt.Sprintf("/cards/prev/%s/%d", userID, newPage)),
 				discord.NewSecondaryButton("Next ▶", fmt.Sprintf("/cards/next/%s/%d", userID, newPage)),
+				discord.NewSecondaryButton("📋 Copy Page", fmt.Sprintf("/cards/copy/%s/%d", userID, newPage)),
 			),
 		}
 
@@ -250,4 +275,22 @@ func sortUserCards(cards []*models.UserCard, b *bottemplate.Bot) {
 		// Secondary sort by name (ascending)
 		return strings.ToLower(cardI.Name) < strings.ToLower(cardJ.Name)
 	})
+}
+
+// Add this helper function to format the text for copying
+func formatCopyText(cards []*models.UserCard, b *bottemplate.Bot) string {
+	var sb strings.Builder
+	sb.WriteString("My Collection\n")
+
+	for _, userCard := range cards {
+		card, err := b.CardRepository.GetByID(context.Background(), userCard.CardID)
+		if err != nil {
+			continue
+		}
+
+		stars := strings.Repeat("★", card.Level)
+		sb.WriteString(fmt.Sprintf("%s %s [%s]\n", stars, card.Name, card.ColID))
+	}
+
+	return sb.String()
 }

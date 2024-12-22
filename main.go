@@ -285,6 +285,7 @@ func main() {
 
 	// Add this with the other component handlers
 	h.Component("/cards/", handlers.WrapComponentWithLogging("cards", commands.CardsComponentHandler(b)))
+	h.Component("/miss/", handlers.WrapComponentWithLogging("miss", commands.MissComponentHandler(b)))
 
 	if err = b.SetupBot(h, bot.NewListenerFunc(b.OnReady), handlers.MessageHandler(b)); err != nil {
 		slog.Error("Failed to setup bot",

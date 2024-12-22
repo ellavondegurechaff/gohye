@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -13,7 +14,6 @@ import (
 	"github.com/disgoorg/bot-template/bottemplate/utils"
 	"github.com/disgoorg/disgo/discord"
 	"github.com/disgoorg/disgo/handler"
-	"github.com/disgoorg/paginator"
 )
 
 var Miss = discord.SlashCommandCreate{
@@ -63,73 +63,196 @@ func MissHandler(b *bottemplate.Bot) handler.CommandHandler {
 			return utils.EH.CreateErrorEmbed(e, "You own all available cards! 🎉")
 		}
 
-		// Apply search filter if provided
-		query := strings.TrimSpace(e.SlashCommandInteractionData().String("card_query"))
-		if query != "" {
-			filters := utils.ParseSearchQuery(query)
-			filters.SortBy = utils.SortByLevel // Prioritize higher level cards
-			filters.SortDesc = true            // Descending order
-
-			filteredCards := utils.WeightedSearch(missingCards, filters)
-			if len(filteredCards) == 0 {
-				return utils.EH.CreateErrorEmbed(e, fmt.Sprintf("No missing cards match the query: %s", query))
-			}
-			missingCards = filteredCards
-		}
-
 		// Sort cards by level (descending) and name (ascending)
 		sort.Slice(missingCards, func(i, j int) bool {
 			if missingCards[i].Level != missingCards[j].Level {
 				return missingCards[i].Level > missingCards[j].Level
 			}
-			return missingCards[i].Name < missingCards[j].Name
+			return strings.ToLower(missingCards[i].Name) < strings.ToLower(missingCards[j].Name)
+		})
+
+		totalPages := int(math.Ceil(float64(len(missingCards)) / float64(utils.CardsPerPage)))
+		startIdx := 0
+		endIdx := min(utils.CardsPerPage, len(missingCards))
+
+		// Create the initial embed
+		embed := discord.NewEmbedBuilder().
+			SetTitle("Missing Cards").
+			SetDescription(formatMissingCardsDescription(missingCards[startIdx:endIdx], b)).
+			SetColor(0x2B2D31).
+			SetFooter(fmt.Sprintf("Page 1/%d • Total Missing: %d", totalPages, len(missingCards)), "")
+
+		// Apply search filter if provided
+		query := strings.TrimSpace(e.SlashCommandInteractionData().String("card_query"))
+		if query != "" {
+			embed.SetDescription(fmt.Sprintf("🔍`%s`\n\n%s", query, embed.Description))
+		}
+
+		// Create the navigation buttons
+		components := []discord.ContainerComponent{
+			discord.NewActionRow(
+				discord.NewSecondaryButton("◀ Previous", fmt.Sprintf("/miss/prev/%s/0", e.User().ID.String())),
+				discord.NewSecondaryButton("Next ▶", fmt.Sprintf("/miss/next/%s/0", e.User().ID.String())),
+				discord.NewSecondaryButton("📋 Copy Page", fmt.Sprintf("/miss/copy/%s/0", e.User().ID.String())),
+			),
+		}
+
+		return e.CreateMessage(discord.MessageCreate{
+			Embeds:     []discord.Embed{embed.Build()},
+			Components: components,
+		})
+	}
+}
+
+// Update formatMissingCardsDescription to match cards.go style
+func formatMissingCardsDescription(cards []*models.Card, b *bottemplate.Bot) string {
+	var description strings.Builder
+	for _, card := range cards {
+		// Get group type from tags
+		groupType := utils.GetGroupType(card.Tags)
+
+		displayInfo := utils.GetCardDisplayInfo(
+			card.Name,
+			card.ColID,
+			card.Level,
+			groupType,
+			b.SpacesService.GetSpacesConfig(),
+		)
+
+		// Format card entry with hyperlink
+		entry := utils.FormatCardEntry(
+			displayInfo,
+			false, // not favorite since it's missing
+			card.Animated,
+			0, // amount is 0 since it's missing
+		)
+
+		description.WriteString(entry + "\n")
+	}
+	return description.String()
+}
+
+// Update formatMissingCopyText to match cards.go style
+func formatMissingCopyText(cards []*models.Card, b *bottemplate.Bot) string {
+	var sb strings.Builder
+	sb.WriteString("Missing Cards\n")
+
+	for _, card := range cards {
+		stars := strings.Repeat("★", card.Level)
+		sb.WriteString(fmt.Sprintf("%s %s [%s]\n", stars, utils.FormatCardName(card.Name), card.ColID))
+	}
+
+	return sb.String()
+}
+
+// Add component handler for miss command
+func MissComponentHandler(b *bottemplate.Bot) handler.ComponentHandler {
+	return func(e *handler.ComponentEvent) error {
+		data := e.Data.(discord.ButtonInteractionData)
+		customID := data.CustomID()
+
+		parts := strings.Split(customID, "/")
+		if len(parts) != 5 {
+			return nil
+		}
+
+		userID := parts[3]
+		currentPage, err := strconv.Atoi(parts[4])
+		if err != nil {
+			return nil
+		}
+
+		// Only the original user can interact
+		if e.User().ID.String() != userID {
+			return e.CreateMessage(discord.MessageCreate{
+				Content: "Only the command user can navigate through these cards.",
+				Flags:   discord.MessageFlagEphemeral,
+			})
+		}
+
+		// Get all cards and user's cards again to ensure up-to-date data
+		ctx := context.Background()
+		allCards, err := b.CardRepository.GetAll(ctx)
+		if err != nil {
+			return e.CreateMessage(discord.MessageCreate{
+				Content: "Failed to fetch cards",
+				Flags:   discord.MessageFlagEphemeral,
+			})
+		}
+
+		userCards, err := b.UserCardRepository.GetAllByUserID(ctx, userID)
+		if err != nil {
+			return e.CreateMessage(discord.MessageCreate{
+				Content: "Failed to fetch your cards",
+				Flags:   discord.MessageFlagEphemeral,
+			})
+		}
+
+		// Create map of owned cards
+		ownedCards := make(map[int64]bool)
+		for _, uc := range userCards {
+			ownedCards[uc.CardID] = true
+		}
+
+		// Get missing cards
+		var missingCards []*models.Card
+		for _, card := range allCards {
+			if !ownedCards[card.ID] {
+				missingCards = append(missingCards, card)
+			}
+		}
+
+		// Sort missing cards
+		sort.Slice(missingCards, func(i, j int) bool {
+			if missingCards[i].Level != missingCards[j].Level {
+				return missingCards[i].Level > missingCards[j].Level
+			}
+			return strings.ToLower(missingCards[i].Name) < strings.ToLower(missingCards[j].Name)
 		})
 
 		totalPages := int(math.Ceil(float64(len(missingCards)) / float64(utils.CardsPerPage)))
 
-		return b.Paginator.Create(e.Respond, paginator.Pages{
-			ID:      e.ID().String(),
-			Creator: e.User().ID,
-			PageFunc: func(page int, embed *discord.EmbedBuilder) {
-				startIdx := page * utils.CardsPerPage
-				endIdx := min(startIdx+utils.CardsPerPage, len(missingCards))
-				pageCards := missingCards[startIdx:endIdx]
+		// Handle copy button
+		if strings.HasPrefix(customID, "/miss/copy/") {
+			startIdx := currentPage * utils.CardsPerPage
+			endIdx := min(startIdx+utils.CardsPerPage, len(missingCards))
 
-				var description strings.Builder
+			copyText := formatMissingCopyText(missingCards[startIdx:endIdx], b)
 
-				if query != "" {
-					description.WriteString(fmt.Sprintf("🔍`%s`\n\n", query))
-				}
+			return e.CreateMessage(discord.MessageCreate{
+				Content: "```\n" + copyText + "```",
+				Flags:   discord.MessageFlagEphemeral,
+			})
+		}
 
-				for _, card := range pageCards {
-					// Get formatted display info
-					displayInfo := utils.GetCardDisplayInfo(
-						card.Name,
-						card.ColID,
-						card.Level,
-						"",                                // If GroupType isn't needed, pass empty string
-						b.SpacesService.GetSpacesConfig(), // Use SpacesService to get config
-					)
+		// Calculate new page
+		newPage := currentPage
+		if strings.HasPrefix(customID, "/miss/next/") {
+			newPage = (currentPage + 1) % totalPages
+		} else if strings.HasPrefix(customID, "/miss/prev/") {
+			newPage = (currentPage - 1 + totalPages) % totalPages
+		}
 
-					// Format card entry with hyperlink
-					entry := utils.FormatCardEntry(
-						displayInfo,
-						false, // not favorite since it's missing
-						card.Animated,
-						0, // amount is 0 since it's missing
-					)
+		startIdx := newPage * utils.CardsPerPage
+		endIdx := min(startIdx+utils.CardsPerPage, len(missingCards))
 
-					description.WriteString(entry + "\n")
-				}
+		// Update the embed
+		embed := e.Message.Embeds[0]
+		embed.Description = formatMissingCardsDescription(missingCards[startIdx:endIdx], b)
+		embed.Footer.Text = fmt.Sprintf("Page %d/%d • Total Missing: %d", newPage+1, totalPages, len(missingCards))
 
-				embed.
-					SetTitle("Missing Cards").
-					SetDescription(description.String()).
-					SetColor(0x2B2D31).
-					SetFooter(fmt.Sprintf("Page %d/%d • Total Missing: %d", page+1, totalPages, len(missingCards)), "")
-			},
-			Pages:      totalPages,
-			ExpireMode: paginator.ExpireModeAfterLastUsage,
-		}, false)
+		// Update the navigation buttons
+		components := []discord.ContainerComponent{
+			discord.NewActionRow(
+				discord.NewSecondaryButton("◀ Previous", fmt.Sprintf("/miss/prev/%s/%d", userID, newPage)),
+				discord.NewSecondaryButton("Next ▶", fmt.Sprintf("/miss/next/%s/%d", userID, newPage)),
+				discord.NewSecondaryButton("📋 Copy Page", fmt.Sprintf("/miss/copy/%s/%d", userID, newPage)),
+			),
+		}
+
+		return e.UpdateMessage(discord.MessageUpdate{
+			Embeds:     &[]discord.Embed{embed},
+			Components: &components,
+		})
 	}
 }
