@@ -2,9 +2,11 @@ package commands
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"log/slog"
 	"math/rand"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -84,44 +86,60 @@ func (h *ClaimHandler) HandleCommand(e *handler.CommandEvent) error {
 		return utils.EH.CreateError(e, "Error", "Failed to get claim info")
 	}
 
-	// Get options
-	count := 1 // Default to 1 if not specified
+	// Get how many cards they want to claim
+	count := 1
 	if countOption, ok := e.SlashCommandInteractionData().OptInt("count"); ok {
 		count = int(countOption)
 	}
+	if count < 1 || count > 10 {
+		return utils.EH.CreateError(e, "Error", "Count must be between 1 and 10")
+	}
 
-	// Calculate total cost for all claims
-	basePrice := h.bot.ClaimRepository.GetBasePrice()
-	currentClaimCount, err := h.bot.ClaimRepository.GetUserClaimsInPeriod(ctx, userID, time.Now().Add(-24*time.Hour))
+	// How many claims user made so far (today)
+	currentDailyClaims, err := h.bot.ClaimRepository.GetUserClaimsInPeriod(ctx, userID, time.Now().Add(-24*time.Hour))
 	if err != nil {
 		return utils.EH.CreateError(e, "Error", "Failed to get claim count")
 	}
+	basePrice := h.bot.ClaimRepository.GetBasePrice()
 
+	slog.Info("Initial claim state",
+		"current_daily_claims", currentDailyClaims,
+		"base_price", basePrice,
+		"count", count)
+
+	// Calculate costs for each claim in an arithmetic progression
+	// cost of nth claim today = basePrice * n
 	var totalCost int64
-	for i := 0; i < count; i++ {
-		claimCost := basePrice * (int64(currentClaimCount) + int64(i) + 1)
-		totalCost += claimCost
+	var claimCosts []int64
+	startN := currentDailyClaims + 1
+	endN := currentDailyClaims + count
+
+	for n := startN; n <= endN; n++ {
+		cost := basePrice * int64(n)
+		claimCosts = append(claimCosts, cost)
+		totalCost += cost
 	}
 
-	// Verify user has enough balance for all claims
+	// Check if user can afford all claims
 	if claimInfo.Balance < totalCost {
-		return utils.EH.CreateError(e, "Error", fmt.Sprintf("Insufficient balance. You need %d ⭐ for %d claims", totalCost, count))
+		return utils.EH.CreateError(e, "Error",
+			fmt.Sprintf("Insufficient balance. You need %d ⭐ for %d claims", totalCost, count))
 	}
 
-	// Start transaction
+	// Begin transaction
 	tx, err := h.bot.DB.BunDB().BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("failed to start transaction: %w", err)
 	}
 	defer tx.Rollback()
 
-	// Get cards
-	cards, err := h.bot.CardRepository.GetAll(context.Background())
+	// Retrieve all cards
+	cards, err := h.bot.CardRepository.GetAll(ctx)
 	if err != nil {
 		return utils.EH.CreateError(e, "Error", "Failed to fetch cards")
 	}
 
-	// Filter and select cards
+	// Randomly pick cards
 	var selectedCards []*models.Card
 	for i := 0; i < count; i++ {
 		card := selectRandomCard(cards)
@@ -134,67 +152,111 @@ func (h *ClaimHandler) HandleCommand(e *handler.CommandEvent) error {
 		return utils.EH.CreateError(e, "Error", "No cards available")
 	}
 
-	// Create the initial embed
-	var cardList strings.Builder
-	cardList.WriteString("**✨ New Cards**\n")
+	// Sort by level descending
+	sort.Slice(selectedCards, func(i, j int) bool {
+		return selectedCards[i].Level > selectedCards[j].Level
+	})
 
-	// Show all cards in list
+	// Build the new-cards listing text
+	var cardList strings.Builder
+	cardList.WriteString("**✨ New Cards**\n\n")
 	for _, card := range selectedCards {
 		stars := utils.GetStarsDisplay(card.Level)
-		collection := fmt.Sprintf("`%s`", strings.ToLower(card.ColID))
-		cardList.WriteString(fmt.Sprintf("%s [%s](%s) %s\n",
+		collection := fmt.Sprintf("[`%s`]", strings.ToLower(card.ColID))
+
+		// Check if user already has it
+		var userCard models.UserCard
+		hasCard := false
+		err := tx.NewSelect().
+			Model(&userCard).
+			Where("user_id = ? AND card_id = ?", userID, card.ID).
+			Scan(ctx)
+		if err == nil && userCard.Amount > 0 {
+			hasCard = true
+		}
+
+		cardList.WriteString(fmt.Sprintf(
+			"%s **[%s](%s)** %s%s\n",
 			stars,
 			utils.FormatCardName(card.Name),
 			getCardImageURL(card, h.bot),
-			collection))
+			collection,
+			func() string {
+				if hasCard {
+					return " `duplicate`"
+				}
+				return ""
+			}(),
+		))
 	}
+	cardList.WriteString("\n\n")
 
-	// Process claims within the transaction
-	for _, card := range selectedCards {
-		if err := claimCard(ctx, h.bot, card.ID, userID); err != nil {
+	// Deduct balance & update claim stats per card
+	for i, card := range selectedCards {
+		if err := claimCard(ctx, h.bot, card.ID, userID, claimCosts[i], count); err != nil {
 			return fmt.Errorf("failed to claim card: %w", err)
 		}
 	}
 
-	// Get current stats for accurate total spent
-	stats, err := h.bot.ClaimRepository.GetClaimStats(ctx, userID)
+	// Get updated info & daily claims
+	updatedClaimInfo, err := h.bot.ClaimRepository.GetClaimInfo(ctx, userID)
 	if err != nil {
-		slog.Error("Failed to get claim stats", "error", err)
-		// Use default stats if error occurs
-		stats = &models.ClaimStats{
-			UserID:      userID,
-			TotalSpent:  0,
-			TotalClaims: 0,
+		return utils.EH.CreateError(e, "Error", "Failed to get updated claim info")
+	}
+
+	finalDailyClaims := currentDailyClaims + count
+
+	// Next claim cost in arithmetic progression is
+	//   cost = basePrice * (finalDailyClaims + 1)
+	// For the "Spent" line, let's do the sum-of-claims approach:
+	sumOfClaims := (finalDailyClaims * (finalDailyClaims + 1)) / 2
+	todaysSpent := int64(sumOfClaims) * basePrice
+	nextClaimCost := basePrice * int64(finalDailyClaims+1)
+
+	// Compute how many single-card claims user can still afford
+	possibleClaims := 0
+	tempBalance := updatedClaimInfo.Balance
+	tempDailyClaims := finalDailyClaims
+
+	for {
+		tempDailyClaims++
+		cost := basePrice * int64(tempDailyClaims)
+		if cost <= tempBalance {
+			possibleClaims++
+			tempBalance -= cost
+		} else {
+			break
 		}
 	}
 
-	// Calculate next claim cost based on the updated claim count AFTER this batch
-	nextClaimCost := basePrice * (int64(currentClaimCount) + int64(count) + 1)
+	// Build the final receipt with cumulative daily spent
+	receiptText := fmt.Sprintf("```md\n"+
+		"# Receipt\n"+
+		"• Spent: %d ⭐\n"+
+		"• Balance: %d ⭐\n"+
+		"• Remaining Claims: %d\n"+
+		"• Next Claim Cost: %d ⭐\n"+
+		"```",
+		todaysSpent,
+		updatedClaimInfo.Balance,
+		possibleClaims,
+		nextClaimCost,
+	)
 
-	// Create receipt text
-	receiptText := fmt.Sprintf("You spent %d ⭐ in total\nYou have %d ⭐ left\nYou can claim %d more cards\nYour next claim will cost %d ⭐",
-		stats.TotalSpent,
-		claimInfo.Balance-totalCost,
-		(claimInfo.Balance-totalCost)/nextClaimCost,
-		nextClaimCost)
-
-	// Create initial embed with receipt
 	embed := discord.NewEmbedBuilder().
 		SetDescription(cardList.String()).
 		SetColor(utils.SuccessColor).
 		SetImage(getCardImageURL(selectedCards[0], h.bot)).
 		SetFooter(fmt.Sprintf("Card 1/%d • Claimed by %s", len(selectedCards), e.User().Username), "").
-		AddField("Receipt", receiptText, false)
+		AddField("📝 Receipt", receiptText, false)
 
-	// Create navigation buttons
 	components := []discord.ContainerComponent{
 		discord.NewActionRow(
-			discord.NewPrimaryButton("◀ Previous", fmt.Sprintf("/claim/prev/%s/1", userID)),
-			discord.NewPrimaryButton("Next ▶", fmt.Sprintf("/claim/next/%s/1", userID)),
+			discord.NewSecondaryButton("◀ Previous", fmt.Sprintf("/claim/prev/%s/1", userID)),
+			discord.NewSecondaryButton("Next ▶", fmt.Sprintf("/claim/next/%s/1", userID)),
 		),
 	}
 
-	// Commit the transaction after all claims are processed
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("failed to commit transaction: %w", err)
 	}
@@ -213,7 +275,6 @@ func (h *ClaimHandler) HandleComponent(e *handler.ComponentEvent) error {
 		slog.String("custom_id", customID),
 		slog.String("user_id", e.User().ID.String()))
 
-	// Parse the custom ID to get user ID and current page
 	parts := strings.Split(customID, "/")
 	if len(parts) != 5 {
 		slog.Error("Invalid custom ID format",
@@ -231,7 +292,7 @@ func (h *ClaimHandler) HandleComponent(e *handler.ComponentEvent) error {
 		return nil
 	}
 
-	// Check if the user clicking is the one who claimed
+	// Only the claimer can navigate
 	if e.User().ID.String() != claimerID {
 		return e.CreateMessage(discord.MessageCreate{
 			Content: "Only the user who claimed these cards can navigate through them.",
@@ -239,24 +300,19 @@ func (h *ClaimHandler) HandleComponent(e *handler.ComponentEvent) error {
 		})
 	}
 
-	// Get the message
 	msg := e.Message
-
 	if len(msg.Embeds) == 0 {
 		return nil
 	}
-
-	// Parse the footer to get total cards count
 	footer := msg.Embeds[0].Footer
 	if footer == nil {
 		return nil
 	}
 
-	// Extract total pages from footer text (format: "Card X/Y • Claimed by username")
+	// e.g. "Card X/Y • Claimed by ..."
 	totalPages := 0
 	fmt.Sscanf(footer.Text, "Card %d/%d", &currentPage, &totalPages)
 
-	// Calculate new page
 	newPage := currentPage
 	if strings.HasPrefix(customID, "/claim/next/") {
 		newPage = (currentPage % totalPages) + 1
@@ -264,7 +320,7 @@ func (h *ClaimHandler) HandleComponent(e *handler.ComponentEvent) error {
 		newPage = ((currentPage - 2 + totalPages) % totalPages) + 1
 	}
 
-	// Get card URLs from description
+	// Extract image URLs from the embed description lines
 	var cardURLs []string
 	lines := strings.Split(msg.Embeds[0].Description, "\n")
 	for _, line := range lines {
@@ -281,21 +337,18 @@ func (h *ClaimHandler) HandleComponent(e *handler.ComponentEvent) error {
 		return nil
 	}
 
-	// Update embed with new page but keep the receipt field
+	// Update the embed
 	embed := msg.Embeds[0]
 	embed.Footer.Text = fmt.Sprintf("Card %d/%d • Claimed by %s", newPage, totalPages, e.User().Username)
 	embed.Image.URL = cardURLs[newPage-1]
-	// Receipt field is preserved as it's part of the embed fields
 
-	// Update components with new page number
 	components := []discord.ContainerComponent{
 		discord.NewActionRow(
-			discord.NewPrimaryButton("◀ Previous", fmt.Sprintf("/claim/prev/%s/%d", claimerID, newPage-1)),
-			discord.NewPrimaryButton("Next ▶", fmt.Sprintf("/claim/next/%s/%d", claimerID, newPage-1)),
+			discord.NewSecondaryButton("◀ Previous", fmt.Sprintf("/claim/prev/%s/%d", claimerID, newPage-1)),
+			discord.NewSecondaryButton("Next ▶", fmt.Sprintf("/claim/next/%s/%d", claimerID, newPage-1)),
 		),
 	}
 
-	// Update message
 	return e.UpdateMessage(discord.MessageUpdate{
 		Embeds:     &[]discord.Embed{embed},
 		Components: &components,
@@ -303,43 +356,36 @@ func (h *ClaimHandler) HandleComponent(e *handler.ComponentEvent) error {
 }
 
 func selectRandomCard(cards []*models.Card) *models.Card {
-	// Updated weights to make higher levels much rarer and exclude level 5
+	// Weighted rarities
 	weights := map[int]int{
-		1: 70, // Common (70% chance)
-		2: 20, // Uncommon (20% chance)
-		3: 7,  // Rare (7% chance)
-		4: 3,  // Epic (3% chance)
-		// Level 5 removed completely
+		1: 70, // Common
+		2: 20, // Uncommon
+		3: 7,  // Rare
+		4: 3,  // Epic
+		// Excluding level 5 entirely
 	}
 
-	// Filter out level 5 cards and organize by rarity
 	var eligibleCards []*models.Card
 	cardsByRarity := make(map[int][]*models.Card)
-
 	for _, card := range cards {
-		if card.Level < 5 { // Exclude level 5 cards
+		if card.Level < 5 {
 			eligibleCards = append(eligibleCards, card)
 			cardsByRarity[card.Level] = append(cardsByRarity[card.Level], card)
 		}
 	}
-
 	if len(eligibleCards) == 0 {
 		return nil
 	}
 
-	// Calculate total weight for eligible cards
 	totalWeight := 0
 	for rarity, weight := range weights {
 		if len(cardsByRarity[rarity]) > 0 {
 			totalWeight += weight
 		}
 	}
-
-	// Roll for rarity
 	roll := rand.Intn(totalWeight)
 	currentWeight := 0
 
-	// Select rarity based on weights
 	for rarity := 1; rarity <= 4; rarity++ {
 		currentWeight += weights[rarity]
 		if roll < currentWeight && len(cardsByRarity[rarity]) > 0 {
@@ -347,25 +393,25 @@ func selectRandomCard(cards []*models.Card) *models.Card {
 			return cards[rand.Intn(len(cards))]
 		}
 	}
-
-	// Fallback to a random eligible card if something goes wrong
+	// fallback
 	return eligibleCards[rand.Intn(len(eligibleCards))]
 }
 
-func claimCard(ctx context.Context, b *bottemplate.Bot, cardID int64, userID string) error {
-	tx, err := b.DB.BunDB().BeginTx(ctx, nil)
+func claimCard(ctx context.Context, b *bottemplate.Bot, cardID int64, userID string, claimCost int64, totalClaims int) error {
+	tx, err := b.DB.BunDB().BeginTx(ctx, &sql.TxOptions{
+		Isolation: sql.LevelRepeatableRead,
+	})
 	if err != nil {
 		return fmt.Errorf("failed to start transaction: %w", err)
 	}
 	defer tx.Rollback()
 
-	// Get claim cost first
-	claimCost, err := b.ClaimRepository.GetClaimCost(ctx, userID)
-	if err != nil {
-		return fmt.Errorf("failed to get claim cost: %w", err)
+	// Pass 1 for each single-card claim
+	if err := b.ClaimRepository.UpdateClaimStats(ctx, tx, userID, claimCost, true, 1); err != nil {
+		return fmt.Errorf("failed to update claim stats: %w", err)
 	}
 
-	// Update user balance with correct cost
+	// Deduct from user balance
 	result, err := tx.NewUpdate().
 		Model((*models.User)(nil)).
 		Set("balance = balance - ?", claimCost).
@@ -374,31 +420,11 @@ func claimCard(ctx context.Context, b *bottemplate.Bot, cardID int64, userID str
 	if err != nil {
 		return fmt.Errorf("failed to update user balance: %w", err)
 	}
-
-	rowsAffected, err := result.RowsAffected()
-	if err != nil || rowsAffected == 0 {
+	if rowsAffected, err := result.RowsAffected(); err != nil || rowsAffected == 0 {
 		return fmt.Errorf("failed to update user balance - user not found or insufficient balance")
 	}
 
-	// Create claim record
-	claim := &models.Claim{
-		CardID:    cardID,
-		UserID:    userID,
-		ClaimedAt: time.Now(),
-		Expires:   time.Now().Add(24 * time.Hour),
-	}
-
-	_, err = tx.NewInsert().Model(claim).Exec(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to create claim record: %w", err)
-	}
-
-	// Update claim stats
-	if err := b.ClaimRepository.UpdateClaimStats(ctx, tx, userID, claimCost, true); err != nil {
-		return fmt.Errorf("failed to update claim stats: %w", err)
-	}
-
-	// Handle user card update/creation
+	// Upsert the user_card
 	if err := updateUserCard(ctx, tx, userID, cardID); err != nil {
 		return fmt.Errorf("failed to handle user card: %w", err)
 	}
