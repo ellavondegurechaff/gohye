@@ -2,7 +2,9 @@ package repositories
 
 import (
 	"context"
+	"database/sql"
 	"errors"
+	"fmt"
 	"log"
 	"sync"
 	"time"
@@ -13,9 +15,8 @@ import (
 )
 
 var (
-	ErrClaimLimitExceeded = errors.New("claim limit exceeded")
-	ErrClaimExists        = errors.New("claim already exists")
-	ErrInvalidClaim       = errors.New("invalid claim")
+	ErrClaimExists  = errors.New("claim already exists")
+	ErrInvalidClaim = errors.New("invalid claim")
 )
 
 type ClaimRepository interface {
@@ -26,15 +27,18 @@ type ClaimRepository interface {
 	CreateClaimTx(ctx context.Context, tx bun.Tx, cardID int64, userID string) (*models.Claim, error)
 	ValidateClaimEligibility(ctx context.Context, userID string) error
 	StartCleanupRoutine(ctx context.Context)
-	UpdateClaimStats(ctx context.Context, tx bun.Tx, userID string, successful bool) error
+	UpdateClaimStats(ctx context.Context, tx bun.Tx, userID string, claimCost int64, successful bool) error
 	GetClaimStats(ctx context.Context, userID string) (*models.ClaimStats, error)
+	GetClaimCost(ctx context.Context, userID string) (int64, error)
+	GetClaimInfo(ctx context.Context, userID string) (*ClaimInfo, error)
+	GetBasePrice() int64
 }
 
 type claimRepository struct {
 	db        *bun.DB
 	cache     sync.Map
-	maxClaims int
 	claimTTL  time.Duration
+	basePrice int64
 }
 
 type claimCacheEntry struct {
@@ -42,11 +46,25 @@ type claimCacheEntry struct {
 	expiresAt time.Time
 }
 
+type ClaimInfo struct {
+	TotalSpent      int64
+	Balance         int64
+	RemainingClaims int
+	NextClaimCost   int64
+}
+
+func boolToInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
+}
+
 func NewClaimRepository(db *bun.DB) ClaimRepository {
 	return &claimRepository{
 		db:        db,
-		maxClaims: 3,
 		claimTTL:  24 * time.Hour,
+		basePrice: 700,
 	}
 }
 
@@ -127,25 +145,23 @@ func (r *claimRepository) CreateClaimTx(ctx context.Context, tx bun.Tx, cardID i
 }
 
 func (r *claimRepository) ValidateClaimEligibility(ctx context.Context, userID string) error {
-	count, err := r.GetUserClaimsInPeriod(ctx, userID, time.Now().Add(-r.claimTTL))
-	if err != nil {
-		return err
-	}
-
-	if count >= r.maxClaims {
-		// return ErrClaimLimitExceeded
-	}
-
+	// Only check if the user exists and has enough balance
 	return nil
 }
 
 func (r *claimRepository) GetUserClaimsInPeriod(ctx context.Context, userID string, since time.Time) (int, error) {
 	count, err := r.db.NewSelect().
 		Model((*models.Claim)(nil)).
-		Where("user_id = ? AND claimed_at > ?", userID, since).
+		Where("user_id = ?", userID).
+		Where("claimed_at > ?", since).
+		Where("claimed_at <= ?", time.Now()).
 		Count(ctx)
 
-	return count, err
+	if err != nil {
+		return 0, fmt.Errorf("failed to count claims: %w", err)
+	}
+
+	return count, nil
 }
 
 func (r *claimRepository) GetUserClaims(ctx context.Context, userID string) ([]*models.Claim, error) {
@@ -225,25 +241,59 @@ func (r *claimRepository) StartCleanupRoutine(ctx context.Context) {
 	}()
 }
 
-func (r *claimRepository) UpdateClaimStats(ctx context.Context, tx bun.Tx, userID string, successful bool) error {
-	stats := &models.ClaimStats{
-		UserID:      userID,
-		UpdatedAt:   time.Now(),
-		LastClaimAt: time.Now(),
+func (r *claimRepository) UpdateClaimStats(ctx context.Context, tx bun.Tx, userID string, claimCost int64, successful bool) error {
+	// Verify the claim cost is correct
+	count, err := r.GetUserClaimsInPeriod(ctx, userID, time.Now().Add(-r.claimTTL))
+	if err != nil {
+		return fmt.Errorf("failed to get user claims: %w", err)
 	}
 
-	_, err := tx.NewInsert().
-		Model(stats).
-		On("CONFLICT (user_id) DO UPDATE").
-		Set("total_claims = claim_stats.total_claims + 1").
-		Set("successful_claims = claim_stats.successful_claims + CASE WHEN ? THEN 1 ELSE 0 END", successful).
-		Set("daily_claims = CASE WHEN DATE(last_claim_at) = CURRENT_DATE THEN daily_claims + 1 ELSE 1 END").
-		Set("weekly_claims = CASE WHEN DATE(last_claim_at) >= DATE(CURRENT_DATE - INTERVAL '7 days') THEN weekly_claims + 1 ELSE 1 END").
+	expectedCost := r.calculateClaimCost(count)
+	if claimCost != expectedCost {
+		claimCost = expectedCost
+	}
+
+	// First try to update existing stats
+	result, err := tx.NewUpdate().
+		Model((*models.ClaimStats)(nil)).
+		Set("total_spent = COALESCE(total_spent, 0) + ?", claimCost).
+		Set("total_claims = COALESCE(total_claims, 0) + 1").
+		Set("successful_claims = COALESCE(successful_claims, 0) + ?", boolToInt(successful)).
+		Set("daily_claims = CASE WHEN DATE(last_claim_at) = CURRENT_DATE THEN COALESCE(daily_claims, 0) + 1 ELSE 1 END").
+		Set("weekly_claims = CASE WHEN DATE(last_claim_at) >= DATE(CURRENT_DATE - INTERVAL '7 days') THEN COALESCE(weekly_claims, 0) + 1 ELSE 1 END").
 		Set("last_claim_at = ?", time.Now()).
 		Set("updated_at = ?", time.Now()).
+		Where("user_id = ?", userID).
 		Exec(ctx)
 
-	return err
+	if err != nil {
+		return fmt.Errorf("failed to update stats: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to check rows affected: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		stats := &models.ClaimStats{
+			UserID:           userID,
+			TotalSpent:       claimCost,
+			TotalClaims:      1,
+			SuccessfulClaims: boolToInt(successful),
+			LastClaimAt:      time.Now(),
+			DailyClaims:      1,
+			WeeklyClaims:     1,
+			UpdatedAt:        time.Now(),
+		}
+
+		_, err = tx.NewInsert().Model(stats).Exec(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to create stats: %w", err)
+		}
+	}
+
+	return nil
 }
 
 func (r *claimRepository) GetClaimStats(ctx context.Context, userID string) (*models.ClaimStats, error) {
@@ -253,8 +303,82 @@ func (r *claimRepository) GetClaimStats(ctx context.Context, userID string) (*mo
 		Where("user_id = ?", userID).
 		Scan(ctx)
 
+	// If no stats exist yet, return empty stats instead of error
+	if errors.Is(err, sql.ErrNoRows) {
+		return &models.ClaimStats{
+			UserID:       userID,
+			TotalSpent:   0,
+			TotalClaims:  0,
+			DailyClaims:  0,
+			WeeklyClaims: 0,
+			LastClaimAt:  time.Now(),
+			UpdatedAt:    time.Now(),
+		}, nil
+	}
+
 	if err != nil {
 		return nil, err
 	}
 	return stats, nil
+}
+
+func (r *claimRepository) GetClaimCost(ctx context.Context, userID string) (int64, error) {
+	count, err := r.GetUserClaimsInPeriod(ctx, userID, time.Now().Add(-r.claimTTL))
+	if err != nil {
+		return 0, err
+	}
+
+	return r.calculateClaimCost(count), nil
+}
+
+func (r *claimRepository) GetClaimInfo(ctx context.Context, userID string) (*ClaimInfo, error) {
+	var user models.User
+	err := r.db.NewSelect().
+		Model(&user).
+		Where("discord_id = ?", userID).
+		Scan(ctx)
+
+	if errors.Is(err, sql.ErrNoRows) {
+		user.Balance = 500
+		user.DiscordID = userID
+	} else if err != nil {
+		return nil, fmt.Errorf("failed to get user balance: %w", err)
+	}
+
+	var stats models.ClaimStats
+	err = r.db.NewSelect().
+		Model(&stats).
+		Where("user_id = ?", userID).
+		Scan(ctx)
+
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return nil, fmt.Errorf("failed to get claim stats: %w", err)
+	}
+
+	count, err := r.GetUserClaimsInPeriod(ctx, userID, time.Now().Add(-r.claimTTL))
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user claims: %w", err)
+	}
+
+	nextClaimCost := r.calculateClaimCost(count)
+
+	possibleClaims := user.Balance / nextClaimCost
+	if possibleClaims < 0 {
+		possibleClaims = 0
+	}
+
+	return &ClaimInfo{
+		TotalSpent:      stats.TotalSpent,
+		Balance:         user.Balance,
+		RemainingClaims: int(possibleClaims),
+		NextClaimCost:   nextClaimCost,
+	}, nil
+}
+
+func (r *claimRepository) calculateClaimCost(claimCount int) int64 {
+	return r.basePrice * (int64(claimCount) + 1)
+}
+
+func (r *claimRepository) GetBasePrice() int64 {
+	return r.basePrice
 }

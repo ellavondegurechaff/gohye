@@ -236,6 +236,7 @@ func (db *DB) InitializeSchema(ctx context.Context) error {
 		(*models.UserStats)(nil),
 		(*models.UserEffect)(nil),
 		(*models.Claim)(nil),
+		(*models.ClaimStats)(nil),
 		(*models.EconomyStats)(nil),
 		(*models.Wishlist)(nil),
 		(*models.UserInventory)(nil),
@@ -265,6 +266,8 @@ func (db *DB) InitializeSchema(ctx context.Context) error {
 		"CREATE INDEX IF NOT EXISTS idx_user_cards_user_card ON user_cards(user_id, card_id);",
 		"CREATE INDEX IF NOT EXISTS idx_economy_stats_timestamp ON economy_stats(timestamp);",
 		"CREATE INDEX IF NOT EXISTS idx_economy_stats_economic_health ON economy_stats(economic_health);",
+		"CREATE INDEX IF NOT EXISTS idx_claim_stats_user_id ON claim_stats(user_id);",
+		"CREATE INDEX IF NOT EXISTS idx_claim_stats_last_claim ON claim_stats(last_claim_at);",
 	}
 
 	for _, idx := range indexes {

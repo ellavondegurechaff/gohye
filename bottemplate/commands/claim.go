@@ -2,8 +2,6 @@ package commands
 
 import (
 	"context"
-	"database/sql"
-	"errors"
 	"fmt"
 	"log/slog"
 	"math/rand"
@@ -16,6 +14,7 @@ import (
 	"github.com/disgoorg/bot-template/bottemplate/utils"
 	"github.com/disgoorg/disgo/discord"
 	"github.com/disgoorg/disgo/handler"
+	"github.com/uptrace/bun"
 )
 
 var Claim = discord.SlashCommandCreate{
@@ -76,13 +75,45 @@ func NewClaimHandler(b *bottemplate.Bot) *ClaimHandler {
 }
 
 func (h *ClaimHandler) HandleCommand(e *handler.CommandEvent) error {
+	ctx := context.Background()
 	userID := e.User().ID.String()
+
+	// Get current claim info
+	claimInfo, err := h.bot.ClaimRepository.GetClaimInfo(ctx, userID)
+	if err != nil {
+		return utils.EH.CreateError(e, "Error", "Failed to get claim info")
+	}
 
 	// Get options
 	count := 1 // Default to 1 if not specified
 	if countOption, ok := e.SlashCommandInteractionData().OptInt("count"); ok {
 		count = int(countOption)
 	}
+
+	// Calculate total cost for all claims
+	basePrice := h.bot.ClaimRepository.GetBasePrice()
+	currentClaimCount, err := h.bot.ClaimRepository.GetUserClaimsInPeriod(ctx, userID, time.Now().Add(-24*time.Hour))
+	if err != nil {
+		return utils.EH.CreateError(e, "Error", "Failed to get claim count")
+	}
+
+	var totalCost int64
+	for i := 0; i < count; i++ {
+		claimCost := basePrice * (int64(currentClaimCount) + int64(i) + 1)
+		totalCost += claimCost
+	}
+
+	// Verify user has enough balance for all claims
+	if claimInfo.Balance < totalCost {
+		return utils.EH.CreateError(e, "Error", fmt.Sprintf("Insufficient balance. You need %d ⭐ for %d claims", totalCost, count))
+	}
+
+	// Start transaction
+	tx, err := h.bot.DB.BunDB().BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to start transaction: %w", err)
+	}
+	defer tx.Rollback()
 
 	// Get cards
 	cards, err := h.bot.CardRepository.GetAll(context.Background())
@@ -118,20 +149,55 @@ func (h *ClaimHandler) HandleCommand(e *handler.CommandEvent) error {
 			collection))
 	}
 
-	// Create navigation buttons with user ID encoded in custom ID
-	components := []discord.ContainerComponent{
-		discord.NewActionRow(
-			discord.NewPrimaryButton("◀ Previous", fmt.Sprintf("/claim/prev/%s/0", userID)),
-			discord.NewPrimaryButton("Next ▶", fmt.Sprintf("/claim/next/%s/0", userID)),
-		),
+	// Process claims within the transaction
+	for _, card := range selectedCards {
+		if err := claimCard(ctx, h.bot, card.ID, userID); err != nil {
+			return fmt.Errorf("failed to claim card: %w", err)
+		}
 	}
 
-	// Create initial embed
+	// Get current stats for accurate total spent
+	stats, err := h.bot.ClaimRepository.GetClaimStats(ctx, userID)
+	if err != nil {
+		slog.Error("Failed to get claim stats", "error", err)
+		// Use default stats if error occurs
+		stats = &models.ClaimStats{
+			UserID:      userID,
+			TotalSpent:  0,
+			TotalClaims: 0,
+		}
+	}
+
+	// Calculate next claim cost based on the updated claim count AFTER this batch
+	nextClaimCost := basePrice * (int64(currentClaimCount) + int64(count) + 1)
+
+	// Create receipt text
+	receiptText := fmt.Sprintf("You spent %d ⭐ in total\nYou have %d ⭐ left\nYou can claim %d more cards\nYour next claim will cost %d ⭐",
+		stats.TotalSpent,
+		claimInfo.Balance-totalCost,
+		(claimInfo.Balance-totalCost)/nextClaimCost,
+		nextClaimCost)
+
+	// Create initial embed with receipt
 	embed := discord.NewEmbedBuilder().
 		SetDescription(cardList.String()).
 		SetColor(utils.SuccessColor).
 		SetImage(getCardImageURL(selectedCards[0], h.bot)).
-		SetFooter(fmt.Sprintf("Card 1/%d • Claimed by %s", len(selectedCards), e.User().Username), "")
+		SetFooter(fmt.Sprintf("Card 1/%d • Claimed by %s", len(selectedCards), e.User().Username), "").
+		AddField("Receipt", receiptText, false)
+
+	// Create navigation buttons
+	components := []discord.ContainerComponent{
+		discord.NewActionRow(
+			discord.NewPrimaryButton("◀ Previous", fmt.Sprintf("/claim/prev/%s/1", userID)),
+			discord.NewPrimaryButton("Next ▶", fmt.Sprintf("/claim/next/%s/1", userID)),
+		),
+	}
+
+	// Commit the transaction after all claims are processed
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
 
 	return e.CreateMessage(discord.MessageCreate{
 		Embeds:     []discord.Embed{embed.Build()},
@@ -215,10 +281,11 @@ func (h *ClaimHandler) HandleComponent(e *handler.ComponentEvent) error {
 		return nil
 	}
 
-	// Update embed with new page
+	// Update embed with new page but keep the receipt field
 	embed := msg.Embeds[0]
 	embed.Footer.Text = fmt.Sprintf("Card %d/%d • Claimed by %s", newPage, totalPages, e.User().Username)
 	embed.Image.URL = cardURLs[newPage-1]
+	// Receipt field is preserved as it's part of the embed fields
 
 	// Update components with new page number
 	components := []discord.ContainerComponent{
@@ -292,35 +359,25 @@ func claimCard(ctx context.Context, b *bottemplate.Bot, cardID int64, userID str
 	}
 	defer tx.Rollback()
 
-	// Get existing user card if any
-	userCard, err := b.UserCardRepository.GetUserCard(ctx, userID, cardID)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return fmt.Errorf("failed to check existing card: %w", err)
-	}
-
-	if userCard != nil {
-		// Update existing card
-		_, err = tx.NewUpdate().
-			Model((*models.UserCard)(nil)).
-			Set("amount = amount + 1").
-			Set("updated_at = ?", time.Now()).
-			Where("user_id = ? AND card_id = ?", userID, cardID).
-			Exec(ctx)
-	} else {
-		// Create new user card
-		userCard = &models.UserCard{
-			UserID:    userID,
-			CardID:    cardID,
-			Amount:    1,
-			Obtained:  time.Now(),
-			CreatedAt: time.Now(),
-			UpdatedAt: time.Now(),
-		}
-		_, err = tx.NewInsert().Model(userCard).Exec(ctx)
-	}
-
+	// Get claim cost first
+	claimCost, err := b.ClaimRepository.GetClaimCost(ctx, userID)
 	if err != nil {
-		return fmt.Errorf("failed to update/create user card: %w", err)
+		return fmt.Errorf("failed to get claim cost: %w", err)
+	}
+
+	// Update user balance with correct cost
+	result, err := tx.NewUpdate().
+		Model((*models.User)(nil)).
+		Set("balance = balance - ?", claimCost).
+		Where("discord_id = ?", userID).
+		Exec(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to update user balance: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil || rowsAffected == 0 {
+		return fmt.Errorf("failed to update user balance - user not found or insufficient balance")
 	}
 
 	// Create claim record
@@ -336,5 +393,49 @@ func claimCard(ctx context.Context, b *bottemplate.Bot, cardID int64, userID str
 		return fmt.Errorf("failed to create claim record: %w", err)
 	}
 
+	// Update claim stats
+	if err := b.ClaimRepository.UpdateClaimStats(ctx, tx, userID, claimCost, true); err != nil {
+		return fmt.Errorf("failed to update claim stats: %w", err)
+	}
+
+	// Handle user card update/creation
+	if err := updateUserCard(ctx, tx, userID, cardID); err != nil {
+		return fmt.Errorf("failed to handle user card: %w", err)
+	}
+
 	return tx.Commit()
+}
+
+func updateUserCard(ctx context.Context, tx bun.Tx, userID string, cardID int64) error {
+	result, err := tx.NewUpdate().
+		Model((*models.UserCard)(nil)).
+		Set("amount = amount + 1").
+		Set("updated_at = ?", time.Now()).
+		Where("user_id = ? AND card_id = ?", userID, cardID).
+		Exec(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to update card: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("failed to check rows affected: %w", err)
+	}
+
+	if rowsAffected == 0 {
+		userCard := &models.UserCard{
+			UserID:    userID,
+			CardID:    cardID,
+			Amount:    1,
+			Obtained:  time.Now(),
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
+		}
+		_, err = tx.NewInsert().Model(userCard).Exec(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to create user card: %w", err)
+		}
+	}
+
+	return nil
 }
