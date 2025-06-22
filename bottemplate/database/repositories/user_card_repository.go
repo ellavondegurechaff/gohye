@@ -26,6 +26,7 @@ type UserCardRepository interface {
 	GetUserCard(ctx context.Context, userID string, cardID int64) (*models.UserCard, error)
 	CleanupZeroAmountCards(ctx context.Context) error
 	GetUserCardsByName(ctx context.Context, userID string, cardName string) ([]*models.UserCard, error)
+	GetTotalOwnersCount(ctx context.Context, cardID int64) (int64, error)
 }
 
 type userCardRepository struct {
@@ -228,4 +229,19 @@ func collectCardIDs(userCards []*models.UserCard) []int64 {
 		ids[i] = uc.CardID
 	}
 	return ids
+}
+
+func (r *userCardRepository) GetTotalOwnersCount(ctx context.Context, cardID int64) (int64, error) {
+	var count int64
+	err := r.db.NewSelect().
+		Model((*models.UserCard)(nil)).
+		ColumnExpr("COUNT(DISTINCT user_id)").
+		Where("card_id = ? AND amount > 0", cardID).
+		Scan(ctx, &count)
+
+	if err != nil {
+		return 0, fmt.Errorf("failed to get total owners count: %w", err)
+	}
+
+	return count, nil
 }

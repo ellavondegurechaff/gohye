@@ -288,6 +288,14 @@ func main() {
 	h.Component("/miss/", handlers.WrapComponentWithLogging("miss", commands.MissComponentHandler(b)))
 	h.Component("/diff/", handlers.WrapComponentWithLogging("diff", commands.DiffComponentHandler(b)))
 
+	// Limited Commands
+	h.Command("/limitedcards", handlers.WrapWithLogging("limitedcards", commands.LimitedCardsHandler(b)))
+	h.Command("/limitedstats", handlers.WrapWithLogging("limitedstats", commands.LimitedStatsHandler(b)))
+
+	// Add this line with the other component handlers
+	h.Component("/limitedstats/", handlers.WrapComponentWithLogging("limitedstats", commands.LimitedStatsComponentHandler(b)))
+	h.Component("/limitedcards/", handlers.WrapComponentWithLogging("limitedcards", commands.LimitedCardsComponentHandler(b)))
+
 	if err = b.SetupBot(h, bot.NewListenerFunc(b.OnReady), handlers.MessageHandler(b)); err != nil {
 		slog.Error("Failed to setup bot",
 			slog.String("type", "sys"),

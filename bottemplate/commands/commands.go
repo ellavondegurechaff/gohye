@@ -30,4 +30,6 @@ var Commands = []discord.ApplicationCommandCreate{
 	Work,
 	Shop,
 	Inventory,
+	LimitedCards,
+	LimitedStats,
 }
