@@ -213,3 +213,9 @@ All commands wrapped with logging for:
 - **No Formal Tests**: Testing done through Discord interactions
 - **Price Updates**: Automatic background process every 6 hours
 - **Command Sync**: Use `--sync-commands=true` flag for development
+
+## STRICT NOTES FOLLOW THIS STRICTLY
+- Don't break any existing functionalities
+- Grep the existing codebase for the existing functionalities before implementing new
+- Before implementing anything, Enter plan mode first.
+- Grep the codebase if you're unsure and never assume things.
