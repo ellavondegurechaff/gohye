@@ -38,6 +38,7 @@ type Bot struct {
 	Client                   bot.Client
 	Paginator                *paginator.Manager
 	EffectManager            *effects.Manager
+	EffectIntegrator         *effects.GameIntegrator
 	Version                  string
 	Commit                   string
 	DB                       *database.DB

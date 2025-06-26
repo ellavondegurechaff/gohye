@@ -35,6 +35,7 @@ type EffectRepository interface {
 	// Recipe methods
 	StoreUserRecipe(ctx context.Context, userID string, itemID string, cardIDs []int64) error
 	GetUserRecipe(ctx context.Context, userID string, itemID string) (*models.UserRecipe, error)
+	DeleteUserRecipe(ctx context.Context, userID string, itemID string) error
 
 	// Card methods
 	GetCard(ctx context.Context, cardID int64) (*models.Card, error)
@@ -328,4 +329,14 @@ func (r *effectRepository) SetEffectCooldown(ctx context.Context, userID string,
 	}
 
 	return nil
+}
+
+// DeleteUserRecipe deletes a user's recipe after crafting
+func (r *effectRepository) DeleteUserRecipe(ctx context.Context, userID string, itemID string) error {
+	_, err := r.db.NewDelete().
+		Model((*models.UserRecipe)(nil)).
+		Where("user_id = ? AND item_id = ?", userID, itemID).
+		Exec(ctx)
+	
+	return err
 }

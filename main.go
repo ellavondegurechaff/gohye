@@ -266,6 +266,10 @@ func main() {
 		repositories.NewEffectRepository(b.DB.BunDB()),
 		b.UserRepository,
 	)
+	b.EffectManager = effectManager
+
+	// Initialize effect integrator
+	b.EffectIntegrator = effects.NewGameIntegrator(effectManager)
 
 	// Shop commands
 	shopHandler := economyCommands.NewShopHandler(b, effectManager)
@@ -283,6 +287,10 @@ func main() {
 	// Use Effect commands
 	useEffectHandler := system.NewUseEffectHandler(b, effectManager)
 	h.Command("/use-effect", handlers.WrapWithLogging("use-effect", useEffectHandler.Handle))
+
+	// Craft Effect commands
+	craftEffectHandler := system.NewCraftEffectHandler(b, effectManager)
+	h.Command("/craft-effect", handlers.WrapWithLogging("craft-effect", craftEffectHandler.Handle))
 
 	// Claim commands
 	claimHandler := cards.NewClaimHandler(b)

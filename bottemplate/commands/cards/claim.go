@@ -140,10 +140,12 @@ func (h *ClaimHandler) HandleCommand(e *handler.CommandEvent) error {
 		return utils.EH.CreateError(e, "Error", "Failed to fetch cards")
 	}
 
-	// Randomly pick cards
+	// Randomly pick cards (with effect modifications)
 	var selectedCards []*models.Card
 	for i := 0; i < count; i++ {
-		card := selectRandomCard(cards)
+		// Apply tohrugift effect for first claim of the day
+		isFirstClaim := currentDailyClaims == 0 && i == 0
+		card := selectRandomCard(cards, h.bot, userID, isFirstClaim)
 		if card != nil {
 			selectedCards = append(selectedCards, card)
 		}
@@ -356,7 +358,7 @@ func (h *ClaimHandler) HandleComponent(e *handler.ComponentEvent) error {
 	})
 }
 
-func selectRandomCard(cards []*models.Card) *models.Card {
+func selectRandomCard(cards []*models.Card, bot *bottemplate.Bot, userID string, isFirstClaim bool) *models.Card {
 	// Weighted rarities
 	weights := map[int]int{
 		1: 70, // Common
@@ -364,6 +366,20 @@ func selectRandomCard(cards []*models.Card) *models.Card {
 		3: 7,  // Rare
 		4: 3,  // Epic
 		// Excluding level 5 entirely
+	}
+
+	// Apply tohrugift effect for first claim
+	if isFirstClaim && bot.EffectIntegrator != nil {
+		ctx := context.Background()
+		baseChance := float64(weights[3]) // 3-star base chance
+		modifiedChance := bot.EffectIntegrator.ApplyClaimEffects(ctx, userID, baseChance)
+		
+		if modifiedChance > baseChance {
+			// Increase 3-star weight, reduce others proportionally
+			weights[3] = int(modifiedChance)
+			weights[1] = 65 // Slightly reduce common
+			weights[2] = 18 // Slightly reduce uncommon
+		}
 	}
 
 	var eligibleCards []*models.Card

@@ -49,6 +49,24 @@ func (fm *ForgeManager) CalculateForgeCost(ctx context.Context, card1, card2 *mo
 	return forgeCost, nil
 }
 
+// CalculateForgeCostWithEffects calculates forge cost and applies effect discounts
+func (fm *ForgeManager) CalculateForgeCostWithEffects(ctx context.Context, card1, card2 *models.Card, userID string, effectIntegrator interface{}) (int64, error) {
+	baseCost, err := fm.CalculateForgeCost(ctx, card1, card2)
+	if err != nil {
+		return 0, err
+	}
+
+	// Apply effect discounts if integrator is available
+	if integrator, ok := effectIntegrator.(interface {
+		ApplyForgeDiscount(ctx context.Context, userID string, baseCost int) int
+	}); ok && integrator != nil {
+		finalCost := integrator.ApplyForgeDiscount(ctx, userID, int(baseCost))
+		return int64(finalCost), nil
+	}
+
+	return baseCost, nil
+}
+
 func (fm *ForgeManager) ForgeCards(ctx context.Context, userID int64, card1ID, card2ID int64) (*models.Card, error) {
 	fm.mu.Lock()
 	defer fm.mu.Unlock()

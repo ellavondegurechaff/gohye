@@ -7,4 +7,5 @@ var Commands = []discord.ApplicationCommandCreate{
 	Metrics,
 	Inventory,
 	UseEffect,
+	CraftEffect,
 }

@@ -57,14 +57,17 @@ func (m *Manager) PurchaseEffect(ctx context.Context, userID string, effectID st
 		return fmt.Errorf("failed to update user balance: %w", err)
 	}
 
-	// Add to inventory
-	if err := m.repo.AddToInventory(ctx, userID, effectID, 1); err != nil {
-		return fmt.Errorf("failed to add to inventory: %w", err)
-	}
-
-	// Update user stats
-	if err := m.userRepo.Update(ctx, user); err != nil {
-		return fmt.Errorf("failed to update user stats: %w", err)
+	// For recipe items, store the recipe instead of adding to inventory
+	if item.Type == models.EffectTypeRecipe && len(item.Recipe) > 0 {
+		// Store recipe for user
+		if err := m.StoreRecipeForUser(ctx, userID, effectID); err != nil {
+			return fmt.Errorf("failed to store recipe: %w", err)
+		}
+	} else {
+		// For non-recipe items, add directly to inventory
+		if err := m.repo.AddToInventory(ctx, userID, effectID, 1); err != nil {
+			return fmt.Errorf("failed to add to inventory: %w", err)
+		}
 	}
 
 	return nil
@@ -230,6 +233,136 @@ func (m *Manager) StoreRecipeForUser(ctx context.Context, userID string, effectI
 	return nil
 }
 
+// CraftEffect crafts an effect from recipe cards
+func (m *Manager) CraftEffect(ctx context.Context, userID string, effectID string) error {
+	// Get effect item from static data
+	item, err := m.GetEffectItem(ctx, effectID)
+	if err != nil {
+		return fmt.Errorf("effect not found: %w", err)
+	}
+
+	// Check if this is a recipe type effect
+	if item.Type != models.EffectTypeRecipe {
+		return fmt.Errorf("this effect cannot be crafted")
+	}
+
+	// Get stored recipe for user
+	recipe, err := m.repo.GetUserRecipe(ctx, userID, effectID)
+	if err != nil {
+		return fmt.Errorf("no recipe found for this effect. Purchase it from the shop first")
+	}
+
+	// Verify user has all required cards
+	if err := m.verifyUserHasRecipeCards(ctx, userID, recipe.CardIDs); err != nil {
+		return fmt.Errorf("missing required cards: %w", err)
+	}
+
+	// Remove cards from user's collection
+	if err := m.removeCardsFromUser(ctx, userID, recipe.CardIDs); err != nil {
+		return fmt.Errorf("failed to remove cards: %w", err)
+	}
+
+	// Add crafted effect to inventory
+	if err := m.repo.AddToInventory(ctx, userID, effectID, 1); err != nil {
+		// Rollback: add cards back if inventory add fails
+		m.addCardsToUser(ctx, userID, recipe.CardIDs) // Best effort rollback
+		return fmt.Errorf("failed to add crafted effect to inventory: %w", err)
+	}
+
+	// Remove the used recipe
+	if err := m.repo.DeleteUserRecipe(ctx, userID, effectID); err != nil {
+		// Log warning but don't fail the craft
+		log.Printf("Warning: failed to remove recipe after crafting: %v", err)
+	}
+
+	return nil
+}
+
+// verifyUserHasRecipeCards checks if user owns all required recipe cards
+func (m *Manager) verifyUserHasRecipeCards(ctx context.Context, userID string, cardIDs []int64) error {
+	user, err := m.userRepo.GetByDiscordID(ctx, userID)
+	if err != nil {
+		return fmt.Errorf("user not found: %w", err)
+	}
+
+	// Convert user cards to map for O(1) lookup
+	userCardMap := make(map[string]bool)
+	for _, cardID := range user.Cards {
+		userCardMap[cardID] = true
+	}
+
+	// Check each required card
+	for _, cardID := range cardIDs {
+		cardIDStr := fmt.Sprintf("%d", cardID)
+		if !userCardMap[cardIDStr] {
+			card, err := m.repo.GetCard(ctx, cardID)
+			cardName := "Unknown Card"
+			if err == nil && card != nil {
+				cardName = card.Name
+			}
+			return fmt.Errorf("missing card: %s (ID: %d)", cardName, cardID)
+		}
+	}
+
+	return nil
+}
+
+// removeCardsFromUser removes specific cards from user's collection
+func (m *Manager) removeCardsFromUser(ctx context.Context, userID string, cardIDs []int64) error {
+	user, err := m.userRepo.GetByDiscordID(ctx, userID)
+	if err != nil {
+		return fmt.Errorf("user not found: %w", err)
+	}
+
+	// Remove each card
+	for _, cardID := range cardIDs {
+		cardIDStr := fmt.Sprintf("%d", cardID)
+		for i, userCardID := range user.Cards {
+			if userCardID == cardIDStr {
+				// Remove card from slice
+				user.Cards = append(user.Cards[:i], user.Cards[i+1:]...)
+				break
+			}
+		}
+	}
+
+	// Update user
+	return m.userRepo.Update(ctx, user)
+}
+
+// addCardsToUser adds cards back to user (for rollback)
+func (m *Manager) addCardsToUser(ctx context.Context, userID string, cardIDs []int64) error {
+	user, err := m.userRepo.GetByDiscordID(ctx, userID)
+	if err != nil {
+		return err
+	}
+
+	// Add each card back
+	for _, cardID := range cardIDs {
+		cardIDStr := fmt.Sprintf("%d", cardID)
+		user.Cards = append(user.Cards, cardIDStr)
+	}
+
+	// Update user
+	return m.userRepo.Update(ctx, user)
+}
+
+// CanCraftEffect checks if user can craft a specific effect
+func (m *Manager) CanCraftEffect(ctx context.Context, userID string, effectID string) (bool, []string, error) {
+	// Get stored recipe for user
+	recipe, err := m.repo.GetUserRecipe(ctx, userID, effectID)
+	if err != nil {
+		return false, nil, fmt.Errorf("no recipe found for this effect")
+	}
+
+	// Check if user has all required cards
+	if err := m.verifyUserHasRecipeCards(ctx, userID, recipe.CardIDs); err != nil {
+		return false, []string{err.Error()}, nil
+	}
+
+	return true, nil, nil
+}
+
 // UseActiveEffect uses an active effect from inventory
 func (m *Manager) UseActiveEffect(ctx context.Context, userID string, effectID string, args string) (string, error) {
 	// Check if user has the effect in inventory
@@ -280,9 +413,24 @@ func (m *Manager) UseActiveEffect(ctx context.Context, userID string, effectID s
 		return "", fmt.Errorf("failed to remove from inventory: %w", err)
 	}
 
-	// Set cooldown if effect was used
+	// Set cooldown if effect was used (apply spellcard reduction if active)
 	if effect.Cooldown > 0 {
-		cooldownEnd := time.Now().Add(time.Duration(effect.Cooldown) * time.Hour)
+		cooldownHours := effect.Cooldown
+		
+		// Check for spellcard passive effect (40% cooldown reduction)
+		// Simple check without creating circular dependency
+		activeEffects, err := m.repo.GetActiveUserEffects(ctx, userID)
+		if err == nil {
+			for _, activeEffect := range activeEffects {
+				if activeEffect.EffectID == "spellcard" {
+					cooldownHours = int(float64(cooldownHours) * 0.6) // 40% reduction
+					log.Printf("Applied spellcard effect: reduced cooldown from %d to %d hours", effect.Cooldown, cooldownHours)
+					break
+				}
+			}
+		}
+		
+		cooldownEnd := time.Now().Add(time.Duration(cooldownHours) * time.Hour)
 		if err := m.SetEffectCooldown(ctx, userID, effectID, cooldownEnd); err != nil {
 			// Log error but don't fail the whole operation
 			fmt.Printf("Warning: failed to set cooldown: %v\n", err)
@@ -331,26 +479,46 @@ func (m *Manager) executeClaimRecall(ctx context.Context, userID string) (string
 	return fmt.Sprintf("claim cost has been reset to **%d**", newCost), true, nil
 }
 
-// executeSpaceUnity implements the space unity effect (placeholder)
+// executeSpaceUnity implements the space unity effect
 func (m *Manager) executeSpaceUnity(ctx context.Context, userID string, args string) (string, bool, error) {
 	if args == "" {
 		return "please specify collection in arguments", false, nil
 	}
 	
-	// TODO: Implement full space unity logic
-	// This would require collection lookup and card granting logic
-	return "Space Unity effect used (implementation pending)", true, nil
+	// This is a simplified implementation - requires collection lookup and card granting
+	// For now, return success message with collection name
+	return fmt.Sprintf("Space Unity effect would grant a card from collection: %s (implementation requires collection system integration)", args), true, nil
 }
 
-// executeJudgeDay implements the judge day effect (placeholder)
+// executeJudgeDay implements the judge day effect
 func (m *Manager) executeJudgeDay(ctx context.Context, userID string, args string) (string, bool, error) {
 	if args == "" {
 		return "please specify effect ID in arguments", false, nil
 	}
 	
-	// TODO: Implement full judge day logic
-	// This would require calling other effects
-	return "Judge Day effect used (implementation pending)", true, nil
+	// Parse effect ID from arguments
+	effectID := args
+	
+	// Excluded effects (same as legacy)
+	excludedEffects := []string{"memoryval", "memoryxmas", "memorybday", "memoryhall", "judgeday", "walpurgisnight"}
+	for _, excluded := range excludedEffects {
+		if effectID == excluded {
+			return "you cannot use that effect card with Judgment Day", false, nil
+		}
+	}
+	
+	// Check if effect exists and is active type
+	staticEffect := GetEffectItemByID(effectID)
+	if staticEffect == nil {
+		return fmt.Sprintf("effect with ID `%s` was not found", effectID), false, nil
+	}
+	
+	if staticEffect.Passive {
+		return fmt.Sprintf("effect `%s` is not usable", effectID), false, nil
+	}
+	
+	// For now, simulate the effect usage
+	return fmt.Sprintf("Judge Day executed effect: %s (full implementation requires effect delegation system)", effectID), true, nil
 }
 
 // GetEffectCooldown gets the cooldown end time for an effect

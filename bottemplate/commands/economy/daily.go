@@ -39,7 +39,10 @@ func DailyHandler(b *bottemplate.Bot) handler.CommandHandler {
 		}
 
 		// Calculate reward (consider streaks, bonuses, etc.)
-		reward := int64(1000) // Basic reward for now
+		baseReward := int64(1000) // Basic reward
+		
+		// Apply passive effects
+		reward := int64(b.EffectIntegrator.ApplyDailyEffects(ctx, e.User().ID.String(), int(baseReward)))
 
 		// Update balance and last daily in a transaction
 		tx, err := b.DB.BunDB().BeginTx(ctx, nil)

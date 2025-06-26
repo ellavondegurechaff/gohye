@@ -88,6 +88,24 @@ func (vm *VialManager) CalculateVialYield(ctx context.Context, card *models.Card
 	return vials, nil
 }
 
+// CalculateVialYieldWithEffects calculates vial yield and applies effect bonuses
+func (vm *VialManager) CalculateVialYieldWithEffects(ctx context.Context, card *models.Card, userID string, effectIntegrator interface{}) (int64, error) {
+	baseVials, err := vm.CalculateVialYield(ctx, card)
+	if err != nil {
+		return 0, err
+	}
+
+	// Apply effect bonuses if integrator is available
+	if integrator, ok := effectIntegrator.(interface {
+		ApplyLiquefyBonus(ctx context.Context, userID string, baseVials int64, cardLevel int) int64
+	}); ok && integrator != nil {
+		finalVials := integrator.ApplyLiquefyBonus(ctx, userID, baseVials, card.Level)
+		return finalVials, nil
+	}
+
+	return baseVials, nil
+}
+
 // findCardByName is a helper function to find a card by name
 func (vm *VialManager) findCardByName(ctx context.Context, cardName string) (*models.Card, error) {
 	var card models.Card
