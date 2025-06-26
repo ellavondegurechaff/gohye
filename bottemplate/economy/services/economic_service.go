@@ -157,7 +157,7 @@ func (s *EconomicService) initializeManagers() {
 	s.claimManager = claim.NewManager(s.config.ClaimCooldownPeriod)
 
 	// Initialize effects manager
-	s.effectsManager = effects.NewManager(s.effectRepo, s.userRepo)
+	s.effectsManager = effects.NewManager(s.effectRepo, s.userRepo, s.userCardRepo, s.db)
 
 	// Initialize economy monitor
 	s.economyMonitor = economy.NewEconomyMonitor(

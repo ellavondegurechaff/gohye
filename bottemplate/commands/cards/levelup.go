@@ -80,6 +80,9 @@ func (c *LevelUpCommand) Handle(event *handler.CommandEvent) error {
 		return createErrorEmbed(event, "Error", err.Error())
 	}
 
+	// Check for collection completion after successful level up
+	go c.bot.CompletionChecker.CheckCompletionForCards(context.Background(), event.User().ID.String(), []int64{userCard.CardID})
+
 	// Get card details for name display
 	card, err := c.cardRepo.GetByID(ctx, userCard.CardID)
 	if err != nil {
@@ -156,6 +159,9 @@ func (c *LevelUpCommand) handleCombine(event *handler.CommandEvent, mainCard *mo
 	if err != nil {
 		return createErrorEmbed(event, "Combination Failed", err.Error())
 	}
+
+	// Check for collection completion after successful card combination
+	go c.bot.CompletionChecker.CheckCompletionForCards(context.Background(), event.User().ID.String(), []int64{mainCard.CardID})
 
 	// Get card details for display
 	card, err := c.cardRepo.GetByID(ctx, mainCard.CardID)

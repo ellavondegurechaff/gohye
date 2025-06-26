@@ -284,6 +284,82 @@ func (db *DB) InitializeSchema(ctx context.Context) error {
 		}
 	}
 
+	// Apply schema migrations for existing tables
+	if err := db.MigrateSchema(ctx); err != nil {
+		return fmt.Errorf("failed to migrate schema: %w", err)
+	}
+
+	return nil
+}
+
+// MigrateSchema applies necessary schema changes to existing tables
+func (db *DB) MigrateSchema(ctx context.Context) error {
+	// Add fragments column to collections table if it doesn't exist
+	fragmentsColumnSQL := `
+		ALTER TABLE collections 
+		ADD COLUMN IF NOT EXISTS fragments BOOLEAN NOT NULL DEFAULT false;
+	`
+	
+	if _, err := db.ExecWithLog(ctx, fragmentsColumnSQL); err != nil {
+		return fmt.Errorf("failed to add fragments column: %w", err)
+	}
+
+	// Fix JSONB fields in users table that might be stored as strings
+	if err := db.MigrateUserJSONBFields(ctx); err != nil {
+		return fmt.Errorf("failed to migrate user JSONB fields: %w", err)
+	}
+
+	return nil
+}
+
+// MigrateUserJSONBFields fixes JSONB fields that might be stored as strings
+func (db *DB) MigrateUserJSONBFields(ctx context.Context) error {
+	// Fix completed_cols field: convert string arrays to proper JSONB objects
+	migrateCompletedColsSQL := `
+		UPDATE users 
+		SET completed_cols = CASE 
+			WHEN completed_cols::text LIKE '["%' OR completed_cols::text = '[]' THEN 
+				(
+					SELECT COALESCE(
+						jsonb_agg(
+							jsonb_build_object('id', elem, 'amount', 0)
+						), 
+						'[]'::jsonb
+					)
+					FROM jsonb_array_elements_text(completed_cols) elem
+				)
+			ELSE completed_cols
+		END
+		WHERE completed_cols IS NOT NULL;
+	`
+	
+	if _, err := db.ExecWithLog(ctx, migrateCompletedColsSQL); err != nil {
+		return fmt.Errorf("failed to migrate completed_cols field: %w", err)
+	}
+
+	// Fix clouted_cols field: convert string arrays to proper JSONB objects  
+	migrateCloutedColsSQL := `
+		UPDATE users 
+		SET clouted_cols = CASE 
+			WHEN clouted_cols::text LIKE '["%' OR clouted_cols::text = '[]' THEN 
+				(
+					SELECT COALESCE(
+						jsonb_agg(
+							jsonb_build_object('id', elem, 'amount', 1)
+						), 
+						'[]'::jsonb
+					)
+					FROM jsonb_array_elements_text(clouted_cols) elem
+				)
+			ELSE clouted_cols
+		END
+		WHERE clouted_cols IS NOT NULL;
+	`
+	
+	if _, err := db.ExecWithLog(ctx, migrateCloutedColsSQL); err != nil {
+		return fmt.Errorf("failed to migrate clouted_cols field: %w", err)
+	}
+
 	return nil
 }
 

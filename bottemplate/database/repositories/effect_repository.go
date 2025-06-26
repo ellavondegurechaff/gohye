@@ -202,6 +202,7 @@ func (r *effectRepository) GetInventory(ctx context.Context, userID string) ([]*
 	var inventory []*models.UserInventory
 	err := r.db.NewSelect().
 		Model(&inventory).
+		Column("user_id", "item_id", "amount", "created_at", "updated_at").
 		Where("user_id = ?", userID).
 		Scan(ctx)
 	return inventory, err
@@ -214,8 +215,8 @@ func (r *effectRepository) GetRandomCardForRecipe(ctx context.Context, userID st
 
 	query := r.db.NewSelect().
 		Model(&card).
-		Where("c.level = ?", stars).
-		Where("NOT EXISTS (SELECT 1 FROM user_cards uc WHERE uc.user_id = ? AND uc.card_id = c.id)", userID).
+		Where("level = ?", stars).
+		Where("NOT EXISTS (SELECT 1 FROM user_cards uc WHERE uc.user_id = ? AND uc.card_id = cards.id)", userID).
 		OrderExpr("RANDOM()").
 		Limit(1)
 

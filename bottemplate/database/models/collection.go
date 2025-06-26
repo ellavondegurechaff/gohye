@@ -15,6 +15,7 @@ type Collection struct {
 	Aliases    []string  `bun:"aliases,type:jsonb"`
 	Promo      bool      `bun:"promo,notnull"`
 	Compressed bool      `bun:"compressed,notnull"`
+	Fragments  bool      `bun:"fragments,notnull,default:false"`
 	Tags       []string  `bun:"tags,type:jsonb"`
 	CreatedAt  time.Time `bun:"created_at,notnull,default:current_timestamp"`
 	UpdatedAt  time.Time `bun:"updated_at,notnull"`

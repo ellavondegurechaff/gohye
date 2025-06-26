@@ -12,6 +12,7 @@ type CardRepositoryInterface interface {
 	GetByID(ctx context.Context, id int64) (*models.Card, error)
 	GetAll(ctx context.Context) ([]*models.Card, error)
 	GetByIDs(ctx context.Context, ids []int64) ([]*models.Card, error)
+	GetByCollectionID(ctx context.Context, colID string) ([]*models.Card, error)
 }
 
 // UserCardRepositoryInterface defines the interface for user card repository operations  
@@ -40,4 +41,25 @@ type CardOperationsServiceInterface interface {
 	
 	// BuildCardMappings creates optimized lookup maps for card operations
 	BuildCardMappings(userCards []*models.UserCard, cards []*models.Card) (map[int64]*models.UserCard, map[int64]*models.Card)
+}
+
+// CollectionServiceInterface defines the interface for collection operations
+type CollectionServiceInterface interface {
+	// CalculateProgress calculates completion progress for a user's collection
+	CalculateProgress(ctx context.Context, userID string, collectionID string) (*models.CollectionProgress, error)
+	
+	// GetCollectionLeaderboard returns top collectors for a collection
+	GetCollectionLeaderboard(ctx context.Context, collectionID string, limit int) ([]*models.CollectionProgressResult, error)
+	
+	// CheckCompletion checks if a user has completed a collection
+	CheckCompletion(ctx context.Context, userID string, collectionID string) (bool, error)
+	
+	// CalculateResetRequirements calculates cards needed for collection reset
+	CalculateResetRequirements(ctx context.Context, userID string, collectionID string) (*models.ResetRequirements, error)
+	
+	// IsFragmentCollection checks if collection is fragment type
+	IsFragmentCollection(ctx context.Context, collectionID string) (bool, error)
+	
+	// GetRandomSampleCard returns a random card from the specified collection
+	GetRandomSampleCard(ctx context.Context, collectionID string) (*models.Card, error)
 }

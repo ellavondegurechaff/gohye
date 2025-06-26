@@ -55,6 +55,8 @@ type Bot struct {
 	StartTime                time.Time
 	WishlistRepository       repositories.WishlistRepository
 	BackgroundProcessManager *utils.BackgroundProcessManager
+	CollectionService        *services.CollectionService
+	CompletionChecker        *services.CompletionCheckerService
 }
 
 func (b *Bot) SetupBot(listeners ...bot.EventListener) error {

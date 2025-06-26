@@ -37,8 +37,8 @@ func (m *Migrator) convertUser(mu MongoUser) *models.User {
 		UserStats:       convertCoreStats(mu),
 		Cards:           mu.Cards,
 		Inventory:       convertInventory(mu.Inventory),
-		CompletedCols:   extractColIDs(mu.CompletedCols),
-		CloutedCols:     extractColIDs(mu.CloutedCols),
+		CompletedCols:   models.FlexibleCompletedCols(convertCompletedCols(mu.CompletedCols)),
+		CloutedCols:     models.FlexibleCloutedCols(convertCloutedCols(mu.CloutedCols)),
 		Achievements:    mu.Achievements,
 		Effects:         mu.Effects,
 		Wishlist:        convertWishlist(mu.Wishlist),
@@ -195,6 +195,34 @@ func extractColIDs(cols []ColInfo) []string {
 		ids = append(ids, col.ID)
 	}
 	return ids
+}
+
+// Convert completed collections to new format
+func convertCompletedCols(cols []ColInfo) []models.CompletedColModel {
+	var result []models.CompletedColModel
+	for _, col := range cols {
+		result = append(result, models.CompletedColModel{
+			ID:     col.ID,
+			Amount: 0, // Legacy completed collections didn't track amounts
+		})
+	}
+	return result
+}
+
+// Convert clouted collections to new format
+func convertCloutedCols(cols []ColInfo) []models.CloutedColModel {
+	var result []models.CloutedColModel
+	for _, col := range cols {
+		amount := 1 // Default amount for legacy clouted collections
+		if col.Amount > 0 {
+			amount = int(col.Amount)
+		}
+		result = append(result, models.CloutedColModel{
+			ID:     col.ID,
+			Amount: amount,
+		})
+	}
+	return result
 }
 
 // Convert wishlist from []int32 to []string or []int64 as needed

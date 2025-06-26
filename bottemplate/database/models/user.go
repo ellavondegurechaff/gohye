@@ -2,6 +2,7 @@
 package models
 
 import (
+	"encoding/json"
 	"time"
 
 	"github.com/uptrace/bun"
@@ -11,6 +12,16 @@ type InventoryItemModel struct {
 	Time time.Time `json:"time"`
 	Col  string    `json:"col"`
 	ID   string    `json:"id"`
+}
+
+type CompletedColModel struct {
+	ID     string `json:"id"`
+	Amount int    `json:"amount,omitempty"`
+}
+
+type CloutedColModel struct {
+	ID     string `json:"id"`
+	Amount int    `json:"amount"`
 }
 
 type User struct {
@@ -31,13 +42,13 @@ type User struct {
 	UserStats   CoreStats   `bun:"user_stats,type:jsonb"`
 
 	// Arrays stored as JSONB
-	Cards         []string             `bun:"cards,type:jsonb"`
-	Inventory     []InventoryItemModel `bun:"inventory,type:jsonb"`
-	CompletedCols []string             `bun:"completed_cols,type:jsonb"`
-	CloutedCols   []string             `bun:"clouted_cols,type:jsonb"`
-	Achievements  []string             `bun:"achievements,type:jsonb"`
-	Effects       []string             `bun:"effects,type:jsonb"`
-	Wishlist      []string             `bun:"wishlist,type:jsonb"`
+	Cards         []string                `bun:"cards,type:jsonb"`
+	Inventory     []InventoryItemModel    `bun:"inventory,type:jsonb"`
+	CompletedCols FlexibleCompletedCols   `bun:"completed_cols,type:jsonb"`
+	CloutedCols   FlexibleCloutedCols     `bun:"clouted_cols,type:jsonb"`
+	Achievements  []string                `bun:"achievements,type:jsonb"`
+	Effects       []string                `bun:"effects,type:jsonb"`
+	Wishlist      []string                `bun:"wishlist,type:jsonb"`
 
 	// Timestamps
 	LastDaily    time.Time `bun:"last_daily,notnull"`
@@ -158,4 +169,66 @@ type Streaks struct {
 type VoteStreaks struct {
 	TopGG int `json:"topgg"`
 	DBL   int `json:"dbl"`
+}
+
+// FlexibleCompletedCols is a wrapper that can handle both legacy string arrays and new object arrays
+type FlexibleCompletedCols []CompletedColModel
+
+func (f *FlexibleCompletedCols) UnmarshalJSON(data []byte) error {
+	// Try to unmarshal as the new format first
+	var newFormat []CompletedColModel
+	if err := json.Unmarshal(data, &newFormat); err == nil {
+		*f = FlexibleCompletedCols(newFormat)
+		return nil
+	}
+
+	// If that fails, try to unmarshal as legacy string array
+	var legacyFormat []string
+	if err := json.Unmarshal(data, &legacyFormat); err == nil {
+		// Convert string array to new format
+		result := make([]CompletedColModel, len(legacyFormat))
+		for i, id := range legacyFormat {
+			result[i] = CompletedColModel{
+				ID:     id,
+				Amount: 0, // Default amount for legacy data
+			}
+		}
+		*f = FlexibleCompletedCols(result)
+		return nil
+	}
+
+	// If both fail, return empty array
+	*f = FlexibleCompletedCols{}
+	return nil
+}
+
+// FlexibleCloutedCols is a wrapper that can handle both legacy string arrays and new object arrays
+type FlexibleCloutedCols []CloutedColModel
+
+func (f *FlexibleCloutedCols) UnmarshalJSON(data []byte) error {
+	// Try to unmarshal as the new format first
+	var newFormat []CloutedColModel
+	if err := json.Unmarshal(data, &newFormat); err == nil {
+		*f = FlexibleCloutedCols(newFormat)
+		return nil
+	}
+
+	// If that fails, try to unmarshal as legacy string array
+	var legacyFormat []string
+	if err := json.Unmarshal(data, &legacyFormat); err == nil {
+		// Convert string array to new format
+		result := make([]CloutedColModel, len(legacyFormat))
+		for i, id := range legacyFormat {
+			result[i] = CloutedColModel{
+				ID:     id,
+				Amount: 1, // Default amount for legacy data
+			}
+		}
+		*f = FlexibleCloutedCols(result)
+		return nil
+	}
+
+	// If both fail, return empty array
+	*f = FlexibleCloutedCols{}
+	return nil
 }

@@ -4,21 +4,28 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"math/rand"
+	"strings"
 	"time"
 
+	"github.com/disgoorg/bot-template/bottemplate/database"
 	"github.com/disgoorg/bot-template/bottemplate/database/models"
 	"github.com/disgoorg/bot-template/bottemplate/database/repositories"
 )
 
 type Manager struct {
-	repo     repositories.EffectRepository
-	userRepo repositories.UserRepository
+	repo         repositories.EffectRepository
+	userRepo     repositories.UserRepository
+	userCardRepo repositories.UserCardRepository
+	db           *database.DB
 }
 
-func NewManager(repo repositories.EffectRepository, userRepo repositories.UserRepository) *Manager {
+func NewManager(repo repositories.EffectRepository, userRepo repositories.UserRepository, userCardRepo repositories.UserCardRepository, db *database.DB) *Manager {
 	return &Manager{
-		repo:     repo,
-		userRepo: userRepo,
+		repo:         repo,
+		userRepo:     userRepo,
+		userCardRepo: userCardRepo,
+		db:           db,
 	}
 }
 
@@ -482,43 +489,121 @@ func (m *Manager) executeClaimRecall(ctx context.Context, userID string) (string
 // executeSpaceUnity implements the space unity effect
 func (m *Manager) executeSpaceUnity(ctx context.Context, userID string, args string) (string, bool, error) {
 	if args == "" {
-		return "please specify collection in arguments", false, nil
+		return "Please specify collection ID (e.g., 'twice' or 'blackpink')", false, nil
 	}
-	
-	// This is a simplified implementation - requires collection lookup and card granting
-	// For now, return success message with collection name
-	return fmt.Sprintf("Space Unity effect would grant a card from collection: %s (implementation requires collection system integration)", args), true, nil
+
+	// Remove leading dash if present
+	args = strings.TrimPrefix(args, "-")
+
+	// Get collection by ID or alias
+	var collection models.Collection
+	err := m.db.BunDB().NewSelect().
+		Model(&collection).
+		Where("id = ? OR ? = ANY(aliases)", args, args).
+		Scan(ctx)
+
+	if err != nil {
+		return fmt.Sprintf("Collection '%s' not found", args), false, nil
+	}
+
+	// Check restrictions (based on legacy system)
+	if collection.Promo {
+		return "Cannot use this effect on promo collections", false, nil
+	}
+
+	// Get user's existing cards
+	existingCards, err := m.userCardRepo.GetAllByUserID(ctx, userID)
+	if err != nil {
+		return "", false, fmt.Errorf("failed to get user cards: %w", err)
+	}
+
+	// Create map of owned card IDs for quick lookup
+	ownedCardIDs := make(map[int64]bool)
+	for _, uc := range existingCards {
+		if uc.Amount > 0 {
+			ownedCardIDs[uc.CardID] = true
+		}
+	}
+
+	// Get all cards from the collection that user doesn't own (level < 4)
+	var availableCards []*models.Card
+	err = m.db.BunDB().NewSelect().
+		Model(&availableCards).
+		Where("col_id = ? AND level < 4", collection.ID).
+		Scan(ctx)
+
+	if err != nil {
+		return "", false, fmt.Errorf("failed to get collection cards: %w", err)
+	}
+
+	// Filter out owned cards
+	var uniqueCards []*models.Card
+	for _, card := range availableCards {
+		if !ownedCardIDs[card.ID] {
+			uniqueCards = append(uniqueCards, card)
+		}
+	}
+
+	if len(uniqueCards) == 0 {
+		return fmt.Sprintf("Cannot fetch unique card from **%s** collection (you own them all!)", collection.Name), false, nil
+	}
+
+	// Select random card
+	selectedCard := uniqueCards[rand.Intn(len(uniqueCards))]
+
+	// Add card to user's inventory
+	newUserCard := &models.UserCard{
+		UserID: userID,
+		CardID: selectedCard.ID,
+		Amount: 1,
+	}
+	if err := m.userCardRepo.Create(ctx, newUserCard); err != nil {
+		return "", false, fmt.Errorf("failed to add card to inventory: %w", err)
+	}
+
+	return fmt.Sprintf("You got **%s** (%s) from %s collection!", selectedCard.Name, strings.Repeat("⭐", selectedCard.Level), collection.Name), true, nil
 }
 
 // executeJudgeDay implements the judge day effect
 func (m *Manager) executeJudgeDay(ctx context.Context, userID string, args string) (string, bool, error) {
 	if args == "" {
-		return "please specify effect ID in arguments", false, nil
+		return "Please specify effect ID (e.g., 'claimrecall' or 'spaceunity -twice')", false, nil
 	}
-	
-	// Parse effect ID from arguments
-	effectID := args
-	
-	// Excluded effects (same as legacy)
-	excludedEffects := []string{"memoryval", "memoryxmas", "memorybday", "memoryhall", "judgeday", "walpurgisnight"}
-	for _, excluded := range excludedEffects {
-		if effectID == excluded {
-			return "you cannot use that effect card with Judgment Day", false, nil
-		}
+
+	// Parse effect ID and remaining args
+	parts := strings.SplitN(args, " ", 2)
+	effectID := parts[0]
+	remainingArgs := ""
+	if len(parts) > 1 {
+		remainingArgs = parts[1]
 	}
-	
-	// Check if effect exists and is active type
+
+	// Check if effect exists and is active (not passive)
 	staticEffect := GetEffectItemByID(effectID)
 	if staticEffect == nil {
-		return fmt.Sprintf("effect with ID `%s` was not found", effectID), false, nil
+		return fmt.Sprintf("Effect '%s' not found or not usable", effectID), false, nil
 	}
-	
+
 	if staticEffect.Passive {
-		return fmt.Sprintf("effect `%s` is not usable", effectID), false, nil
+		return fmt.Sprintf("Effect '%s' is passive and cannot be used with Judgment Day", effectID), false, nil
 	}
-	
-	// For now, simulate the effect usage
-	return fmt.Sprintf("Judge Day executed effect: %s (full implementation requires effect delegation system)", effectID), true, nil
+
+	// Exclusion list (effects that cannot be used with judgeday)
+	excludedEffects := []string{"judgeday", "walpurgisnight"}
+	for _, excluded := range excludedEffects {
+		if effectID == excluded {
+			return "You cannot use that effect with Judgment Day", false, nil
+		}
+	}
+
+	// Execute the target effect directly (bypass inventory check for judgeday)
+	result, _, err := m.executeActiveEffect(ctx, userID, effectID, remainingArgs)
+	if err != nil {
+		return "", false, err
+	}
+
+	// Return with Judgment Day prefix
+	return fmt.Sprintf("[Judgment Day] %s", result), true, nil
 }
 
 // GetEffectCooldown gets the cooldown end time for an effect

@@ -178,6 +178,10 @@ func (h *ForgeHandler) HandleComponent(e *handler.ComponentEvent) error {
 			})
 		}
 
+		// Check for collection completion after successful forge
+		userIDStr := strconv.FormatInt(userID, 10)
+		go h.bot.CompletionChecker.CheckCompletionForCards(context.Background(), userIDStr, []int64{newCard.ID})
+
 		// Get group type from card tags
 		groupType := "girlgroups" // default
 		for _, tag := range newCard.Tags {

@@ -50,10 +50,7 @@ type UserInventory struct {
 
 	UserID    string    `bun:"user_id,pk"`
 	ItemID    string    `bun:"item_id,pk"`
-	Col       string    `bun:"col"` // legacy collection field
 	Amount    int       `bun:"amount,notnull,default:1"`
-	Cards     []int64   `bun:"cards,type:jsonb"` // legacy cards array
-	Acquired  time.Time `bun:"acquired,notnull"` // legacy acquired time
 	CreatedAt time.Time `bun:"created_at,notnull"`
 	UpdatedAt time.Time `bun:"updated_at,notnull"`
 }

@@ -11,4 +11,7 @@ var Commands = []discord.ApplicationCommandCreate{
 	Forge,
 	LimitedCards,
 	LimitedStats,
+	CollectionList,
+	CollectionInfo,
+	CollectionProgress,
 }

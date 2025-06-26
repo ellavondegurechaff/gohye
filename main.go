@@ -130,6 +130,23 @@ func main() {
 	slog.Info("Collection cache initialized successfully",
 		slog.Int("collections_loaded", len(collections)))
 
+	// Initialize Collection Service
+	b.CollectionService = services.NewCollectionService(
+		b.CollectionRepository,
+		b.CardRepository,
+		b.UserCardRepository,
+	)
+
+	// Initialize Completion Checker Service
+	b.CompletionChecker = services.NewCompletionCheckerService(
+		b.Client,
+		b.CollectionService,
+		b.UserRepository,
+		b.CardRepository,
+		b.UserCardRepository,
+		b.CollectionRepository,
+	)
+
 	// Then initialize Auction Manager with all required dependencies
 	// auctionRepo := repositories.NewAuctionRepository(b.DB.BunDB())
 	// auctionManager := auction.NewManager(
@@ -265,6 +282,8 @@ func main() {
 	effectManager := effects.NewManager(
 		repositories.NewEffectRepository(b.DB.BunDB()),
 		b.UserRepository,
+		b.UserCardRepository,
+		b.DB,
 	)
 	b.EffectManager = effectManager
 
@@ -292,6 +311,12 @@ func main() {
 	craftEffectHandler := system.NewCraftEffectHandler(b, effectManager)
 	h.Command("/craft-effect", handlers.WrapWithLogging("craft-effect", craftEffectHandler.Handle))
 
+	// Help commands
+	helpHandler := system.NewHelpHandler(b)
+	h.Command("/help", handlers.WrapWithLogging("help", helpHandler.Handle))
+	h.Component("/help_category", handlers.WrapComponentWithLogging("help", helpHandler.HandleComponent))
+	h.Component("/help_back", handlers.WrapComponentWithLogging("help", helpHandler.HandleComponent))
+
 	// Claim commands
 	claimHandler := cards.NewClaimHandler(b)
 	h.Command("/claim", handlers.WrapWithLogging("claim", claimHandler.HandleCommand))
@@ -307,9 +332,15 @@ func main() {
 	h.Command("/limitedcards", handlers.WrapWithLogging("limitedcards", cards.LimitedCardsHandler(b)))
 	h.Command("/limitedstats", handlers.WrapWithLogging("limitedstats", cards.LimitedStatsHandler(b)))
 
+	// Collection Commands
+	h.Command("/collection-list", handlers.WrapWithLogging("collection-list", cards.CollectionListHandler(b)))
+	h.Command("/collection-info", handlers.WrapWithLogging("collection-info", cards.CollectionInfoHandler(b)))
+	h.Command("/collection-progress", handlers.WrapWithLogging("collection-progress", cards.CollectionProgressHandler(b)))
+
 	// Add this line with the other component handlers
 	h.Component("/limitedstats/", handlers.WrapComponentWithLogging("limitedstats", cards.LimitedStatsComponentHandler(b)))
 	h.Component("/limitedcards/", handlers.WrapComponentWithLogging("limitedcards", cards.LimitedCardsComponentHandler(b)))
+	h.Component("/collection-list/", handlers.WrapComponentWithLogging("collection-list", cards.CollectionListComponentHandler(b)))
 
 	if err = b.SetupBot(h, bot.NewListenerFunc(b.OnReady), handlers.MessageHandler(b)); err != nil {
 		slog.Error("Failed to setup bot",

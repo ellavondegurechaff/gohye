@@ -2,8 +2,10 @@ package repositories
 
 import (
 	"context"
+	"fmt"
 	"time"
 
+	"github.com/disgoorg/bot-template/bottemplate/config"
 	"github.com/disgoorg/bot-template/bottemplate/database/models"
 	"github.com/uptrace/bun"
 )
@@ -16,6 +18,7 @@ type CollectionRepository interface {
 	Delete(ctx context.Context, id string) error
 	BulkCreate(ctx context.Context, collections []*models.Collection) error
 	SearchCollections(ctx context.Context, search string) ([]*models.Collection, error)
+	GetCollectionProgress(ctx context.Context, collectionID string, limit int) ([]*models.CollectionProgressResult, error)
 }
 
 type collectionRepository struct {
@@ -75,6 +78,7 @@ func (r *collectionRepository) BulkCreate(ctx context.Context, collections []*mo
 		Set("aliases = EXCLUDED.aliases").
 		Set("promo = EXCLUDED.promo").
 		Set("compressed = EXCLUDED.compressed").
+		Set("fragments = EXCLUDED.fragments").
 		Set("tags = EXCLUDED.tags").
 		Set("updated_at = EXCLUDED.updated_at").
 		Exec(ctx)
@@ -114,4 +118,72 @@ func (r *collectionRepository) SearchCollections(ctx context.Context, search str
 		Scan(ctx)
 
 	return collections, err
+}
+
+// GetCollectionProgress returns leaderboard data for a collection using SQL aggregation
+// Equivalent to the MongoDB aggregation pipeline in the JavaScript version
+func (r *collectionRepository) GetCollectionProgress(ctx context.Context, collectionID string, limit int) ([]*models.CollectionProgressResult, error) {
+	ctx, cancel := context.WithTimeout(ctx, config.DefaultQueryTimeout)
+	defer cancel()
+
+	// First, get the collection to check if it's a fragment collection
+	collection, err := r.GetByID(ctx, collectionID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get collection: %w", err)
+	}
+
+	// Get all cards for this collection using existing method
+	var cards []*models.Card
+	err = r.db.NewSelect().
+		Model(&cards).
+		Where("col_id = ?", collectionID).
+		Scan(ctx)
+	
+	if err != nil {
+		return nil, fmt.Errorf("failed to get collection cards: %w", err)
+	}
+
+	// Filter cards based on collection type (same logic as CalculateProgress)
+	var filteredCardIDs []int64
+	for _, card := range cards {
+		if collection.Fragments {
+			if card.Level == 1 {
+				filteredCardIDs = append(filteredCardIDs, card.ID)
+			}
+		} else {
+			if card.Level < 5 {
+				filteredCardIDs = append(filteredCardIDs, card.ID)
+			}
+		}
+	}
+	
+	if len(filteredCardIDs) == 0 {
+		return nil, fmt.Errorf("no eligible cards found for collection %s", collectionID)
+	}
+
+	// Build the aggregation query equivalent to MongoDB pipeline
+	totalCards := len(filteredCardIDs)
+	var results []*models.CollectionProgressResult
+	
+	query := `
+		SELECT 
+			u.discord_id,
+			u.username,
+			COUNT(DISTINCT uc.card_id) as owned_cards,
+			ROUND((COUNT(DISTINCT uc.card_id)::decimal / ?) * 100, 2) as progress
+		FROM user_cards uc
+		JOIN users u ON uc.user_id = u.discord_id
+		WHERE uc.card_id IN (?) 
+		  AND uc.amount > 0
+		GROUP BY u.discord_id, u.username
+		ORDER BY progress DESC, owned_cards DESC
+		LIMIT ?
+	`
+	
+	err = r.db.NewRaw(query, totalCards, bun.In(filteredCardIDs), limit).Scan(ctx, &results)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get collection progress: %w", err)
+	}
+
+	return results, nil
 }

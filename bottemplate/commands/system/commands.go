@@ -8,4 +8,5 @@ var Commands = []discord.ApplicationCommandCreate{
 	Inventory,
 	UseEffect,
 	CraftEffect,
+	Help,
 }

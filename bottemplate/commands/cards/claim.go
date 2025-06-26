@@ -264,6 +264,13 @@ func (h *ClaimHandler) HandleCommand(e *handler.CommandEvent) error {
 		return fmt.Errorf("failed to commit transaction: %w", err)
 	}
 
+	// Check for collection completion after successful claim
+	claimedCardIDs := make([]int64, len(selectedCards))
+	for i, card := range selectedCards {
+		claimedCardIDs[i] = card.ID
+	}
+	go h.bot.CompletionChecker.CheckCompletionForCards(context.Background(), userID, claimedCardIDs)
+
 	return e.CreateMessage(discord.MessageCreate{
 		Embeds:     []discord.Embed{embed.Build()},
 		Components: components,

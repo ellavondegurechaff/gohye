@@ -62,6 +62,7 @@ func (m *Migrator) MigrateCardsFromJSON(ctx context.Context) error {
 			Aliases:    jc.Aliases,
 			Promo:      jc.Promo,
 			Compressed: jc.Compressed,
+			Fragments:  false, // Set default value for fragments
 			Tags:       jc.Tags,
 			CreatedAt:  time.Now(),
 			UpdatedAt:  time.Now(),

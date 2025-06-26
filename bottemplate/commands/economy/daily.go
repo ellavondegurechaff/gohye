@@ -32,9 +32,13 @@ func DailyHandler(b *bottemplate.Bot) handler.CommandHandler {
 			return utils.EH.CreateErrorEmbed(e, "Failed to get user data. Please try again later.")
 		}
 
+		// Get dynamic daily cooldown (affected by rulerjeanne effect)
+		cooldownHours := b.EffectIntegrator.GetDailyCooldown(ctx, e.User().ID.String())
+		cooldownDuration := time.Duration(cooldownHours) * time.Hour
+		
 		// Check cooldown
-		if time.Since(user.LastDaily) < 60*time.Second {
-			remaining := time.Until(user.LastDaily.Add(60 * time.Second)).Round(time.Second)
+		if time.Since(user.LastDaily) < cooldownDuration {
+			remaining := time.Until(user.LastDaily.Add(cooldownDuration)).Round(time.Second)
 			return utils.EH.CreateErrorEmbed(e, fmt.Sprintf("You can claim your daily reward again in %s.", remaining))
 		}
 
