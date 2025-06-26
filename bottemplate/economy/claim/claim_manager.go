@@ -2,6 +2,7 @@ package claim
 
 import (
 	"context"
+	"log/slog"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -52,23 +53,43 @@ func (m *Manager) LockClaim(userID string) bool {
 		return false
 	}
 
-	// Try to create a new session
-	if _, loaded := m.activeUsers.LoadOrStore(userID, time.Now()); loaded {
+	// Try to create a new session atomically
+	now := time.Now()
+	if _, loaded := m.activeUsers.LoadOrStore(userID, now); loaded {
 		return false
 	}
 
-	now := time.Now()
+	// Store claim lock with expiry time - this must succeed since we just created the session
 	expiry := now.Add(m.lockDuration)
 	m.activeClaimLock.Store(userID, expiry)
+	
+	// Initialize claim owner entry to maintain consistency
+	m.claimOwners.Store(userID, userID)
+	
 	return true
 }
 
 func (m *Manager) ReleaseClaim(userID string) {
+	// Atomically clean up all related state to prevent inconsistencies
 	m.activeClaimLock.Delete(userID)
 	m.activeUsers.Delete(userID)
 	m.claimOwners.Delete(userID)
-	m.messageOwners.Delete(userID)
-	m.claimCards.Delete(userID)
+	
+	// Clean up message owners - need to iterate to find messages owned by this user
+	var messagesToDelete []string
+	m.messageOwners.Range(func(key, value interface{}) bool {
+		messageID := key.(string)
+		ownerID := value.(string)
+		if ownerID == userID {
+			messagesToDelete = append(messagesToDelete, messageID)
+		}
+		return true
+	})
+	
+	for _, messageID := range messagesToDelete {
+		m.messageOwners.Delete(messageID)
+		m.claimCards.Delete(messageID)
+	}
 
 	// Set cooldown
 	m.claimCooldowns.Store(userID, time.Now().Add(m.cooldownPeriod))
@@ -109,36 +130,38 @@ func (m *Manager) getUsedClaims(userID string) int {
 
 func (m *Manager) cleanupExpiredLocks() {
 	now := time.Now()
+	var expiredUsers []string
 
-	// Cleanup active claim locks
+	// First, identify all expired users from active claim locks
 	m.activeClaimLock.Range(func(key, value interface{}) bool {
-		if now.After(value.(time.Time)) {
-			m.activeClaimLock.Delete(key)
-			m.activeUsers.Delete(key)
-			m.claimOwners.Delete(key)
+		userID := key.(string)
+		expiry := value.(time.Time)
+		if now.After(expiry) {
+			expiredUsers = append(expiredUsers, userID)
 		}
 		return true
 	})
 
-	// Cleanup active sessions
+	// Check for session timeouts
 	m.activeUsers.Range(func(key, value interface{}) bool {
+		userID := key.(string)
 		sessionStart := value.(time.Time)
 		if now.Sub(sessionStart) > m.sessionTimeout {
-			m.activeUsers.Delete(key)
-			m.activeClaimLock.Delete(key)
-			m.claimOwners.Delete(key)
+			expiredUsers = append(expiredUsers, userID)
 		}
 		return true
 	})
 
-	// Also cleanup message owners for expired sessions
-	m.messageOwners.Range(func(key, value interface{}) bool {
-		userID := value.(string)
-		if _, exists := m.activeUsers.Load(userID); !exists {
-			m.messageOwners.Delete(key)
-		}
-		return true
-	})
+	// Remove duplicates and clean up all expired users atomically
+	expiredMap := make(map[string]bool)
+	for _, userID := range expiredUsers {
+		expiredMap[userID] = true
+	}
+
+	for userID := range expiredMap {
+		// Use ReleaseClaim to ensure consistent cleanup
+		m.ReleaseClaim(userID)
+	}
 }
 
 func (m *Manager) StartCleanupRoutine(ctx context.Context) {
@@ -150,7 +173,14 @@ func (m *Manager) StartCleanupRoutine(ctx context.Context) {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				m.cleanupExpiredLocks()
+				func() {
+					defer func() {
+						if r := recover(); r != nil {
+							slog.Error("Panic in claim cleanup routine", slog.Any("panic", r))
+						}
+					}()
+					m.cleanupExpiredLocks()
+				}()
 			}
 		}
 	}()

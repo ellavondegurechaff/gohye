@@ -8,16 +8,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/disgoorg/bot-template/bottemplate/services"
-
+	"github.com/disgoorg/bot-template/bottemplate/config"
 	"github.com/disgoorg/bot-template/bottemplate/database/models"
 	"github.com/uptrace/bun"
 )
 
 const (
-	defaultTimeout  = 10 * time.Second
-	cacheExpiration = 5 * time.Minute
-	maxBatchSize    = 1000
+	maxBatchSize = 1000
 )
 
 type CardRepository interface {
@@ -43,21 +40,19 @@ type CardRepository interface {
 }
 
 type cardRepository struct {
-	db            *bun.DB
-	spacesService *services.SpacesService
-	cache         *sync.Map
+	db    *bun.DB
+	cache *sync.Map
 }
 
-func NewCardRepository(db *bun.DB, spacesService *services.SpacesService) CardRepository {
+func NewCardRepository(db *bun.DB) CardRepository {
 	return &cardRepository{
-		db:            db,
-		spacesService: spacesService,
-		cache:         &sync.Map{},
+		db:    db,
+		cache: &sync.Map{},
 	}
 }
 
 func (r *cardRepository) Create(ctx context.Context, card *models.Card) error {
-	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	ctx, cancel := context.WithTimeout(ctx, config.DefaultQueryTimeout)
 	defer cancel()
 
 	card.CreatedAt = time.Now()
@@ -72,7 +67,7 @@ func (r *cardRepository) Create(ctx context.Context, card *models.Card) error {
 }
 
 func (r *cardRepository) GetByID(ctx context.Context, id int64) (*models.Card, error) {
-	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	ctx, cancel := context.WithTimeout(ctx, config.DefaultQueryTimeout)
 	defer cancel()
 
 	card := new(models.Card)
@@ -85,7 +80,7 @@ func (r *cardRepository) GetByID(ctx context.Context, id int64) (*models.Card, e
 }
 
 func (r *cardRepository) GetByName(ctx context.Context, name string) ([]*models.Card, error) {
-	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	ctx, cancel := context.WithTimeout(ctx, config.DefaultQueryTimeout)
 	defer cancel()
 
 	cacheKey := fmt.Sprintf("name:%s", name)
@@ -100,14 +95,14 @@ func (r *cardRepository) GetByName(ctx context.Context, name string) ([]*models.
 		Scan(ctx)
 
 	if err == nil {
-		r.setCache(cacheKey, cards, cacheExpiration)
+		r.setCache(cacheKey, cards, config.CacheExpiration)
 	}
 
 	return cards, err
 }
 
 func (r *cardRepository) GetAll(ctx context.Context) ([]*models.Card, error) {
-	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	ctx, cancel := context.WithTimeout(ctx, config.DefaultQueryTimeout)
 	defer cancel()
 
 	var cards []*models.Card
@@ -120,7 +115,7 @@ func (r *cardRepository) GetAll(ctx context.Context) ([]*models.Card, error) {
 }
 
 func (r *cardRepository) GetByCollectionID(ctx context.Context, colID string) ([]*models.Card, error) {
-	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	ctx, cancel := context.WithTimeout(ctx, config.DefaultQueryTimeout)
 	defer cancel()
 
 	cacheKey := fmt.Sprintf("collection:%s", colID)
@@ -136,14 +131,14 @@ func (r *cardRepository) GetByCollectionID(ctx context.Context, colID string) ([
 		Scan(ctx)
 
 	if err == nil {
-		r.setCache(cacheKey, cards, cacheExpiration)
+		r.setCache(cacheKey, cards, config.CacheExpiration)
 	}
 
 	return cards, err
 }
 
 func (r *cardRepository) Update(ctx context.Context, card *models.Card) error {
-	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	ctx, cancel := context.WithTimeout(ctx, config.DefaultQueryTimeout)
 	defer cancel()
 
 	card.UpdatedAt = time.Now()
@@ -161,7 +156,7 @@ func (r *cardRepository) Update(ctx context.Context, card *models.Card) error {
 }
 
 func (r *cardRepository) Delete(ctx context.Context, id int64) error {
-	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	ctx, cancel := context.WithTimeout(ctx, config.DefaultQueryTimeout)
 	defer cancel()
 
 	_, err := r.db.NewDelete().
@@ -177,7 +172,7 @@ func (r *cardRepository) Delete(ctx context.Context, id int64) error {
 }
 
 func (r *cardRepository) GetByTag(ctx context.Context, tag string) ([]*models.Card, error) {
-	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	ctx, cancel := context.WithTimeout(ctx, config.DefaultQueryTimeout)
 	defer cancel()
 
 	cacheKey := fmt.Sprintf("tag:%s", tag)
@@ -193,14 +188,14 @@ func (r *cardRepository) GetByTag(ctx context.Context, tag string) ([]*models.Ca
 		Scan(ctx)
 
 	if err == nil {
-		r.setCache(cacheKey, cards, cacheExpiration)
+		r.setCache(cacheKey, cards, config.CacheExpiration)
 	}
 
 	return cards, err
 }
 
 func (r *cardRepository) BulkCreate(ctx context.Context, cards []*models.Card) (int, error) {
-	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	ctx, cancel := context.WithTimeout(ctx, config.DefaultQueryTimeout)
 	defer cancel()
 
 	if len(cards) == 0 {
@@ -250,7 +245,7 @@ func (r *cardRepository) BulkCreate(ctx context.Context, cards []*models.Card) (
 }
 
 func (r *cardRepository) GetByLevel(ctx context.Context, level int) ([]*models.Card, error) {
-	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	ctx, cancel := context.WithTimeout(ctx, config.DefaultQueryTimeout)
 	defer cancel()
 
 	cacheKey := fmt.Sprintf("level:%d", level)
@@ -266,14 +261,14 @@ func (r *cardRepository) GetByLevel(ctx context.Context, level int) ([]*models.C
 		Scan(ctx)
 
 	if err == nil {
-		r.setCache(cacheKey, cards, cacheExpiration)
+		r.setCache(cacheKey, cards, config.CacheExpiration)
 	}
 
 	return cards, err
 }
 
 func (r *cardRepository) GetAnimated(ctx context.Context) ([]*models.Card, error) {
-	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	ctx, cancel := context.WithTimeout(ctx, config.DefaultQueryTimeout)
 	defer cancel()
 
 	if cached, ok := r.getFromCache("animated"); ok {
@@ -288,14 +283,14 @@ func (r *cardRepository) GetAnimated(ctx context.Context) ([]*models.Card, error
 		Scan(ctx)
 
 	if err == nil {
-		r.setCache("animated", cards, cacheExpiration)
+		r.setCache("animated", cards, config.CacheExpiration)
 	}
 
 	return cards, err
 }
 
 func (r *cardRepository) SafeDelete(ctx context.Context, cardID int64) (*models.DeletionReport, error) {
-	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	ctx, cancel := context.WithTimeout(ctx, config.DefaultQueryTimeout)
 	defer cancel()
 
 	report := &models.DeletionReport{
@@ -349,10 +344,8 @@ func (r *cardRepository) SafeDelete(ctx context.Context, cardID int64) (*models.
 
 	// Delete image if card was deleted
 	if report.CardDeleted {
-		err = r.spacesService.DeleteCardImage(ctx, card.ColID, card.Name, card.Level, card.Tags)
-		if err != nil {
-			fmt.Printf("Warning: Failed to delete image for card %s: %v\n", card.Name, err)
-		}
+		// Note: Image deletion should be handled by the service layer
+		// when calling this repository method, not within the repository itself
 		r.invalidateCache(cardID)
 	}
 
@@ -382,7 +375,7 @@ func (r *cardRepository) Search(ctx context.Context, filters SearchFilters, offs
 	fmt.Printf("Filters: %+v\n", filters)
 	fmt.Printf("Offset: %d, Limit: %d\n", offset, limit)
 
-	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	ctx, cancel := context.WithTimeout(ctx, config.DefaultQueryTimeout)
 	defer cancel()
 
 	cacheKey := generateCacheKey(filters, offset, limit)
@@ -433,7 +426,7 @@ func (r *cardRepository) Search(ctx context.Context, filters SearchFilters, offs
 		if err != nil {
 			return nil, 0, fmt.Errorf("failed to count results: %w", err)
 		}
-		r.setCache(countCacheKey, count, cacheExpiration*2)
+		r.setCache(countCacheKey, count, config.CacheExpiration*2)
 	}
 
 	// Create and execute the main query
@@ -499,7 +492,7 @@ func (r *cardRepository) Search(ctx context.Context, filters SearchFilters, offs
 		"cards": cards,
 		"count": count,
 	}
-	r.setCache(cacheKey, cacheData, cacheExpiration)
+	r.setCache(cacheKey, cacheData, config.CacheExpiration)
 	fmt.Printf("Results cached with key: %s\n", cacheKey)
 
 	fmt.Printf("=== End Search Debug ===\n\n")
@@ -571,7 +564,7 @@ func (r *cardRepository) invalidateCache(cardID int64) {
 }
 
 func (r *cardRepository) UpdateUserCard(ctx context.Context, userCard *models.UserCard) error {
-	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	ctx, cancel := context.WithTimeout(ctx, config.DefaultQueryTimeout)
 	defer cancel()
 
 	userCard.UpdatedAt = time.Now()
@@ -588,7 +581,7 @@ func (r *cardRepository) UpdateUserCard(ctx context.Context, userCard *models.Us
 }
 
 func (r *cardRepository) DeleteUserCard(ctx context.Context, id int64) error {
-	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	ctx, cancel := context.WithTimeout(ctx, config.DefaultQueryTimeout)
 	defer cancel()
 
 	_, err := r.db.NewDelete().
@@ -600,7 +593,7 @@ func (r *cardRepository) DeleteUserCard(ctx context.Context, id int64) error {
 }
 
 func (r *cardRepository) GetUserCard(ctx context.Context, userID string, cardID int64) (*models.UserCard, error) {
-	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	ctx, cancel := context.WithTimeout(ctx, config.DefaultQueryTimeout)
 	defer cancel()
 
 	userCard := new(models.UserCard)
@@ -621,7 +614,7 @@ func (r *cardRepository) GetUserCard(ctx context.Context, userID string, cardID 
 }
 
 func (r *cardRepository) GetAllByUserID(ctx context.Context, userID string) ([]*models.UserCard, error) {
-	ctx, cancel := context.WithTimeout(ctx, defaultTimeout)
+	ctx, cancel := context.WithTimeout(ctx, config.DefaultQueryTimeout)
 	defer cancel()
 
 	userCards := make([]*models.UserCard, 0)

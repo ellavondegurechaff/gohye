@@ -38,6 +38,10 @@ type EffectRepository interface {
 
 	// Card methods
 	GetCard(ctx context.Context, cardID int64) (*models.Card, error)
+
+	// Cooldown methods
+	GetEffectCooldown(ctx context.Context, userID string, effectID string) (*time.Time, error)
+	SetEffectCooldown(ctx context.Context, userID string, effectID string, cooldownEnd time.Time) error
 }
 
 type effectRepository struct {
@@ -271,4 +275,57 @@ func (r *effectRepository) GetCard(ctx context.Context, cardID int64) (*models.C
 		return nil, fmt.Errorf("failed to get card: %w", err)
 	}
 	return &card, nil
+}
+
+// GetEffectCooldown gets the cooldown end time for a specific user effect
+func (r *effectRepository) GetEffectCooldown(ctx context.Context, userID string, effectID string) (*time.Time, error) {
+	var userEffect models.UserEffect
+	err := r.db.NewSelect().
+		Model(&userEffect).
+		Where("user_id = ? AND effect_id = ?", userID, effectID).
+		Order("created_at DESC").
+		Limit(1).
+		Scan(ctx)
+
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil // No cooldown found
+		}
+		return nil, fmt.Errorf("failed to get effect cooldown: %w", err)
+	}
+
+	return userEffect.CooldownEndsAt, nil
+}
+
+// SetEffectCooldown sets or updates the cooldown for a specific user effect
+func (r *effectRepository) SetEffectCooldown(ctx context.Context, userID string, effectID string, cooldownEnd time.Time) error {
+	// First try to update existing record
+	_, err := r.db.NewUpdate().
+		Model((*models.UserEffect)(nil)).
+		Set("cooldown_ends_at = ?", cooldownEnd).
+		Set("updated_at = ?", time.Now()).
+		Where("user_id = ? AND effect_id = ?", userID, effectID).
+		Exec(ctx)
+
+	if err != nil {
+		// If update fails, create new record
+		userEffect := &models.UserEffect{
+			UserID:         userID,
+			EffectID:       effectID,
+			Active:         false,
+			CooldownEndsAt: &cooldownEnd,
+			CreatedAt:      time.Now(),
+			UpdatedAt:      time.Now(),
+		}
+
+		_, err = r.db.NewInsert().
+			Model(userEffect).
+			Exec(ctx)
+
+		if err != nil {
+			return fmt.Errorf("failed to set effect cooldown: %w", err)
+		}
+	}
+
+	return nil
 }

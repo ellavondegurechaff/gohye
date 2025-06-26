@@ -8,30 +8,28 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/disgoorg/bot-template/bottemplate/database"
 	"github.com/disgoorg/bot-template/bottemplate/database/models"
 	"github.com/disgoorg/bot-template/bottemplate/economy"
+	"github.com/disgoorg/bot-template/bottemplate/economy/utils"
+	"github.com/uptrace/bun"
 )
 
-const (
-	// Vial conversion rates based on card rarity
-	VialRate1Star = 0.05 // 5% of card price
-	VialRate2Star = 0.08 // 8% of card price
-	VialRate3Star = 0.12 // 12% of card price
-)
+// Use centralized economic constants from utils package
 
 type VialManager struct {
 	db        *database.DB
 	priceCalc *economy.PriceCalculator
 	mu        sync.RWMutex
+	txManager *utils.EconomicTransactionManager
 }
 
 func NewVialManager(db *database.DB, priceCalc *economy.PriceCalculator) *VialManager {
 	return &VialManager{
 		db:        db,
 		priceCalc: priceCalc,
+		txManager: utils.NewEconomicTransactionManager(db.BunDB()),
 	}
 }
 
@@ -77,11 +75,11 @@ func (vm *VialManager) CalculateVialYield(ctx context.Context, card *models.Card
 	var vialRate float64
 	switch card.Level {
 	case 1:
-		vialRate = VialRate1Star
+		vialRate = utils.VialRate1Star
 	case 2:
-		vialRate = VialRate2Star
+		vialRate = utils.VialRate2Star
 	case 3:
-		vialRate = VialRate3Star
+		vialRate = utils.VialRate3Star
 	default:
 		return 0, fmt.Errorf("invalid card level for liquefying: %d", card.Level)
 	}
@@ -161,111 +159,80 @@ func (vm *VialManager) LiquefyCard(ctx context.Context, userID int64, cardNameOr
 	defer vm.mu.Unlock()
 
 	userIDStr := strconv.FormatInt(userID, 10)
+	var vials int64
 
-	// Start transaction
-	tx, err := vm.db.BunDB().BeginTx(ctx, nil)
-	if err != nil {
-		return 0, err
-	}
-	defer tx.Rollback()
+	err := vm.txManager.WithTransaction(ctx, utils.StandardTransactionOptions(), func(ctx context.Context, tx bun.Tx) error {
+		var card models.Card
 
-	var card models.Card
-
-	// Handle both card ID and card name inputs
-	switch v := cardNameOrID.(type) {
-	case int64:
-		// Existing ID-based logic
-		err = tx.NewSelect().
-			Model(&card).
-			Where("id = ?", v).
-			Scan(ctx)
-	case string:
-		// New name-based search
-		foundCard, err := vm.findCardByName(ctx, v)
-		if err != nil {
-			return 0, err
+		// Handle both card ID and card name inputs
+		switch v := cardNameOrID.(type) {
+		case int64:
+			// Existing ID-based logic
+			err := tx.NewSelect().
+				Model(&card).
+				Where("id = ?", v).
+				Scan(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to get card: %w", err)
+			}
+		case string:
+			// New name-based search
+			foundCard, err := vm.findCardByName(ctx, v)
+			if err != nil {
+				return err
+			}
+			card = *foundCard
+		default:
+			return fmt.Errorf("invalid card identifier type")
 		}
-		card = *foundCard
-	default:
-		return 0, fmt.Errorf("invalid card identifier type")
-	}
 
-	if err != nil {
-		return 0, fmt.Errorf("failed to get card: %w", err)
-	}
+		// Verify card level is valid for liquefying
+		if card.Level > 3 {
+			return fmt.Errorf("cannot liquefy cards above 3 stars")
+		}
 
-	// Verify card level is valid for liquefying
-	if card.Level > 3 {
-		return 0, fmt.Errorf("cannot liquefy cards above 3 stars")
-	}
+		// Calculate vial yield
+		var err error
+		vials, err = vm.CalculateVialYield(ctx, &card)
+		if err != nil {
+			return err
+		}
 
-	// Calculate vial yield
-	vials, err := vm.CalculateVialYield(ctx, &card)
-	if err != nil {
-		return 0, err
-	}
+		// Remove card from inventory using standardized method
+		if err := vm.txManager.RemoveCardFromInventory(ctx, tx, utils.CardOperationOptions{
+			UserID: userIDStr,
+			CardID: card.ID,
+			Amount: 1,
+		}); err != nil {
+			return fmt.Errorf("failed to remove card from inventory: %w", err)
+		}
 
-	// First verify the user owns the card
-	var userCard models.UserCard
-	err = tx.NewSelect().
-		Model(&userCard).
-		Where("user_id = ? AND card_id = ?", userIDStr, card.ID).
-		Scan(ctx)
-	if err != nil {
-		return 0, fmt.Errorf("failed to get user card: %w", err)
-	}
-
-	// Handle card removal based on amount
-	if userCard.Amount <= 1 {
-		// Delete the record if amount is 0 or 1
-		result, err := tx.NewDelete().
-			Model((*models.UserCard)(nil)).
-			Where("user_id = ? AND card_id = ?", userIDStr, card.ID).
+		// Add vials to user's balance using direct JSONB update (preserving existing logic)
+		_, err = tx.NewUpdate().
+			Model((*models.User)(nil)).
+			Set("user_stats = jsonb_set(user_stats, '{vials}', (COALESCE((user_stats->>'vials')::bigint, 0) + ?)::text::jsonb)", vials).
+			Where("discord_id = ?", userIDStr).
 			Exec(ctx)
 		if err != nil {
-			return 0, fmt.Errorf("failed to delete card: %w", err)
+			return fmt.Errorf("failed to add vials: %w", err)
 		}
-		rowsAffected, err := result.RowsAffected()
-		if err != nil || rowsAffected == 0 {
-			return 0, fmt.Errorf("card not found in user's inventory")
-		}
-	} else {
-		// Decrement amount if greater than 1
-		result, err := tx.NewUpdate().
-			Model((*models.UserCard)(nil)).
-			Set("amount = amount - 1").
-			Set("updated_at = ?", time.Now()).
-			Where("user_id = ? AND card_id = ?", userIDStr, card.ID).
+
+		// Update user stats based on card level
+		statField := fmt.Sprintf("liquefy%d", card.Level)
+		_, err = tx.NewUpdate().
+			Model((*models.User)(nil)).
+			Set("user_stats = jsonb_set(user_stats, '{"+statField+"}', (COALESCE((user_stats->'"+statField+"')::bigint, 0) + 1)::text::jsonb)").
+			Where("discord_id = ?", userIDStr).
 			Exec(ctx)
 		if err != nil {
-			return 0, fmt.Errorf("failed to update card amount: %w", err)
+			return fmt.Errorf("failed to update stats: %w", err)
 		}
-		rowsAffected, err := result.RowsAffected()
-		if err != nil || rowsAffected == 0 {
-			return 0, fmt.Errorf("card not found in user's inventory")
-		}
-	}
 
-	// Add vials to user's balance
-	err = vm.AddVials(ctx, userID, vials)
+		return nil
+	})
+
 	if err != nil {
-		return 0, fmt.Errorf("failed to add vials: %w", err)
-	}
-
-	// Update user stats based on card level
-	statField := fmt.Sprintf("liquefy%d", card.Level)
-	_, err = tx.NewUpdate().
-		Model((*models.User)(nil)).
-		Set("user_stats = jsonb_set(user_stats, '{"+statField+"}', (COALESCE((user_stats->'"+statField+"')::bigint, 0) + 1)::text::jsonb)").
-		Where("discord_id = ?", userIDStr).
-		Exec(ctx)
-	if err != nil {
-		return 0, fmt.Errorf("failed to update stats: %w", err)
-	}
-
-	// Commit transaction
-	if err := tx.Commit(); err != nil {
-		return 0, fmt.Errorf("failed to commit transaction: %w", err)
+		return 0, err
 	}
 
 	return vials, nil

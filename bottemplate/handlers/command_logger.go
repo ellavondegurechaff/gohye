@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/disgoorg/bot-template/bottemplate/config"
 	"github.com/disgoorg/disgo/handler"
 )
 
@@ -13,19 +14,26 @@ func WrapWithLogging(name string, h handler.CommandHandler) handler.CommandHandl
 	return func(e *handler.CommandEvent) error {
 		start := time.Now()
 
-		// Log command start
-		slog.Info("Command started",
-			slog.String("type", "cmd"),
-			slog.String("name", name),
-			slog.String("user_id", e.User().ID.String()),
-			slog.String("user_name", e.User().Username),
-			slog.String("guild_id", e.GuildID().String()),
-			slog.String("channel_id", e.ChannelID().String()),
-		)
+		// Log command start only for debug level
+		if slog.Default().Enabled(nil, slog.LevelDebug) {
+			slog.Debug("Command started",
+				slog.String("type", "cmd"),
+				slog.String("name", name),
+				slog.String("user_id", e.User().ID.String()),
+				slog.String("user_name", e.User().Username),
+				slog.String("guild_id", e.GuildID().String()),
+				slog.String("channel_id", e.ChannelID().String()),
+			)
+		}
 
 		// Execute the command with timeout tracking
 		done := make(chan error, 1)
 		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					done <- fmt.Errorf("command panic: %v", r)
+				}
+			}()
 			done <- h(e)
 		}()
 
@@ -34,30 +42,38 @@ func WrapWithLogging(name string, h handler.CommandHandler) handler.CommandHandl
 		case err := <-done:
 			duration := time.Since(start)
 
-			// Log command completion
-			attrs := []any{
-				slog.String("type", "cmd"),
-				slog.String("name", name),
-				slog.String("user_id", e.User().ID.String()),
-				slog.String("user_name", e.User().Username),
-				slog.Duration("took", duration),
-			}
-
+			// Log command completion with optimized level checking
 			if err != nil {
-				slog.Error("Command failed", append(attrs,
+				// Always log errors
+				slog.Error("Command failed",
+					slog.String("type", "cmd"),
+					slog.String("name", name),
+					slog.String("user_id", e.User().ID.String()),
+					slog.String("user_name", e.User().Username),
+					slog.Duration("took", duration),
 					slog.Any("error", err),
 					slog.String("status", "failed"),
-				)...)
-			} else {
-				if duration > 2*time.Second {
-					slog.Warn("Command executed slowly", append(attrs,
-						slog.String("status", "slow"),
-					)...)
-				} else {
-					slog.Info("Command completed", append(attrs,
-						slog.String("status", "success"),
-					)...)
-				}
+				)
+			} else if duration > 2*time.Second {
+				// Always log slow commands
+				slog.Warn("Command executed slowly",
+					slog.String("type", "cmd"),
+					slog.String("name", name),
+					slog.String("user_id", e.User().ID.String()),
+					slog.String("user_name", e.User().Username),
+					slog.Duration("took", duration),
+					slog.String("status", "slow"),
+				)
+			} else if slog.Default().Enabled(nil, slog.LevelDebug) {
+				// Only log successful completions at debug level
+				slog.Debug("Command completed",
+					slog.String("type", "cmd"),
+					slog.String("name", name),
+					slog.String("user_id", e.User().ID.String()),
+					slog.String("user_name", e.User().Username),
+					slog.Duration("took", duration),
+					slog.String("status", "success"),
+				)
 			}
 			return err
 
@@ -68,7 +84,7 @@ func WrapWithLogging(name string, h handler.CommandHandler) handler.CommandHandl
 				slog.String("user_id", e.User().ID.String()),
 				slog.String("user_name", e.User().Username),
 				slog.String("status", "timeout"),
-				slog.Duration("timeout", 10*time.Second),
+				slog.Duration("timeout", config.CommandExecutionTimeout),
 			)
 			return fmt.Errorf("command timed out after 10 seconds")
 		}
@@ -80,15 +96,17 @@ func WrapComponentWithLogging(name string, h handler.ComponentHandler) handler.C
 	return func(e *handler.ComponentEvent) error {
 		start := time.Now()
 
-		// Log component interaction start
-		slog.Info("Component interaction started",
-			slog.String("type", "component"),
-			slog.String("name", name),
-			slog.String("user_id", e.User().ID.String()),
-			slog.String("user_name", e.User().Username),
-			slog.String("guild_id", e.GuildID().String()),
-			slog.String("channel_id", e.ChannelID().String()),
-		)
+		// Log component interaction start only for debug level
+		if slog.Default().Enabled(nil, slog.LevelDebug) {
+			slog.Debug("Component interaction started",
+				slog.String("type", "component"),
+				slog.String("name", name),
+				slog.String("user_id", e.User().ID.String()),
+				slog.String("user_name", e.User().Username),
+				slog.String("guild_id", e.GuildID().String()),
+				slog.String("channel_id", e.ChannelID().String()),
+			)
+		}
 
 		// Execute the component handler with timeout tracking
 		done := make(chan error, 1)
@@ -101,30 +119,38 @@ func WrapComponentWithLogging(name string, h handler.ComponentHandler) handler.C
 		case err := <-done:
 			duration := time.Since(start)
 
-			// Log component completion
-			attrs := []any{
-				slog.String("type", "component"),
-				slog.String("name", name),
-				slog.String("user_id", e.User().ID.String()),
-				slog.String("user_name", e.User().Username),
-				slog.Duration("took", duration),
-			}
-
+			// Log component completion with optimized level checking
 			if err != nil {
-				slog.Error("Component interaction failed", append(attrs,
+				// Always log errors
+				slog.Error("Component interaction failed",
+					slog.String("type", "component"),
+					slog.String("name", name),
+					slog.String("user_id", e.User().ID.String()),
+					slog.String("user_name", e.User().Username),
+					slog.Duration("took", duration),
 					slog.Any("error", err),
 					slog.String("status", "failed"),
-				)...)
-			} else {
-				if duration > 2*time.Second {
-					slog.Warn("Component interaction executed slowly", append(attrs,
-						slog.String("status", "slow"),
-					)...)
-				} else {
-					slog.Info("Component interaction completed", append(attrs,
-						slog.String("status", "success"),
-					)...)
-				}
+				)
+			} else if duration > 2*time.Second {
+				// Always log slow interactions
+				slog.Warn("Component interaction executed slowly",
+					slog.String("type", "component"),
+					slog.String("name", name),
+					slog.String("user_id", e.User().ID.String()),
+					slog.String("user_name", e.User().Username),
+					slog.Duration("took", duration),
+					slog.String("status", "slow"),
+				)
+			} else if slog.Default().Enabled(nil, slog.LevelDebug) {
+				// Only log successful completions at debug level
+				slog.Debug("Component interaction completed",
+					slog.String("type", "component"),
+					slog.String("name", name),
+					slog.String("user_id", e.User().ID.String()),
+					slog.String("user_name", e.User().Username),
+					slog.Duration("took", duration),
+					slog.String("status", "success"),
+				)
 			}
 			return err
 
@@ -135,7 +161,7 @@ func WrapComponentWithLogging(name string, h handler.ComponentHandler) handler.C
 				slog.String("user_id", e.User().ID.String()),
 				slog.String("user_name", e.User().Username),
 				slog.String("status", "timeout"),
-				slog.Duration("timeout", 10*time.Second),
+				slog.Duration("timeout", config.CommandExecutionTimeout),
 			)
 			return fmt.Errorf("component interaction timed out after 10 seconds")
 		}

@@ -63,10 +63,16 @@ type CollectionInfo struct {
 	IsPromo bool
 }
 
-var collectionCache sync.Map
+var (
+	collectionCache sync.Map
+	cacheMutex      sync.RWMutex
+)
 
 // InitializeCollectionInfo caches collection information for efficient searching
 func InitializeCollectionInfo(collections []*models.Collection) {
+	cacheMutex.Lock()
+	defer cacheMutex.Unlock()
+	
 	for _, collection := range collections {
 		collectionCache.Store(collection.ID, CollectionInfo{
 			IsPromo: collection.Promo,
@@ -74,8 +80,43 @@ func InitializeCollectionInfo(collections []*models.Collection) {
 	}
 }
 
+// RefreshCollectionCache updates the collection cache with new data
+func RefreshCollectionCache(collections []*models.Collection) {
+	cacheMutex.Lock()
+	defer cacheMutex.Unlock()
+	
+	// Clear existing cache
+	collectionCache.Range(func(key, value interface{}) bool {
+		collectionCache.Delete(key)
+		return true
+	})
+	
+	// Reload with new data
+	for _, collection := range collections {
+		collectionCache.Store(collection.ID, CollectionInfo{
+			IsPromo: collection.Promo,
+		})
+	}
+}
+
+// GetCollectionCacheSize returns the number of cached collections
+func GetCollectionCacheSize() int {
+	cacheMutex.RLock()
+	defer cacheMutex.RUnlock()
+	
+	count := 0
+	collectionCache.Range(func(key, value interface{}) bool {
+		count++
+		return true
+	})
+	return count
+}
+
 // getCollectionInfo retrieves cached collection information
 func getCollectionInfo(colID string) (CollectionInfo, bool) {
+	cacheMutex.RLock()
+	defer cacheMutex.RUnlock()
+	
 	if info, ok := collectionCache.Load(colID); ok {
 		return info.(CollectionInfo), true
 	}
@@ -267,7 +308,15 @@ func calculateEnhancedWeight(card *models.Card, terms []string) int {
 	cardName := strings.ToLower(card.Name)
 	cardNameNorm := strings.NewReplacer("_", " ", "-", " ").Replace(cardName)
 
-	searchQuery := strings.ToLower(strings.Join(terms, " "))
+	// Use strings.Builder for efficient string concatenation
+	var searchQueryBuilder strings.Builder
+	for i, term := range terms {
+		if i > 0 {
+			searchQueryBuilder.WriteByte(' ')
+		}
+		searchQueryBuilder.WriteString(strings.ToLower(term))
+	}
+	searchQuery := searchQueryBuilder.String()
 
 	if cardNameNorm == searchQuery {
 		return WeightExactMatch

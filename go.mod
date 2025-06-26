@@ -4,7 +4,6 @@ go 1.22
 
 require (
 	github.com/disgoorg/disgo v0.18.7
-	github.com/disgoorg/json v1.1.0
 	github.com/disgoorg/paginator v0.0.0-20240407225836-102024af0cb8
 	github.com/disgoorg/snowflake/v2 v2.0.1
 	github.com/jackc/pgx/v5 v5.7.1
@@ -44,6 +43,7 @@ require (
 )
 
 require (
+	github.com/disgoorg/json v1.1.0 // indirect
 	github.com/gorilla/websocket v1.5.1 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect

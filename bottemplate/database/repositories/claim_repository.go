@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/disgoorg/bot-template/bottemplate/config"
 	"github.com/disgoorg/bot-template/bottemplate/database/models"
 	"github.com/uptrace/bun"
 )
@@ -148,7 +149,7 @@ func (r *claimRepository) GetClaimStats(ctx context.Context, userID string) (*mo
 }
 
 func (r *claimRepository) GetClaimCost(ctx context.Context, userID string) (int64, error) {
-	claimCount, err := r.GetUserClaimsInPeriod(ctx, userID, time.Now().Add(-24*time.Hour))
+	claimCount, err := r.GetUserClaimsInPeriod(ctx, userID, time.Now().Add(-config.DailyPeriod))
 	if err != nil {
 		return 0, fmt.Errorf("failed to get claim count: %w", err)
 	}

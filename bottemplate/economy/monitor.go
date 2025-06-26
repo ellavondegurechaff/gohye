@@ -221,27 +221,38 @@ func (m *EconomyMonitor) applyWealthTax(ctx context.Context) error {
 	return nil
 }
 
-// Helper function to calculate Gini coefficient
+// Helper function to calculate Gini coefficient using optimized O(n log n) algorithm
 func calculateGiniCoefficient(balances []int64) float64 {
 	if len(balances) == 0 {
 		return 0
 	}
 
-	var sumOfDifferences, sumOfBalances float64
-	n := float64(len(balances))
-
-	for i := 0; i < len(balances); i++ {
-		sumOfBalances += float64(balances[i])
-		for j := 0; j < len(balances); j++ {
-			sumOfDifferences += math.Abs(float64(balances[i] - balances[j]))
-		}
+	// Convert to float64 slice for calculations
+	sortedBalances := make([]float64, len(balances))
+	var totalSum float64
+	
+	for i, balance := range balances {
+		sortedBalances[i] = float64(balance)
+		totalSum += float64(balance)
 	}
 
-	if sumOfBalances == 0 {
+	if totalSum == 0 {
 		return 0
 	}
 
-	return sumOfDifferences / (2 * n * sumOfBalances)
+	// Sort balances for O(n log n) algorithm
+	sort.Float64s(sortedBalances)
+
+	n := float64(len(sortedBalances))
+	var numerator float64
+
+	// Optimized calculation: sum of (2*i + 1 - n) * y_i for sorted values
+	for i, balance := range sortedBalances {
+		numerator += (2*float64(i) + 1 - n) * balance
+	}
+
+	// Gini coefficient formula for sorted data
+	return numerator / (n * totalSum)
 }
 
 // RunMonitoringCycle executes a single monitoring cycle and returns any error

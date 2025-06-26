@@ -1,27 +1,24 @@
 package utils
 
-import "time"
+import "github.com/disgoorg/bot-template/bottemplate/config"
 
+// Re-export commonly used constants for backward compatibility
 const (
 	// Pagination
-	CardsPerPage = 7
+	CardsPerPage = config.CardsPerPage
 
 	// Search Related
-	SearchTimeout   = 10 * time.Second
-	CacheExpiration = 5 * time.Minute
+	SearchTimeout   = config.SearchTimeout
+	CacheExpiration = config.CacheExpiration
 
 	// Market Related
-	MarketQueryTimeout = 30 * time.Second
-)
+	MarketQueryTimeout = config.MarketQueryTimeout
 
-// Colors
-const (
-	ErrorColor   = 0xFF0000
-	SuccessColor = 0x00FF00
-)
+	// Colors (deprecated - use config.ErrorColor instead)
+	ErrorColor   = config.ErrorColor
+	SuccessColor = config.SuccessColor
 
-// UI Elements
-const (
-	ActiveMarketStatus   = "🟢 Active"
-	InactiveMarketStatus = "🔴 Inactive"
+	// UI Elements
+	ActiveMarketStatus   = config.ActiveMarketStatus
+	InactiveMarketStatus = config.InactiveMarketStatus
 )

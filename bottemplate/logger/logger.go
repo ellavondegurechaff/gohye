@@ -59,18 +59,22 @@ func (h *CustomHandler) Handle(_ context.Context, r slog.Record) error {
 		return nil
 	}
 
-	timestamp := time.Now().Format("15:04:05.000")
-	logType := getLogType(&r)
+	// Use pre-allocated builder to reduce allocations
+	var builder strings.Builder
+	builder.Grow(256) // Estimate typical log line size
+	
+	builder.WriteString("[")
+	builder.WriteString(time.Now().Format("15:04:05.000"))
+	builder.WriteString("][")
+	builder.WriteString(h.formatLevel(r.Level))
+	builder.WriteString("][")
+	builder.WriteString(string(getLogType(&r)))
+	builder.WriteString("] ")
+	builder.WriteString(h.buildMessage(&r))
+	builder.WriteString(h.buildMetadata(&r))
+	builder.WriteString("\n")
 
-	// Format: [TIME][LEVEL][TYPE] Message {metadata}
-	fmt.Printf("[%s][%s][%s] %s%s\n",
-		timestamp,
-		h.formatLevel(r.Level),
-		logType,
-		h.buildMessage(&r),
-		h.buildMetadata(&r),
-	)
-
+	fmt.Print(builder.String())
 	return nil
 }
 
@@ -113,30 +117,37 @@ func (h *CustomHandler) buildMessage(r *slog.Record) string {
 }
 
 func (h *CustomHandler) buildMetadata(r *slog.Record) string {
-	metadata := make(map[string]string)
+	// Pre-allocate builder with estimated capacity
+	var builder strings.Builder
+	builder.Grow(128) // Estimate typical metadata size
 
-	// Add duration if present
-	if took := time.Since(h.startTime).Milliseconds(); took > 0 {
-		metadata["took"] = fmt.Sprintf("%dms", took)
-	}
+	hasMetadata := false
+	
+	// Duration calculation removed from per-log metadata for performance
+	// Duration tracking should be handled at the operation level instead
 
-	// Add important attributes
+	// Add important attributes with optimized string operations
 	r.Attrs(func(a slog.Attr) bool {
-		if !isInternalAttr(a.Key) && a.Value.String() != "" {
-			metadata[a.Key] = a.Value.String()
+		if !isInternalAttr(a.Key) {
+			valStr := a.Value.String()
+			if valStr != "" {
+				if !hasMetadata {
+					builder.WriteString(" {" + a.Key + "=" + valStr)
+					hasMetadata = true
+				} else {
+					builder.WriteString(", " + a.Key + "=" + valStr)
+				}
+			}
 		}
 		return true
 	})
 
-	if len(metadata) == 0 {
+	if !hasMetadata {
 		return ""
 	}
 
-	parts := make([]string, 0, len(metadata))
-	for k, v := range metadata {
-		parts = append(parts, fmt.Sprintf("%s=%s", k, v))
-	}
-	return fmt.Sprintf(" {%s}", strings.Join(parts, ", "))
+	builder.WriteString("}")
+	return builder.String()
 }
 
 func shouldSkipLog(r *slog.Record) bool {
@@ -252,11 +263,8 @@ func getErrorLocation(r *slog.Record) string {
 		}
 		return true
 	})
-	if location == "" && r.Level == slog.LevelError {
-		if file, line := getSourceLocation(); file != "" {
-			location = fmt.Sprintf("%s:%d", file, line)
-		}
-	}
+	// Source location lookup removed for performance optimization
+	// Error location should be provided explicitly in error context when needed
 	return location
 }
 

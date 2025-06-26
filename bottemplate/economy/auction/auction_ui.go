@@ -7,6 +7,7 @@ import (
 
 	"github.com/disgoorg/bot-template/bottemplate/database/models"
 	"github.com/disgoorg/bot-template/bottemplate/database/repositories"
+	economicUtils "github.com/disgoorg/bot-template/bottemplate/economy/utils"
 	"github.com/disgoorg/disgo/bot"
 	"github.com/disgoorg/disgo/discord"
 )
@@ -57,9 +58,9 @@ func (ui *AuctionUI) CreateAuctionEmbed(auction *models.Auction, card *models.Ca
 
 func (ui *AuctionUI) CreateAuctionComponents(auctionID int64, currentPrice int64) []discord.ContainerComponent {
 	// Calculate bid increments based on current price
-	increment1 := int64(MinBidIncrement)
-	increment2 := int64(MinBidIncrement * 5)
-	increment3 := int64(MinBidIncrement * 10)
+	increment1 := int64(economicUtils.MinBidIncrement)
+	increment2 := int64(economicUtils.MinBidIncrement * 5)
+	increment3 := int64(economicUtils.MinBidIncrement * 10)
 
 	if currentPrice >= 10000 {
 		increment1 *= 10

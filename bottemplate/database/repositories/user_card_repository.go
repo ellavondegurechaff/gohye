@@ -174,32 +174,26 @@ func (r *userCardRepository) CleanupZeroAmountCards(ctx context.Context) error {
 }
 
 func (r *userCardRepository) GetUserCardsByName(ctx context.Context, userID string, cardName string) ([]*models.UserCard, error) {
-	// First get all user's cards
-	var userCards []*models.UserCard
+	// Get all user's cards with card details in a single JOIN query
+	var userCardsWithCards []struct {
+		*models.UserCard
+		Card *models.Card `bun:"rel:belongs-to,join:card_id=id"`
+	}
+	
 	err := r.db.NewSelect().
-		Model(&userCards).
+		Model(&userCardsWithCards).
+		Relation("Card").
 		Where("user_cards.user_id = ? AND user_cards.amount > 0", userID).
 		Scan(ctx)
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to get user cards: %w", err)
+		return nil, fmt.Errorf("failed to get user cards with details: %w", err)
 	}
 
-	// Get all card details
-	var cards []*models.Card
-	err = r.db.NewSelect().
-		Model(&cards).
-		Where("id IN (?)", bun.In(collectCardIDs(userCards))).
-		Scan(ctx)
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to get card details: %w", err)
-	}
-
-	// Create a map of card details
-	cardMap := make(map[int64]*models.Card)
-	for _, card := range cards {
-		cardMap[card.ID] = card
+	// Extract cards for weighted search
+	cards := make([]*models.Card, len(userCardsWithCards))
+	for i, uc := range userCardsWithCards {
+		cards[i] = uc.Card
 	}
 
 	// Use weighted search on the cards
@@ -208,14 +202,17 @@ func (r *userCardRepository) GetUserCardsByName(ctx context.Context, userID stri
 		return nil, nil
 	}
 
+	// Create a map for quick lookup of search results
+	searchMap := make(map[int64]bool)
+	for _, card := range searchResults {
+		searchMap[card.ID] = true
+	}
+
 	// Return the user cards corresponding to the matched cards
 	var matchedUserCards []*models.UserCard
-	for _, card := range searchResults {
-		for _, userCard := range userCards {
-			if userCard.CardID == card.ID {
-				matchedUserCards = append(matchedUserCards, userCard)
-				break
-			}
+	for _, ucWithCard := range userCardsWithCards {
+		if searchMap[ucWithCard.CardID] {
+			matchedUserCards = append(matchedUserCards, ucWithCard.UserCard)
 		}
 	}
 

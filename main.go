@@ -12,7 +12,11 @@ import (
 
 	"github.com/disgoorg/bot-template/bottemplate"
 	"github.com/disgoorg/bot-template/bottemplate/commands"
-	"github.com/disgoorg/bot-template/bottemplate/components"
+	"github.com/disgoorg/bot-template/bottemplate/commands/admin"
+	"github.com/disgoorg/bot-template/bottemplate/commands/cards"
+	economyCommands "github.com/disgoorg/bot-template/bottemplate/commands/economy"
+	"github.com/disgoorg/bot-template/bottemplate/commands/social"
+	"github.com/disgoorg/bot-template/bottemplate/commands/system"
 	"github.com/disgoorg/bot-template/bottemplate/database"
 	"github.com/disgoorg/bot-template/bottemplate/database/repositories"
 	"github.com/disgoorg/bot-template/bottemplate/economy"
@@ -109,7 +113,7 @@ func main() {
 	// Initialize repositories first
 	b.UserRepository = repositories.NewUserRepository(b.DB.BunDB())
 	b.UserCardRepository = repositories.NewUserCardRepository(b.DB.BunDB())
-	b.CardRepository = repositories.NewCardRepository(b.DB.BunDB(), spacesService)
+	b.CardRepository = repositories.NewCardRepository(b.DB.BunDB())
 	b.ClaimRepository = repositories.NewClaimRepository(b.DB.BunDB())
 	b.CollectionRepository = repositories.NewCollectionRepository(b.DB.BunDB())
 	b.EconomyStatsRepository = repositories.NewEconomyStatsRepository(b.DB.BunDB())
@@ -169,27 +173,25 @@ func main() {
 	}
 	initCancel()
 
-	updateCtx, updateCancel := context.WithCancel(context.Background())
-	defer updateCancel()
-
-	go func() {
+	// Start price update process using background process manager
+	b.BackgroundProcessManager.StartProcess("price-updater", "Updates card prices every 6 hours", func(ctx context.Context) {
 		ticker := time.NewTicker(6 * time.Hour)
 		defer ticker.Stop()
 
 		for {
 			select {
 			case <-ticker.C:
-				ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
-				if err := priceCalc.UpdateAllPrices(ctx); err != nil {
+				updateCtx, cancel := context.WithTimeout(ctx, 30*time.Minute)
+				if err := priceCalc.UpdateAllPrices(updateCtx); err != nil {
 					slog.Error("Failed to update prices",
 						slog.String("error", err.Error()))
 				}
 				cancel()
-			case <-updateCtx.Done():
+			case <-ctx.Done():
 				return
 			}
 		}
-	}()
+	})
 
 	if *shouldCalculatePrices {
 		slog.Info("Performing initial price calculation for all cards...")
@@ -207,54 +209,55 @@ func main() {
 	b.PriceCalculator = priceCalc
 
 	b.ClaimManager = claim.NewManager(time.Second * 5)
-	b.ClaimManager.StartCleanupRoutine(context.Background())
+	
+	// Start claim cleanup process using background process manager
+	b.BackgroundProcessManager.StartProcess("claim-cleanup", "Cleans up expired claim sessions", func(ctx context.Context) {
+		b.ClaimManager.StartCleanupRoutine(ctx)
+	})
 
 	h := handler.New()
 
 	// System commands
-	h.Command("/version", commands.VersionHandler(b))
-	h.Command("/test", handlers.WrapWithLogging("test", commands.TestHandler))
-	h.Autocomplete("/test", commands.TestAutocompleteHandler)
-	h.Component("/test-button", components.TestComponent)
+	h.Command("/version", system.VersionHandler(b))
 
 	// Database/Admin commands
-	h.Command("/dbtest", handlers.WrapWithLogging("dbtest", commands.DBTestHandler(b)))
-	h.Command("/deletecard", handlers.WrapWithLogging("deletecard", commands.DeleteCardHandler(b)))
-	h.Command("/init", handlers.WrapWithLogging("init", commands.InitHandler(b)))
+	h.Command("/dbtest", handlers.WrapWithLogging("dbtest", admin.DBTestHandler(b)))
+	h.Command("/deletecard", handlers.WrapWithLogging("deletecard", admin.DeleteCardHandler(b)))
+	h.Command("/init", handlers.WrapWithLogging("init", admin.InitHandler(b)))
 
 	// Card-related commands
-	h.Command("/summon", handlers.WrapWithLogging("summon", commands.SummonHandler(b)))
-	h.Command("/searchcards", handlers.WrapWithLogging("searchcards", commands.SearchCardsHandler(b)))
-	h.Command("/cards", handlers.WrapWithLogging("cards", commands.CardsHandler(b)))
-	h.Command("/price-stats", handlers.WrapWithLogging("price-stats", commands.PriceStatsHandler(b)))
-	h.Component("/details/", handlers.WrapComponentWithLogging("price-details", commands.PriceDetailsHandler(b)))
-	// h.Component("/claim/", handlers.WrapComponentWithLogging("claim", commands.ClaimButtonHandler(b)))
-	h.Command("/metrics", handlers.WrapWithLogging("metrics", commands.MetricsHandler(b)))
-	h.Command("/claim", handlers.WrapWithLogging("claim", commands.NewClaimHandler(b).HandleCommand))
-	h.Command("/fixduplicates", handlers.WrapWithLogging("fixduplicates", commands.FixDuplicatesHandler(b)))
-	h.Command("/levelup", handlers.WrapWithLogging("levelup", commands.LevelUpHandler(b)))
-	h.Command("/analyze-economy", handlers.WrapWithLogging("analyze-economy", commands.AnalyzeEconomyHandler(b)))
-	h.Command("/manage-images", handlers.WrapWithLogging("manage-images", commands.ManageImagesHandler(b)))
-	h.Autocomplete("/manage-images", commands.ManageImagesAutocomplete(b))
+	h.Command("/summon", handlers.WrapWithLogging("summon", cards.SummonHandler(b)))
+	h.Command("/searchcards", handlers.WrapWithLogging("searchcards", cards.SearchCardsHandler(b)))
+	h.Command("/cards", handlers.WrapWithLogging("cards", cards.CardsHandler(b)))
+	h.Command("/price-stats", handlers.WrapWithLogging("price-stats", economyCommands.PriceStatsHandler(b)))
+	h.Component("/details/", handlers.WrapComponentWithLogging("price-details", economyCommands.PriceDetailsHandler(b)))
+	// h.Component("/claim/", handlers.WrapComponentWithLogging("claim", cards.ClaimButtonHandler(b)))
+	h.Command("/metrics", handlers.WrapWithLogging("metrics", system.MetricsHandler(b)))
+	h.Command("/claim", handlers.WrapWithLogging("claim", cards.NewClaimHandler(b).HandleCommand))
+	h.Command("/fixduplicates", handlers.WrapWithLogging("fixduplicates", admin.FixDuplicatesHandler(b)))
+	h.Command("/levelup", handlers.WrapWithLogging("levelup", cards.LevelUpHandler(b)))
+	h.Command("/analyze-economy", handlers.WrapWithLogging("analyze-economy", admin.AnalyzeEconomyHandler(b)))
+	h.Command("/manage-images", handlers.WrapWithLogging("manage-images", admin.ManageImagesHandler(b)))
+	h.Autocomplete("/manage-images", admin.ManageImagesAutocomplete(b))
 
 	// User-Related Commands
-	h.Command("/balance", handlers.WrapWithLogging("balance", commands.BalanceHandler(b)))
-	h.Command("/daily", handlers.WrapWithLogging("daily", commands.DailyHandler(b)))
-	h.Command("/wish", handlers.WrapWithLogging("wish", commands.WishHandler(b)))
-	h.Command("/has", handlers.WrapWithLogging("has", commands.HasHandler(b)))
-	h.Command("/miss", handlers.WrapWithLogging("miss", commands.MissHandler(b)))
-	h.Command("/diff", handlers.WrapWithLogging("diff", commands.DiffHandler(b)))
+	h.Command("/balance", handlers.WrapWithLogging("balance", economyCommands.BalanceHandler(b)))
+	h.Command("/daily", handlers.WrapWithLogging("daily", economyCommands.DailyHandler(b)))
+	h.Command("/wish", handlers.WrapWithLogging("wish", social.WishHandler(b)))
+	h.Command("/has", handlers.WrapWithLogging("has", social.HasHandler(b)))
+	h.Command("/miss", handlers.WrapWithLogging("miss", social.MissHandler(b)))
+	h.Command("/diff", handlers.WrapWithLogging("diff", social.DiffHandler(b)))
 
 	// Vial Related Commands
-	h.Command("/liquefy", handlers.WrapWithLogging("liquefy", commands.NewLiquefyHandler(b).HandleLiquefy))
-	h.Component("/liquefy/", handlers.WrapComponentWithLogging("liquefy", commands.NewLiquefyHandler(b).HandleComponent))
+	h.Command("/liquefy", handlers.WrapWithLogging("liquefy", economyCommands.NewLiquefyHandler(b).HandleLiquefy))
+	h.Component("/liquefy/", handlers.WrapComponentWithLogging("liquefy", economyCommands.NewLiquefyHandler(b).HandleComponent))
 
 	// Forge Related Commands
-	h.Command("/forge", handlers.WrapWithLogging("forge", commands.NewForgeHandler(b).HandleForge))
-	h.Component("/forge/", handlers.WrapComponentWithLogging("forge", commands.NewForgeHandler(b).HandleComponent))
+	h.Command("/forge", handlers.WrapWithLogging("forge", cards.NewForgeHandler(b).HandleForge))
+	h.Component("/forge/", handlers.WrapComponentWithLogging("forge", cards.NewForgeHandler(b).HandleComponent))
 
 	// Work Related Commands
-	workHandler := commands.NewWorkHandler(b)
+	workHandler := economyCommands.NewWorkHandler(b)
 	h.Command("/work", handlers.WrapWithLogging("work", workHandler.HandleWork))
 	h.Component("/work/", handlers.WrapComponentWithLogging("work", workHandler.HandleComponent))
 
@@ -265,36 +268,40 @@ func main() {
 	)
 
 	// Shop commands
-	shopHandler := commands.NewShopHandler(b, effectManager)
+	shopHandler := economyCommands.NewShopHandler(b, effectManager)
 	h.Command("/shop", handlers.WrapWithLogging("shop", shopHandler.Handle))
 	h.Component("/shop_category", handlers.WrapComponentWithLogging("shop_category", shopHandler.HandleComponent))
 	h.Component("/shop_item", handlers.WrapComponentWithLogging("shop_item", shopHandler.HandleComponent))
 	h.Component("/shop_buy/", handlers.WrapComponentWithLogging("shop_buy", shopHandler.HandleComponent))
 
 	// Inventory commands
-	inventoryHandler := commands.NewInventoryHandler(b, effectManager)
+	inventoryHandler := system.NewInventoryHandler(b, effectManager)
 	h.Command("/inventory", handlers.WrapWithLogging("inventory", inventoryHandler.Handle))
 	h.Component("/inventory_category", handlers.WrapComponentWithLogging("inventory_category", inventoryHandler.HandleComponent))
 	h.Component("/inventory_item", handlers.WrapComponentWithLogging("inventory_item", inventoryHandler.HandleComponent))
 
+	// Use Effect commands
+	useEffectHandler := system.NewUseEffectHandler(b, effectManager)
+	h.Command("/use-effect", handlers.WrapWithLogging("use-effect", useEffectHandler.Handle))
+
 	// Claim commands
-	claimHandler := commands.NewClaimHandler(b)
+	claimHandler := cards.NewClaimHandler(b)
 	h.Command("/claim", handlers.WrapWithLogging("claim", claimHandler.HandleCommand))
 	h.Component("/claim/next/", handlers.WrapComponentWithLogging("claim", claimHandler.HandleComponent))
 	h.Component("/claim/prev/", handlers.WrapComponentWithLogging("claim", claimHandler.HandleComponent))
 
 	// Add this with the other component handlers
-	h.Component("/cards/", handlers.WrapComponentWithLogging("cards", commands.CardsComponentHandler(b)))
-	h.Component("/miss/", handlers.WrapComponentWithLogging("miss", commands.MissComponentHandler(b)))
-	h.Component("/diff/", handlers.WrapComponentWithLogging("diff", commands.DiffComponentHandler(b)))
+	h.Component("/cards/", handlers.WrapComponentWithLogging("cards", cards.CardsComponentHandler(b)))
+	h.Component("/miss/", handlers.WrapComponentWithLogging("miss", social.MissComponentHandler(b)))
+	h.Component("/diff/", handlers.WrapComponentWithLogging("diff", social.DiffComponentHandler(b)))
 
 	// Limited Commands
-	h.Command("/limitedcards", handlers.WrapWithLogging("limitedcards", commands.LimitedCardsHandler(b)))
-	h.Command("/limitedstats", handlers.WrapWithLogging("limitedstats", commands.LimitedStatsHandler(b)))
+	h.Command("/limitedcards", handlers.WrapWithLogging("limitedcards", cards.LimitedCardsHandler(b)))
+	h.Command("/limitedstats", handlers.WrapWithLogging("limitedstats", cards.LimitedStatsHandler(b)))
 
 	// Add this line with the other component handlers
-	h.Component("/limitedstats/", handlers.WrapComponentWithLogging("limitedstats", commands.LimitedStatsComponentHandler(b)))
-	h.Component("/limitedcards/", handlers.WrapComponentWithLogging("limitedcards", commands.LimitedCardsComponentHandler(b)))
+	h.Component("/limitedstats/", handlers.WrapComponentWithLogging("limitedstats", cards.LimitedStatsComponentHandler(b)))
+	h.Component("/limitedcards/", handlers.WrapComponentWithLogging("limitedcards", cards.LimitedCardsComponentHandler(b)))
 
 	if err = b.SetupBot(h, bot.NewListenerFunc(b.OnReady), handlers.MessageHandler(b)); err != nil {
 		slog.Error("Failed to setup bot",
@@ -319,13 +326,17 @@ func main() {
 	b.AuctionManager = auctionManager
 
 	// Initialize auction handler with the manager
-	auctionHandler := commands.NewAuctionHandler(auctionManager, b.Client, b.CardRepository)
+	auctionHandler := economyCommands.NewAuctionHandler(auctionManager, b.Client, b.CardRepository)
 	auctionHandler.Register(h)
 
 	defer func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
-		b.Client.Close(ctx)
+		
+		// Gracefully shutdown the bot and all background processes
+		if err := b.Shutdown(ctx); err != nil {
+			slog.Error("Error during bot shutdown", slog.Any("error", err))
+		}
 	}()
 
 	if *shouldSyncCommands {
@@ -358,8 +369,13 @@ func main() {
 	}
 
 	slog.Info("Bot is running. Press CTRL-C to exit.")
-	s := make(chan os.Signal, 1)
-	signal.Notify(s, syscall.SIGINT, syscall.SIGTERM)
-	<-s
-	slog.Info("Shutting down bot...")
+	
+	// Setup signal handling for graceful shutdown
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	
+	// Wait for shutdown signal
+	sig := <-sigChan
+	slog.Info("Received shutdown signal, initiating graceful shutdown...",
+		slog.String("signal", sig.String()))
 }

@@ -44,7 +44,7 @@ func (m *Migrator) MigrateCardsFromJSON(ctx context.Context) error {
 
 	// Initialize repositories
 	collectionRepo := repositories.NewCollectionRepository(m.pgDB)
-	cardRepo := repositories.NewCardRepository(m.pgDB, nil)
+	cardRepo := repositories.NewCardRepository(m.pgDB)
 
 	// Read and process collections
 	var jsonCollections []JSONCollection

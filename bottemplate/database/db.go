@@ -241,6 +241,8 @@ func (db *DB) InitializeSchema(ctx context.Context) error {
 		(*models.Wishlist)(nil),
 		(*models.UserInventory)(nil),
 		(*models.UserRecipe)(nil),
+		(*models.Auction)(nil),
+		(*models.AuctionBid)(nil),
 	}
 
 	// Create tables using Bun
@@ -268,6 +270,12 @@ func (db *DB) InitializeSchema(ctx context.Context) error {
 		"CREATE INDEX IF NOT EXISTS idx_economy_stats_economic_health ON economy_stats(economic_health);",
 		"CREATE INDEX IF NOT EXISTS idx_claim_stats_user_id ON claim_stats(user_id);",
 		"CREATE INDEX IF NOT EXISTS idx_claim_stats_last_claim ON claim_stats(last_claim_at);",
+		// Critical performance indexes
+		"CREATE INDEX IF NOT EXISTS idx_user_cards_user_id_amount ON user_cards(user_id) WHERE amount > 0;",
+		"CREATE INDEX IF NOT EXISTS idx_user_cards_compound_search ON user_cards(user_id, card_id, amount) WHERE amount > 0;",
+		"CREATE INDEX IF NOT EXISTS idx_auctions_status_end_time ON auctions(status, end_time);",
+		"CREATE INDEX IF NOT EXISTS idx_auctions_active ON auctions(end_time) WHERE status = 'active';",
+		"CREATE INDEX IF NOT EXISTS idx_claims_user_claimed ON claims(user_id, claimed_at);",
 	}
 
 	for _, idx := range indexes {

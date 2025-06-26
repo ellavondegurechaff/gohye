@@ -67,17 +67,6 @@ func GetStarsDisplay(level int) string {
 	return fmt.Sprintf("`%s`", strings.Repeat("★", level))
 }
 
-// formatTags optimizes group type formatting
-func formatTags(groupType string) string {
-	switch groupType {
-	case "girlgroups":
-		return "👯‍♀️ Girl Group"
-	case "boygroups":
-		return "👯‍♂️ Boy Group"
-	default:
-		return "👤 Solo Artist"
-	}
-}
 
 // SpacesConfig holds the configuration for DigitalOcean Spaces
 type SpacesConfig struct {

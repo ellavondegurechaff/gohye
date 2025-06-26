@@ -24,8 +24,8 @@ func NewManager(repo repositories.EffectRepository, userRepo repositories.UserRe
 
 // PurchaseEffect handles the purchase of an effect item
 func (m *Manager) PurchaseEffect(ctx context.Context, userID string, effectID string) error {
-	// Get effect item
-	item, err := m.repo.GetEffectItem(ctx, effectID)
+	// Get effect item from static data
+	item, err := m.GetEffectItem(ctx, effectID)
 	if err != nil {
 		return fmt.Errorf("effect not found: %w", err)
 	}
@@ -98,11 +98,12 @@ func (m *Manager) ActivateEffect(ctx context.Context, userID string, effectID st
 	}
 
 	// Create user effect
+	expiresAt := time.Now().Add(time.Duration(effect.Duration) * time.Hour)
 	userEffect := &models.UserEffect{
 		UserID:    userID,
 		EffectID:  effectID,
 		Active:    true,
-		ExpiresAt: time.Now().Add(time.Duration(effect.Duration) * time.Hour),
+		ExpiresAt: &expiresAt,
 	}
 
 	// Add effect and remove from inventory
@@ -117,14 +118,22 @@ func (m *Manager) ActivateEffect(ctx context.Context, userID string, effectID st
 	return nil
 }
 
-// ListEffectItems returns all available effect items
+// ListEffectItems returns all available effect items from static data
 func (m *Manager) ListEffectItems(ctx context.Context) ([]*models.EffectItem, error) {
-	return m.repo.ListEffectItems(ctx)
+	var items []*models.EffectItem
+	for i := range StaticEffectItems {
+		items = append(items, StaticEffectItems[i].ToEffectItem())
+	}
+	return items, nil
 }
 
-// GetEffectItem returns a specific effect item by ID
+// GetEffectItem returns a specific effect item by ID from static data
 func (m *Manager) GetEffectItem(ctx context.Context, effectID string) (*models.EffectItem, error) {
-	return m.repo.GetEffectItem(ctx, effectID)
+	staticItem := GetEffectItemByID(effectID)
+	if staticItem == nil {
+		return nil, fmt.Errorf("effect item not found: %s", effectID)
+	}
+	return staticItem.ToEffectItem(), nil
 }
 
 // ListUserEffects returns all effects in user's inventory with their details
@@ -194,8 +203,8 @@ func (m *Manager) GetRandomCardForRecipe(ctx context.Context, userID string, sta
 
 // StoreRecipeForUser stores the specific recipe cards for a user's effect item
 func (m *Manager) StoreRecipeForUser(ctx context.Context, userID string, effectID string) error {
-	// Get effect item
-	item, err := m.repo.GetEffectItem(ctx, effectID)
+	// Get effect item from static data
+	item, err := m.GetEffectItem(ctx, effectID)
 	if err != nil {
 		return fmt.Errorf("effect not found: %w", err)
 	}
@@ -219,4 +228,137 @@ func (m *Manager) StoreRecipeForUser(ctx context.Context, userID string, effectI
 	}
 
 	return nil
+}
+
+// UseActiveEffect uses an active effect from inventory
+func (m *Manager) UseActiveEffect(ctx context.Context, userID string, effectID string, args string) (string, error) {
+	// Check if user has the effect in inventory
+	inventory, err := m.repo.GetInventory(ctx, userID)
+	if err != nil {
+		return "", fmt.Errorf("failed to get inventory: %w", err)
+	}
+
+	hasEffect := false
+	for _, item := range inventory {
+		if item.ItemID == effectID && item.Amount > 0 {
+			hasEffect = true
+			break
+		}
+	}
+
+	if !hasEffect {
+		return "", fmt.Errorf("effect not found in inventory")
+	}
+
+	// Get effect details
+	effect, err := m.repo.GetEffectItem(ctx, effectID)
+	if err != nil {
+		return "", fmt.Errorf("effect not found: %w", err)
+	}
+
+	// Check cooldown
+	if effect.Cooldown > 0 {
+		cooldownEnds, err := m.GetEffectCooldown(ctx, userID, effectID)
+		if err == nil && cooldownEnds != nil && time.Now().Before(*cooldownEnds) {
+			remaining := time.Until(*cooldownEnds)
+			return "", fmt.Errorf("effect is on cooldown for %v", remaining.Round(time.Minute))
+		}
+	}
+
+	// Execute effect based on type
+	result, used, err := m.executeActiveEffect(ctx, userID, effectID, args)
+	if err != nil {
+		return "", err
+	}
+
+	if !used {
+		return result, nil
+	}
+
+	// Remove from inventory
+	if err := m.repo.RemoveFromInventory(ctx, userID, effectID, 1); err != nil {
+		return "", fmt.Errorf("failed to remove from inventory: %w", err)
+	}
+
+	// Set cooldown if effect was used
+	if effect.Cooldown > 0 {
+		cooldownEnd := time.Now().Add(time.Duration(effect.Cooldown) * time.Hour)
+		if err := m.SetEffectCooldown(ctx, userID, effectID, cooldownEnd); err != nil {
+			// Log error but don't fail the whole operation
+			fmt.Printf("Warning: failed to set cooldown: %v\n", err)
+		}
+	}
+
+	return result, nil
+}
+
+// executeActiveEffect executes specific active effect logic
+func (m *Manager) executeActiveEffect(ctx context.Context, userID string, effectID string, args string) (string, bool, error) {
+	switch effectID {
+	case "claimrecall":
+		return m.executeClaimRecall(ctx, userID)
+	case "spaceunity":
+		return m.executeSpaceUnity(ctx, userID, args)
+	case "judgeday":
+		return m.executeJudgeDay(ctx, userID, args)
+	default:
+		return fmt.Sprintf("Active effect %s not implemented yet", effectID), false, nil
+	}
+}
+
+// executeClaimRecall implements the claim recall effect
+func (m *Manager) executeClaimRecall(ctx context.Context, userID string) (string, bool, error) {
+	// Get user
+	user, err := m.userRepo.GetByDiscordID(ctx, userID)
+	if err != nil {
+		return "", false, fmt.Errorf("user not found: %w", err)
+	}
+
+	// Check if user has claimed more than 4 cards
+	if user.DailyStats.Claims < 5 {
+		return "you can only use Claim Recall when you have claimed more than 4 cards!", false, nil
+	}
+
+	// Reduce claim count by 4
+	user.DailyStats.Claims -= 4
+
+	// Update user
+	if err := m.userRepo.Update(ctx, user); err != nil {
+		return "", false, fmt.Errorf("failed to update user: %w", err)
+	}
+
+	newCost := user.DailyStats.Claims * 50
+	return fmt.Sprintf("claim cost has been reset to **%d**", newCost), true, nil
+}
+
+// executeSpaceUnity implements the space unity effect (placeholder)
+func (m *Manager) executeSpaceUnity(ctx context.Context, userID string, args string) (string, bool, error) {
+	if args == "" {
+		return "please specify collection in arguments", false, nil
+	}
+	
+	// TODO: Implement full space unity logic
+	// This would require collection lookup and card granting logic
+	return "Space Unity effect used (implementation pending)", true, nil
+}
+
+// executeJudgeDay implements the judge day effect (placeholder)
+func (m *Manager) executeJudgeDay(ctx context.Context, userID string, args string) (string, bool, error) {
+	if args == "" {
+		return "please specify effect ID in arguments", false, nil
+	}
+	
+	// TODO: Implement full judge day logic
+	// This would require calling other effects
+	return "Judge Day effect used (implementation pending)", true, nil
+}
+
+// GetEffectCooldown gets the cooldown end time for an effect
+func (m *Manager) GetEffectCooldown(ctx context.Context, userID string, effectID string) (*time.Time, error) {
+	return m.repo.GetEffectCooldown(ctx, userID, effectID)
+}
+
+// SetEffectCooldown sets the cooldown end time for an effect
+func (m *Manager) SetEffectCooldown(ctx context.Context, userID string, effectID string, cooldownEnd time.Time) error {
+	return m.repo.SetEffectCooldown(ctx, userID, effectID, cooldownEnd)
 }
