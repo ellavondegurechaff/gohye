@@ -225,6 +225,11 @@ func (db *DB) Close() {
 
 // InitializeSchema creates all required database tables and indexes
 func (db *DB) InitializeSchema(ctx context.Context) error {
+	// First, ensure the database is using UTF-8 encoding
+	if err := db.ensureUTF8Encoding(ctx); err != nil {
+		return fmt.Errorf("failed to ensure UTF-8 encoding: %w", err)
+	}
+
 	// Create tables in the correct order to handle foreign key constraints
 	tables := []interface{}{
 		(*models.Collection)(nil),
@@ -243,6 +248,7 @@ func (db *DB) InitializeSchema(ctx context.Context) error {
 		(*models.UserRecipe)(nil),
 		(*models.Auction)(nil),
 		(*models.AuctionBid)(nil),
+		(*models.CardMarketHistory)(nil),
 	}
 
 	// Create tables using Bun
@@ -257,7 +263,12 @@ func (db *DB) InitializeSchema(ctx context.Context) error {
 		}
 	}
 
-	// Create indexes
+	// Apply schema migrations for existing tables FIRST
+	if err := db.MigrateSchema(ctx); err != nil {
+		return fmt.Errorf("failed to migrate schema: %w", err)
+	}
+
+	// Create indexes AFTER schema migrations
 	indexes := []string{
 		"CREATE INDEX IF NOT EXISTS idx_cards_col_id ON cards(col_id);",
 		"CREATE INDEX IF NOT EXISTS idx_cards_name ON cards(name);",
@@ -276,17 +287,17 @@ func (db *DB) InitializeSchema(ctx context.Context) error {
 		"CREATE INDEX IF NOT EXISTS idx_auctions_status_end_time ON auctions(status, end_time);",
 		"CREATE INDEX IF NOT EXISTS idx_auctions_active ON auctions(end_time) WHERE status = 'active';",
 		"CREATE INDEX IF NOT EXISTS idx_claims_user_claimed ON claims(user_id, claimed_at);",
+		// Effect system indexes (created after columns are added)
+		"CREATE INDEX IF NOT EXISTS idx_user_effects_user_id ON user_effects(user_id);",
+		"CREATE INDEX IF NOT EXISTS idx_user_effects_active ON user_effects(user_id, active);",
+		"CREATE INDEX IF NOT EXISTS idx_user_effects_expires ON user_effects(expires_at) WHERE expires_at IS NOT NULL;",
+		"CREATE INDEX IF NOT EXISTS idx_user_recipes_user_id ON user_recipes(user_id);",
 	}
 
 	for _, idx := range indexes {
 		if _, err := db.ExecWithLog(ctx, idx); err != nil {
 			return fmt.Errorf("failed to create index: %w", err)
 		}
-	}
-
-	// Apply schema migrations for existing tables
-	if err := db.MigrateSchema(ctx); err != nil {
-		return fmt.Errorf("failed to migrate schema: %w", err)
 	}
 
 	return nil
@@ -302,6 +313,25 @@ func (db *DB) MigrateSchema(ctx context.Context) error {
 	
 	if _, err := db.ExecWithLog(ctx, fragmentsColumnSQL); err != nil {
 		return fmt.Errorf("failed to add fragments column: %w", err)
+	}
+
+	// Add missing columns to user_effects table if they don't exist
+	userEffectsColumnsSQL := []string{
+		`ALTER TABLE user_effects ADD COLUMN IF NOT EXISTS is_recipe BOOLEAN NOT NULL DEFAULT false;`,
+		`ALTER TABLE user_effects ADD COLUMN IF NOT EXISTS recipe_cards JSONB;`,
+		`ALTER TABLE user_effects ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT false;`,
+		`ALTER TABLE user_effects ADD COLUMN IF NOT EXISTS uses INTEGER NOT NULL DEFAULT 0;`,
+		`ALTER TABLE user_effects ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP;`,
+		`ALTER TABLE user_effects ADD COLUMN IF NOT EXISTS cooldown_ends_at TIMESTAMP;`,
+		`ALTER TABLE user_effects ADD COLUMN IF NOT EXISTS notified BOOLEAN NOT NULL DEFAULT true;`,
+		`ALTER TABLE user_effects ADD COLUMN IF NOT EXISTS created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP;`,
+		`ALTER TABLE user_effects ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP;`,
+	}
+	
+	for _, sql := range userEffectsColumnsSQL {
+		if _, err := db.ExecWithLog(ctx, sql); err != nil {
+			return fmt.Errorf("failed to add user_effects column: %w", err)
+		}
 	}
 
 	// Fix JSONB fields in users table that might be stored as strings
@@ -375,5 +405,33 @@ func (db *DB) Ping(ctx context.Context) error {
 		return fmt.Errorf("bun ping failed: %w", err)
 	}
 
+	return nil
+}
+
+// ensureUTF8Encoding checks and ensures the database is using UTF-8 encoding
+func (db *DB) ensureUTF8Encoding(ctx context.Context) error {
+	// Check current database encoding
+	var encoding string
+	err := db.pool.QueryRow(ctx, "SHOW server_encoding;").Scan(&encoding)
+	if err != nil {
+		return fmt.Errorf("failed to check database encoding: %w", err)
+	}
+	
+	slog.Info("Database encoding", "encoding", encoding)
+	
+	// If not UTF-8, log a warning but continue (changing encoding requires superuser)
+	if encoding != "UTF8" {
+		slog.Warn("Database is not using UTF-8 encoding, this may cause character encoding issues", 
+			"current_encoding", encoding, 
+			"recommended", "UTF8")
+	}
+	
+	// Set client encoding to UTF-8 for this session
+	_, err = db.pool.Exec(ctx, "SET client_encoding TO 'UTF8';")
+	if err != nil {
+		return fmt.Errorf("failed to set client encoding to UTF-8: %w", err)
+	}
+	
+	slog.Info("Client encoding set to UTF-8")
 	return nil
 }

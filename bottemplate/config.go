@@ -26,6 +26,7 @@ type Config struct {
 	Log    LogConfig `toml:"log"`
 	Bot    BotConfig `toml:"bot"`
 	DB     DBConfig  `toml:"db"`
+	Web    WebConfig `toml:"web"`
 	Spaces struct {
 		Key      string `toml:"key"`
 		Secret   string `toml:"secret"`
@@ -53,4 +54,28 @@ type DBConfig struct {
 	Password string `toml:"password"`
 	Database string `toml:"database"`
 	PoolSize int    `toml:"pool_size"`
+}
+
+type WebConfig struct {
+	Host         string `toml:"host"`
+	Port         int    `toml:"port"`
+	OAuth        OAuthConfig `toml:"oauth"`
+	SessionKey   string `toml:"session_key"`
+	AdminUsers   []string `toml:"admin_users"`   // Discord user IDs with admin access
+	AdminRoles   []string `toml:"admin_roles"`   // Discord role IDs with admin access
+	AdminGuildID string   `toml:"admin_guild_id"` // Guild to check roles in
+	RateLimit    RateLimitConfig `toml:"rate_limit"`
+}
+
+type OAuthConfig struct {
+	ClientID     string   `toml:"client_id"`
+	ClientSecret string   `toml:"client_secret"`
+	RedirectURL  string   `toml:"redirect_url"`
+	Scopes       []string `toml:"scopes"`
+}
+
+type RateLimitConfig struct {
+	Enabled bool `toml:"enabled"`
+	Requests int `toml:"requests"`
+	Window   int `toml:"window"`
 }

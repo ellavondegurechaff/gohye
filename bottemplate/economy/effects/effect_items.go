@@ -229,10 +229,13 @@ func GetActiveEffectItems() []EffectItemData {
 // ToEffectItem converts EffectItemData to models.EffectItem
 func (e *EffectItemData) ToEffectItem() *models.EffectItem {
 	effectType := e.Type
-	if e.Passive {
-		effectType = models.EffectTypePassive
-	} else {
-		effectType = models.EffectTypeActive
+	// Convert recipe type to appropriate active/passive type for shop display
+	if e.Type == models.EffectTypeRecipe {
+		if e.Passive {
+			effectType = models.EffectTypePassive
+		} else {
+			effectType = models.EffectTypeActive
+		}
 	}
 
 	return &models.EffectItem{

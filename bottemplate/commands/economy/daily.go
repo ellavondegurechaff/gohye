@@ -45,8 +45,9 @@ func DailyHandler(b *bottemplate.Bot) handler.CommandHandler {
 		// Calculate reward (consider streaks, bonuses, etc.)
 		baseReward := int64(1000) // Basic reward
 		
-		// Apply passive effects
-		reward := int64(b.EffectIntegrator.ApplyDailyEffects(ctx, e.User().ID.String(), int(baseReward)))
+		// Apply passive effects with feedback
+		effectResult := b.EffectIntegrator.ApplyDailyEffectsWithFeedback(ctx, e.User().ID.String(), int(baseReward))
+		reward := int64(effectResult.GetValue().(int))
 
 		// Update balance and last daily in a transaction
 		tx, err := b.DB.BunDB().BeginTx(ctx, nil)
@@ -95,12 +96,26 @@ func DailyHandler(b *bottemplate.Bot) handler.CommandHandler {
 			return utils.EH.CreateErrorEmbed(e, "Failed to claim daily reward. Please try again later.")
 		}
 
+		// Build description with effect feedback
+		description := fmt.Sprintf("You have claimed your daily reward of **%d** credits!", reward)
+		
+		// Add effect feedback if any effects were applied
+		if effectResult.HasEffects() {
+			effectMessages := effectResult.FormatEffectMessages()
+			if len(effectMessages) > 0 {
+				description += "\n\n**Effects Applied:**"
+				for _, msg := range effectMessages {
+					description += "\n" + msg
+				}
+			}
+		}
+
 		// Send success message
 		return e.CreateMessage(discord.MessageCreate{
 			Embeds: []discord.Embed{
 				{
 					Title:       "Daily Reward Claimed!",
-					Description: fmt.Sprintf("You have claimed your daily reward of %d credits!", reward),
+					Description: description,
 					Color:       utils.SuccessColor,
 				},
 			},

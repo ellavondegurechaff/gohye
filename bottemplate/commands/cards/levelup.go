@@ -25,17 +25,15 @@ var LevelUp = discord.SlashCommandCreate{
 	Name:        "levelup",
 	Description: "Level up or combine your cards",
 	Options: []discord.ApplicationCommandOption{
-		&discord.ApplicationCommandOptionInt{
-			Name:        "card_id",
-			Description: "The ID of the card to level up",
+		&discord.ApplicationCommandOptionString{
+			Name:        "card_name",
+			Description: "The name or ID of the card to level up",
 			Required:    true,
-			MinValue:    intPtr(1),
 		},
-		&discord.ApplicationCommandOptionInt{
+		&discord.ApplicationCommandOptionString{
 			Name:        "combine_with",
-			Description: "Optional: ID of another card to combine with",
+			Description: "Optional: Name or ID of another card to combine with",
 			Required:    false,
-			MinValue:    intPtr(1),
 		},
 	},
 }
@@ -62,14 +60,19 @@ func (c *LevelUpCommand) Handle(event *handler.CommandEvent) error {
 		return fmt.Errorf("failed to defer response: %w", err)
 	}
 
-	cardID := event.SlashCommandInteractionData().Int("card_id")
-	userCard, err := c.cardRepo.GetUserCard(ctx, event.User().ID.String(), int64(cardID))
+	cardQuery := event.SlashCommandInteractionData().String("card_name")
+	card, err := c.cardRepo.GetByQuery(ctx, cardQuery)
 	if err != nil {
-		return createErrorEmbed(event, "Card Not Found", "Could not find the specified card. Please check the card ID.")
+		return createErrorEmbed(event, "Card Not Found", fmt.Sprintf("Could not find a card matching '%s'. Please check the card name or ID.", cardQuery))
 	}
 
-	if combineWith := event.SlashCommandInteractionData().Int("combine_with"); combineWith != 0 {
-		return c.handleCombine(event, userCard, int64(combineWith))
+	userCard, err := c.cardRepo.GetUserCard(ctx, event.User().ID.String(), card.ID)
+	if err != nil {
+		return createErrorEmbed(event, "Card Not Owned", fmt.Sprintf("You don't own the card '%s'. Please check your collection.", card.Name))
+	}
+
+	if combineWith := event.SlashCommandInteractionData().String("combine_with"); combineWith != "" {
+		return c.handleCombine(event, userCard, combineWith)
 	}
 
 	result, err := c.levelingService.GainExp(ctx, userCard)
@@ -84,16 +87,16 @@ func (c *LevelUpCommand) Handle(event *handler.CommandEvent) error {
 	go c.bot.CompletionChecker.CheckCompletionForCards(context.Background(), event.User().ID.String(), []int64{userCard.CardID})
 
 	// Get card details for name display
-	card, err := c.cardRepo.GetByID(ctx, userCard.CardID)
+	cardDetails, err := c.cardRepo.GetByID(ctx, userCard.CardID)
 	if err != nil {
 		return createErrorEmbed(event, "Error", "Failed to fetch card details")
 	}
 
 	cardInfo := utils.GetCardDisplayInfo(
-		card.Name,
-		card.ColID,
+		cardDetails.Name,
+		cardDetails.ColID,
 		result.NewLevel,
-		utils.GetGroupType(card.Tags),
+		utils.GetGroupType(cardDetails.Tags),
 		utils.SpacesConfig{
 			Bucket:   c.bot.SpacesService.GetBucket(),
 			Region:   c.bot.SpacesService.GetRegion(),
@@ -146,16 +149,21 @@ func (c *LevelUpCommand) Handle(event *handler.CommandEvent) error {
 	return err
 }
 
-func (c *LevelUpCommand) handleCombine(event *handler.CommandEvent, mainCard *models.UserCard, fodderCardID int64) error {
+func (c *LevelUpCommand) handleCombine(event *handler.CommandEvent, mainCard *models.UserCard, fodderCardQuery string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	fodderCard, err := c.cardRepo.GetUserCard(ctx, event.User().ID.String(), fodderCardID)
+	fodderCard, err := c.cardRepo.GetByQuery(ctx, fodderCardQuery)
 	if err != nil {
-		return createErrorEmbed(event, "Error", "Failed to find fodder card")
+		return createErrorEmbed(event, "Fodder Card Not Found", fmt.Sprintf("Could not find a card matching '%s' to combine with.", fodderCardQuery))
 	}
 
-	result, err := c.levelingService.CombineCards(ctx, mainCard, fodderCard)
+	userFodderCard, err := c.cardRepo.GetUserCard(ctx, event.User().ID.String(), fodderCard.ID)
+	if err != nil {
+		return createErrorEmbed(event, "Fodder Card Not Owned", fmt.Sprintf("You don't own the card '%s' to use for combining.", fodderCard.Name))
+	}
+
+	result, err := c.levelingService.CombineCards(ctx, mainCard, userFodderCard)
 	if err != nil {
 		return createErrorEmbed(event, "Combination Failed", err.Error())
 	}
@@ -164,16 +172,16 @@ func (c *LevelUpCommand) handleCombine(event *handler.CommandEvent, mainCard *mo
 	go c.bot.CompletionChecker.CheckCompletionForCards(context.Background(), event.User().ID.String(), []int64{mainCard.CardID})
 
 	// Get card details for display
-	card, err := c.cardRepo.GetByID(ctx, mainCard.CardID)
+	cardCombineDetails, err := c.cardRepo.GetByID(ctx, mainCard.CardID)
 	if err != nil {
 		return createErrorEmbed(event, "Error", "Failed to fetch card details")
 	}
 
 	cardInfo := utils.GetCardDisplayInfo(
-		card.Name,
-		card.ColID,
+		cardCombineDetails.Name,
+		cardCombineDetails.ColID,
 		result.NewLevel,
-		utils.GetGroupType(card.Tags),
+		utils.GetGroupType(cardCombineDetails.Tags),
 		utils.SpacesConfig{
 			Bucket:   c.bot.SpacesService.GetBucket(),
 			Region:   c.bot.SpacesService.GetRegion(),

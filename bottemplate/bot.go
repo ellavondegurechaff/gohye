@@ -37,8 +37,11 @@ type Bot struct {
 	Cfg                      Config
 	Client                   bot.Client
 	Paginator                *paginator.Manager
+	
+	// Modern effect system
 	EffectManager            *effects.Manager
 	EffectIntegrator         *effects.GameIntegrator
+	
 	Version                  string
 	Commit                   string
 	DB                       *database.DB

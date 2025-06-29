@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/disgoorg/bot-template/bottemplate/database/models"
@@ -158,9 +159,11 @@ func (a *EffectsServiceAdapter) PurchaseEffect(ctx context.Context, userID strin
 	return a.service.effectsManager.PurchaseEffect(ctx, userID, effectID)
 }
 
-// ActivateEffect activates an effect from inventory
+// ActivateEffect activates an effect from inventory (placeholder - modern system handles this differently)
 func (a *EffectsServiceAdapter) ActivateEffect(ctx context.Context, userID string, effectID string) error {
-	return a.service.effectsManager.ActivateEffect(ctx, userID, effectID)
+	// Modern system automatically handles effect activation during crafting
+	// This method is deprecated in favor of the new effect system
+	return fmt.Errorf("ActivateEffect is deprecated - effects are automatically activated when crafted")
 }
 
 // ListEffectItems returns all available effect items

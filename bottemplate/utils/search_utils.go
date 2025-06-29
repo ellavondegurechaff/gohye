@@ -60,12 +60,16 @@ const (
 
 // CollectionInfo stores collection metadata for efficient lookups
 type CollectionInfo struct {
-	IsPromo bool
+	IsPromo    bool
+	IsExcluded bool // Excludes specific collections like signed, liveauction, lottery
 }
 
 var (
 	collectionCache sync.Map
 	cacheMutex      sync.RWMutex
+	
+	// List of collection IDs that should be excluded from general card operations
+	excludedCollections = []string{"signed", "liveauction", "lottery"}
 )
 
 // InitializeCollectionInfo caches collection information for efficient searching
@@ -74,8 +78,18 @@ func InitializeCollectionInfo(collections []*models.Collection) {
 	defer cacheMutex.Unlock()
 	
 	for _, collection := range collections {
+		// Check if collection is in excluded list
+		isExcluded := false
+		for _, excludedID := range excludedCollections {
+			if collection.ID == excludedID {
+				isExcluded = true
+				break
+			}
+		}
+		
 		collectionCache.Store(collection.ID, CollectionInfo{
-			IsPromo: collection.Promo,
+			IsPromo:    collection.Promo,
+			IsExcluded: isExcluded,
 		})
 	}
 }
@@ -93,8 +107,18 @@ func RefreshCollectionCache(collections []*models.Collection) {
 	
 	// Reload with new data
 	for _, collection := range collections {
+		// Check if collection is in excluded list
+		isExcluded := false
+		for _, excludedID := range excludedCollections {
+			if collection.ID == excludedID {
+				isExcluded = true
+				break
+			}
+		}
+		
 		collectionCache.Store(collection.ID, CollectionInfo{
-			IsPromo: collection.Promo,
+			IsPromo:    collection.Promo,
+			IsExcluded: isExcluded,
 		})
 	}
 }
@@ -112,8 +136,8 @@ func GetCollectionCacheSize() int {
 	return count
 }
 
-// getCollectionInfo retrieves cached collection information
-func getCollectionInfo(colID string) (CollectionInfo, bool) {
+// GetCollectionInfo retrieves cached collection information
+func GetCollectionInfo(colID string) (CollectionInfo, bool) {
 	cacheMutex.RLock()
 	defer cacheMutex.RUnlock()
 	
@@ -171,6 +195,10 @@ func ParseSearchQuery(query string) SearchFilters {
 		case term == "-girlgroups":
 			filters.GirlGroups = true
 			continue // Skip adding to collections
+		case term == "fav":
+			filters.Favorites = true
+		case term == "!fav":
+			filters.Favorites = false
 		case strings.HasPrefix(term, "-"):
 			// Check if it's a level filter
 			levelStr := strings.TrimPrefix(term, "-")
@@ -184,10 +212,6 @@ func ParseSearchQuery(query string) SearchFilters {
 			// Single digit level filter without dash
 			level, _ := strconv.Atoi(term)
 			filters.Levels = append(filters.Levels, level)
-		case term == "fav":
-			filters.Favorites = true
-		case term == "-fav":
-			filters.Favorites = false
 		default:
 			// Add to name search if not a special term
 			if filters.Name == "" {
@@ -256,7 +280,14 @@ func WeightedSearch(cards []*models.Card, filters SearchFilters) []*models.Card 
 		// Check promo filter if enabled
 		if filters.PromoOnly {
 			// Get collection info from cache
-			if colInfo, exists := getCollectionInfo(card.ColID); !exists || !colInfo.IsPromo {
+			if colInfo, exists := GetCollectionInfo(card.ColID); !exists || !colInfo.IsPromo {
+				continue
+			}
+		}
+
+		// Exclude cards from restricted collections (unless specifically requested via promo filter)
+		if !filters.PromoOnly {
+			if colInfo, exists := GetCollectionInfo(card.ColID); exists && (colInfo.IsPromo || colInfo.IsExcluded) {
 				continue
 			}
 		}
@@ -334,11 +365,13 @@ func calculateEnhancedWeight(card *models.Card, terms []string) int {
 		}
 	}
 
+	// Give significant bonus for matching all terms to prioritize complete matches
 	if matchedTerms == len(terms) {
-		weight += WeightNameMatch / 2
+		weight += WeightNameMatch * 2 // Much higher bonus for complete matches
 	}
 
-	if strings.HasPrefix(cardNameNorm, terms[0]) {
+	// Only give prefix bonus if at least one term matches
+	if matchedTerms > 0 && strings.HasPrefix(cardNameNorm, terms[0]) {
 		weight += WeightPrefixMatch
 	}
 

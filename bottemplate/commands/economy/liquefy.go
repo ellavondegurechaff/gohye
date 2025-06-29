@@ -12,6 +12,7 @@ import (
 	"github.com/disgoorg/bot-template/bottemplate/config"
 	"github.com/disgoorg/bot-template/bottemplate/database/models"
 	"github.com/disgoorg/bot-template/bottemplate/economy/vials"
+	"github.com/disgoorg/bot-template/bottemplate/services"
 	"github.com/disgoorg/bot-template/bottemplate/utils"
 	"github.com/disgoorg/disgo/discord"
 	"github.com/disgoorg/disgo/handler"
@@ -34,12 +35,14 @@ var Liquefy = discord.SlashCommandCreate{
 }
 
 type LiquefyHandler struct {
-	bot *bottemplate.Bot
+	bot                   *bottemplate.Bot
+	cardOperationsService *services.CardOperationsService
 }
 
 func NewLiquefyHandler(b *bottemplate.Bot) *LiquefyHandler {
 	return &LiquefyHandler{
-		bot: b,
+		bot:                   b,
+		cardOperationsService: services.NewCardOperationsService(b.CardRepository, b.UserCardRepository),
 	}
 }
 
@@ -78,6 +81,16 @@ func (h *LiquefyHandler) HandleLiquefy(e *handler.CommandEvent) error {
 	if err == nil && card != nil {
 		log.Printf("[DEBUG] Found exact match: %+v", card)
 		userCard, err := h.bot.UserCardRepository.GetByUserIDAndCardID(ctx, userID, card.ID)
+		if err == nil && userCard != nil && userCard.Amount > 0 {
+			return h.showLiquefyConfirmation(e, card, vm)
+		}
+	}
+
+	// If exact match fails, try weighted search (like forge command)
+	card, err = h.findCardByName(ctx, query, userID)
+	if err == nil && card != nil {
+		log.Printf("[DEBUG] Found weighted match: %+v", card)
+		userCard, err := h.bot.UserCardRepository.GetByUserIDAndCardID(ctx, userID, card.ID)
 		if err != nil {
 			log.Printf("[ERROR] Error checking card ownership: %v", err)
 			return e.CreateMessage(discord.MessageCreate{
@@ -95,52 +108,18 @@ func (h *LiquefyHandler) HandleLiquefy(e *handler.CommandEvent) error {
 		return h.showLiquefyConfirmation(e, card, vm)
 	}
 
-	// If exact match fails, try fuzzy search
-	cards, err := h.bot.CardRepository.GetAll(ctx)
-	if err != nil {
-		return e.CreateMessage(discord.MessageCreate{
-			Content: "Failed to search for cards",
-			Flags:   discord.MessageFlagEphemeral,
-		})
-	}
-
-	filters := utils.ParseSearchQuery(query)
-	filters.SortBy = utils.SortByLevel // Prioritize higher level cards
-	filters.SortDesc = true            // Descending order
-
-	searchResults := utils.WeightedSearch(cards, filters)
-	if len(searchResults) == 0 {
-		return e.CreateMessage(discord.MessageCreate{
-			Content: fmt.Sprintf("❌ No cards found matching '%s'", query),
-			Flags:   discord.MessageFlagEphemeral,
-		})
-	}
-
-	// Debug logging
-	log.Printf("[DEBUG] Found card match: %+v", searchResults[0])
-
-	userCard, err := h.bot.UserCardRepository.GetByUserIDAndCardID(ctx, userID, searchResults[0].ID)
-	if err != nil {
-		log.Printf("[ERROR] Error checking ownership: %v", err)
-		return e.CreateMessage(discord.MessageCreate{
-			Content: fmt.Sprintf("❌ Error checking card ownership: %v", err),
-			Flags:   discord.MessageFlagEphemeral,
-		})
-	}
-
-	if userCard == nil || userCard.Amount <= 0 {
-		log.Printf("[DEBUG] User card data: %+v", userCard)
-		return e.CreateMessage(discord.MessageCreate{
-			Content: "❌ You don't own this card",
-			Flags:   discord.MessageFlagEphemeral,
-		})
-	}
-
-	return h.showLiquefyConfirmation(e, searchResults[0], vm)
+	// If no card found or error occurred
+	log.Printf("[DEBUG] No card found for query: %s, error: %v", query, err)
+	return e.CreateMessage(discord.MessageCreate{
+		Content: fmt.Sprintf("❌ Card '%s' not found or you don't own it", query),
+		Flags:   discord.MessageFlagEphemeral,
+	})
 }
 
 func (h *LiquefyHandler) showLiquefyConfirmation(e *handler.CommandEvent, card *models.Card, vm *vials.VialManager) error {
-	vials, err := vm.CalculateVialYield(context.Background(), card)
+	// Calculate vial yield with effect bonuses
+	userID := strconv.FormatInt(int64(e.User().ID), 10)
+	vials, err := vm.CalculateVialYieldWithEffects(context.Background(), card, userID, h.bot.EffectIntegrator)
 	if err != nil {
 		return e.CreateMessage(discord.MessageCreate{
 			Content: "❌ Failed to calculate vial yield: " + err.Error(),
@@ -257,4 +236,50 @@ func (h *LiquefyHandler) HandleComponent(e *handler.ComponentEvent) error {
 			Components: &[]discord.ContainerComponent{},
 		})
 	}
+}
+
+// findCardByName finds a card by name using weighted search (similar to forge command pattern)
+func (h *LiquefyHandler) findCardByName(ctx context.Context, query, userID string) (*models.Card, error) {
+	// Handle empty query
+	if query == "" {
+		return nil, fmt.Errorf("please provide a card name")
+	}
+
+	// Get all cards from repository (same pattern as forge command)
+	cards, err := h.bot.CardRepository.GetAll(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to search for cards: %v", err)
+	}
+
+	// Parse search query and perform weighted search (same as forge command)
+	filters := utils.ParseSearchQuery(query)
+	filters.SortBy = utils.SortByLevel
+	filters.SortDesc = true
+
+	// Use CardOperationsService for consistent search behavior
+	searchResults := h.cardOperationsService.SearchCardsInCollection(ctx, cards, filters)
+	
+	if len(searchResults) == 0 {
+		return nil, fmt.Errorf("no cards found matching '%s'", query)
+	}
+
+	// Find first card that the user owns
+	for _, card := range searchResults {
+		// Check if user owns this card
+		userCard, err := h.bot.UserCardRepository.GetUserCard(ctx, userID, card.ID)
+		if err != nil {
+			// User doesn't own this card, continue to next
+			continue
+		}
+
+		// Skip cards with zero amount
+		if userCard.Amount <= 0 {
+			continue
+		}
+
+		// Found a valid card
+		return card, nil
+	}
+
+	return nil, fmt.Errorf("you don't own any cards matching '%s'", query)
 }

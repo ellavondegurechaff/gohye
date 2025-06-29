@@ -10,4 +10,6 @@ var Commands = []discord.ApplicationCommandCreate{
 	ManageImages,
 	FixDuplicates,
 	AnalyzeUsers,
+	Gift,
+	ResetDaily,
 }

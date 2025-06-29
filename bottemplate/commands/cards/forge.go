@@ -50,8 +50,8 @@ func NewForgeHandler(b *bottemplate.Bot) *ForgeHandler {
 
 func (h *ForgeHandler) HandleForge(e *handler.CommandEvent) error {
 	fm := forge.NewForgeManager(h.bot.DB, h.bot.PriceCalculator)
-	query1 := strings.ReplaceAll(strings.TrimSpace(e.SlashCommandInteractionData().String("card_query_1")), " ", "_")
-	query2 := strings.ReplaceAll(strings.TrimSpace(e.SlashCommandInteractionData().String("card_query_2")), " ", "_")
+	query1 := strings.TrimSpace(e.SlashCommandInteractionData().String("card_query_1"))
+	query2 := strings.TrimSpace(e.SlashCommandInteractionData().String("card_query_2"))
 	ctx := context.Background()
 	userID := strconv.FormatInt(int64(e.User().ID), 10)
 
@@ -76,8 +76,8 @@ func (h *ForgeHandler) HandleForge(e *handler.CommandEvent) error {
 		return utils.EH.CreateUserError(e, "You must use two different cards to forge")
 	}
 
-	// Calculate forge cost
-	cost, err := fm.CalculateForgeCost(ctx, card1, card2)
+	// Calculate forge cost with effect discounts
+	cost, err := fm.CalculateForgeCostWithEffects(ctx, card1, card2, userID, h.bot.EffectIntegrator)
 	if err != nil {
 		return utils.EH.CreateSystemError(e, fmt.Sprintf("Error calculating forge cost: %v", err))
 	}
@@ -125,6 +125,7 @@ func (h *ForgeHandler) showForgeConfirmation(e *handler.CommandEvent, card1, car
 			cost,
 			strings.Repeat("⭐", card1.Level),
 			getSameCollectionBonus(card1, card2))).
+		SetImage(card1Display.ImageURL).
 		SetTimestamp(time.Now()).
 		Build()
 
@@ -241,34 +242,46 @@ func (h *ForgeHandler) findCard(ctx context.Context, query, userID string, exclu
 		return nil, fmt.Errorf("please provide a card name")
 	}
 
-	// Use CardOperationsService to get user cards with details
-	userCards, cards, err := h.cardOperationsService.GetUserCardsWithDetails(ctx, userID, query)
+	// Get all cards from repository (same pattern as /has command)
+	cards, err := h.bot.CardRepository.GetAll(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("error fetching your cards: %v", err)
+		return nil, fmt.Errorf("failed to search for cards: %v", err)
 	}
 
-	// Build card mappings for efficient lookup
-	_, cardMap := h.cardOperationsService.BuildCardMappings(userCards, cards)
+	// Parse search query and perform weighted search (same as /has command)
+	filters := utils.ParseSearchQuery(query)
+	filters.SortBy = utils.SortByLevel
+	filters.SortDesc = true
 
-	// Find the first card that matches our criteria
-	for _, userCard := range userCards {
+	searchResults := h.cardOperationsService.SearchCardsInCollection(ctx, cards, filters)
+	if len(searchResults) == 0 {
+		return nil, fmt.Errorf("no cards found matching '%s'", query)
+	}
+
+	// Find first card that the user owns and is not excluded
+	for _, card := range searchResults {
+		// Skip excluded card
+		if card.ID == excludeCardID {
+			continue
+		}
+
+		// Check if user owns this card
+		userCard, err := h.bot.UserCardRepository.GetUserCard(ctx, userID, card.ID)
+		if err != nil {
+			// User doesn't own this card, continue to next
+			continue
+		}
+
 		// Skip cards with zero amount
 		if userCard.Amount <= 0 {
 			continue
 		}
-		
-		// Skip excluded card
-		if userCard.CardID == excludeCardID {
-			continue
-		}
-		
-		// Return the first matching card
-		if card, exists := cardMap[userCard.CardID]; exists {
-			return card, nil
-		}
+
+		// Found a valid card
+		return card, nil
 	}
 
-	return nil, fmt.Errorf("no matching cards found in your collection")
+	return nil, fmt.Errorf("you don't own any cards matching '%s'", query)
 }
 
 func getSameCollectionBonus(card1, card2 *models.Card) string {

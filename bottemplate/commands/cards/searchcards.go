@@ -12,6 +12,7 @@ import (
 	"github.com/disgoorg/bot-template/bottemplate"
 	"github.com/disgoorg/bot-template/bottemplate/database/models"
 	"github.com/disgoorg/bot-template/bottemplate/database/repositories"
+	"github.com/disgoorg/bot-template/bottemplate/services"
 	"github.com/disgoorg/bot-template/bottemplate/utils"
 	"github.com/disgoorg/disgo/discord"
 	"github.com/disgoorg/disgo/handler"
@@ -289,14 +290,32 @@ func formatCardType(cardType string) string {
 	}
 }
 
-// New function to sort cards by relevance
+// sortCardsByRelevance sorts cards by relevance using unified search for improved accuracy
 func sortCardsByRelevance(cards []*models.Card, searchTerm string) {
+	// Skip sorting if no search term or no cards
+	if searchTerm == "" || len(cards) == 0 {
+		return
+	}
+	
+	// Use UnifiedSearchService for improved search accuracy and speed
+	cardOpsService := services.NewCardOperationsService(nil, nil) // repositories not needed for this operation
+	unifiedSearchService := services.NewUnifiedSearchService(cardOpsService)
+	
 	filters := utils.SearchFilters{
 		Name:     searchTerm,
 		SortBy:   utils.SortByLevel,
 		SortDesc: true,
 	}
-	sortedCards := utils.WeightedSearch(cards, filters)
-	// Replace contents of original slice
-	copy(cards, sortedCards)
+	
+	// Use unified search for better relevance scoring
+	sortedCards := unifiedSearchService.SearchCards(context.Background(), cards, searchTerm, filters)
+	
+	// Replace contents of original slice with sorted results (only up to original length)
+	if len(sortedCards) > 0 {
+		copyLen := len(sortedCards)
+		if copyLen > len(cards) {
+			copyLen = len(cards)
+		}
+		copy(cards, sortedCards[:copyLen])
+	}
 }

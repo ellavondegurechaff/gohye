@@ -50,10 +50,18 @@ func CollectionListHandler(b *bottemplate.Bot) handler.CommandHandler {
 			ItemsPerPage: 10,
 			Prefix:       "collection-list",
 		},
-		FormatItems: func(items []interface{}, page, totalPages int, userID, query string) (discord.Embed, error) {
+		FormatItems: func(allItems []interface{}, page, totalPages int, userID, query string) (discord.Embed, error) {
+			// Calculate pagination indices - old handler passes ALL items
+			itemsPerPage := 10
+			startIdx := page * itemsPerPage
+			endIdx := min(startIdx+itemsPerPage, len(allItems))
+			
+			// Get items for this page only
+			pageItems := allItems[startIdx:endIdx]
+			
 			var fields []discord.EmbedField
 			
-			for _, item := range items {
+			for _, item := range pageItems {
 				collectionItem := item.(CollectionProgressItem)
 				col := collectionItem.Collection
 				progress := collectionItem.Progress
@@ -76,10 +84,11 @@ func CollectionListHandler(b *bottemplate.Bot) handler.CommandHandler {
 					aliasText = fmt.Sprintf("\n`%s`", strings.Join(col.Aliases[:min(3, len(col.Aliases))], ", "))
 				}
 				
+				inlineTrue := true
 				fields = append(fields, discord.EmbedField{
 					Name:   fmt.Sprintf("%s%s", col.Name, fragmentText),
 					Value:  fmt.Sprintf("%s%s", progressText, aliasText),
-					Inline: &[]bool{true}[0],
+					Inline: &inlineTrue,
 				})
 			}
 
@@ -271,10 +280,18 @@ func (f *CollectionListDataFetcher) FetchData(ctx context.Context, params utils.
 // CollectionListFormatter implements ItemFormatter for collection list
 type CollectionListFormatter struct{}
 
-func (f *CollectionListFormatter) FormatItems(items []interface{}, page, totalPages int, params utils.PaginationParams) (discord.Embed, error) {
+func (f *CollectionListFormatter) FormatItems(allItems []interface{}, page, totalPages int, params utils.PaginationParams) (discord.Embed, error) {
+	// Calculate pagination indices
+	itemsPerPage := 10
+	startIdx := page * itemsPerPage
+	endIdx := min(startIdx+itemsPerPage, len(allItems))
+	
+	// Get items for this page only
+	pageItems := allItems[startIdx:endIdx]
+	
 	var fields []discord.EmbedField
 	
-	for _, item := range items {
+	for _, item := range pageItems {
 		collectionItem := item.(CollectionProgressItem)
 		col := collectionItem.Collection
 		
@@ -290,10 +307,11 @@ func (f *CollectionListFormatter) FormatItems(items []interface{}, page, totalPa
 		
 		collectionInfo := fmt.Sprintf("ID: `%s`%s", col.ID, aliasText)
 		
+		inlineTrue := true
 		fields = append(fields, discord.EmbedField{
 			Name:   fmt.Sprintf("%s%s", col.Name, fragmentText),
 			Value:  collectionInfo,
-			Inline: &[]bool{true}[0],
+			Inline: &inlineTrue,
 		})
 	}
 

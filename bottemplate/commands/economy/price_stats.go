@@ -3,6 +3,7 @@ package economy
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"strings"
 	"time"
@@ -11,6 +12,7 @@ import (
 	"github.com/disgoorg/bot-template/bottemplate/config"
 	"github.com/disgoorg/bot-template/bottemplate/economy"
 	economicUtils "github.com/disgoorg/bot-template/bottemplate/economy/utils"
+	"github.com/disgoorg/bot-template/bottemplate/services"
 	"github.com/disgoorg/bot-template/bottemplate/utils"
 	"github.com/disgoorg/disgo/discord"
 	"github.com/disgoorg/disgo/handler"
@@ -67,7 +69,12 @@ func handleCardByID(b *bottemplate.Bot, event *handler.CommandEvent, cardID int6
 	// Get market stats
 	marketStats, err := b.PriceCalculator.GetMarketStats(ctx, cardID, price)
 	if err != nil {
-		return utils.EH.CreateErrorEmbed(event, "Failed to fetch market statistics")
+		slog.Error("Failed to fetch market statistics", 
+			slog.String("type", "cmd"),
+			slog.String("name", "price-stats"),
+			slog.Int64("card_id", cardID),
+			slog.String("error", err.Error()))
+		return utils.EH.CreateErrorEmbed(event, fmt.Sprintf("Failed to fetch market statistics: %s", err.Error()))
 	}
 
 	// Get card stats for market status
@@ -315,32 +322,29 @@ func handleCardByName(b *bottemplate.Bot, event *handler.CommandEvent, cardName 
 	ctx, cancel := context.WithTimeout(context.Background(), config.DefaultQueryTimeout)
 	defer cancel()
 
-	// Normalize search term
-	searchTerm := strings.TrimSpace(cardName)
-	searchTerm = strings.ToLower(searchTerm)
-	searchTerm = strings.ReplaceAll(searchTerm, " ", "_")
-
-	// Get all cards matching the name
-	cards, err := b.CardRepository.GetByName(ctx, searchTerm)
+	// Get all cards for unified search (more comprehensive than GetByName)
+	allCards, err := b.CardRepository.GetAll(ctx)
 	if err != nil {
 		return utils.EH.CreateError(event, "Failed to search for cards",
 			"An error occurred while searching for cards")
 	}
 
-	// Find best matching card using weighted search
-	filters := utils.SearchFilters{
-		Name:     cardName,
-		SortBy:   utils.SortByLevel,
-		SortDesc: true,
+	// Use UnifiedSearchService for improved search accuracy
+	cardOperationsService := services.NewCardOperationsService(b.CardRepository, b.UserCardRepository)
+	unifiedSearchService := services.NewUnifiedSearchService(cardOperationsService)
+	
+	card, err := unifiedSearchService.SearchSingleCard(ctx, allCards, cardName)
+	if err != nil {
+		return utils.EH.CreateError(event, "Search failed", err.Error())
 	}
-	sortedCards := utils.WeightedSearch(cards, filters)
-	if len(sortedCards) == 0 {
+	
+	if card == nil {
 		return utils.EH.CreateError(event, "Card Not Found",
 			fmt.Sprintf("No card found matching '%s'", cardName))
 	}
 
 	// Use the best match
-	return handleCardByID(b, event, sortedCards[0].ID)
+	return handleCardByID(b, event, card.ID)
 }
 
 // Helper function to calculate vial value

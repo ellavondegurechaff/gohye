@@ -220,14 +220,6 @@ func (r *userCardRepository) GetUserCardsByName(ctx context.Context, userID stri
 }
 
 // Helper function to collect card IDs
-func collectCardIDs(userCards []*models.UserCard) []int64 {
-	ids := make([]int64, len(userCards))
-	for i, uc := range userCards {
-		ids[i] = uc.CardID
-	}
-	return ids
-}
-
 func (r *userCardRepository) GetTotalOwnersCount(ctx context.Context, cardID int64) (int64, error) {
 	var count int64
 	err := r.db.NewSelect().

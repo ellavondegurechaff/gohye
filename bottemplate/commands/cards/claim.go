@@ -96,6 +96,9 @@ func (h *ClaimHandler) HandleCommand(e *handler.CommandEvent) error {
 		return utils.EH.CreateError(e, "Error", "Count must be between 1 and 10")
 	}
 
+	// Get group type filter (following pattern from diff.go)
+	groupType := strings.TrimSpace(e.SlashCommandInteractionData().String("group_type"))
+
 	// How many claims user made so far (today)
 	currentDailyClaims, err := h.bot.ClaimRepository.GetUserClaimsInPeriod(ctx, userID, time.Now().Add(-config.DailyPeriod))
 	if err != nil {
@@ -134,10 +137,19 @@ func (h *ClaimHandler) HandleCommand(e *handler.CommandEvent) error {
 	}
 	defer tx.Rollback()
 
-	// Retrieve all cards
-	cards, err := h.bot.CardRepository.GetAll(ctx)
+	// Retrieve all cards and filter out promo cards
+	allCards, err := h.bot.CardRepository.GetAll(ctx)
 	if err != nil {
 		return utils.EH.CreateError(e, "Error", "Failed to fetch cards")
+	}
+
+	// Filter out promo and excluded collection cards
+	var cards []*models.Card
+	for _, card := range allCards {
+		// Check if card's collection is not promo or excluded
+		if colInfo, exists := utils.GetCollectionInfo(card.ColID); exists && !colInfo.IsPromo && !colInfo.IsExcluded {
+			cards = append(cards, card)
+		}
 	}
 
 	// Randomly pick cards (with effect modifications)
@@ -145,7 +157,7 @@ func (h *ClaimHandler) HandleCommand(e *handler.CommandEvent) error {
 	for i := 0; i < count; i++ {
 		// Apply tohrugift effect for first claim of the day
 		isFirstClaim := currentDailyClaims == 0 && i == 0
-		card := selectRandomCard(cards, h.bot, userID, isFirstClaim)
+		card := selectRandomCard(cards, h.bot, userID, isFirstClaim, groupType)
 		if card != nil {
 			selectedCards = append(selectedCards, card)
 		}
@@ -186,7 +198,7 @@ func (h *ClaimHandler) HandleCommand(e *handler.CommandEvent) error {
 			collection,
 			func() string {
 				if hasCard {
-					return " `duplicate`"
+					return fmt.Sprintf(" `#%d`", userCard.Amount+1)
 				}
 				return ""
 			}(),
@@ -365,7 +377,7 @@ func (h *ClaimHandler) HandleComponent(e *handler.ComponentEvent) error {
 	})
 }
 
-func selectRandomCard(cards []*models.Card, bot *bottemplate.Bot, userID string, isFirstClaim bool) *models.Card {
+func selectRandomCard(cards []*models.Card, bot *bottemplate.Bot, userID string, isFirstClaim bool, groupType string) *models.Card {
 	// Weighted rarities
 	weights := map[int]int{
 		1: 70, // Common
@@ -392,10 +404,27 @@ func selectRandomCard(cards []*models.Card, bot *bottemplate.Bot, userID string,
 	var eligibleCards []*models.Card
 	cardsByRarity := make(map[int][]*models.Card)
 	for _, card := range cards {
-		if card.Level < 5 {
-			eligibleCards = append(eligibleCards, card)
-			cardsByRarity[card.Level] = append(cardsByRarity[card.Level], card)
+		// Skip cards that don't match level requirement
+		if card.Level >= 5 {
+			continue
 		}
+
+		// Apply group type filter (following pattern from search_utils.go:215-239)
+		if groupType != "" {
+			hasMatchingTag := false
+			for _, tag := range card.Tags {
+				if tag == groupType {
+					hasMatchingTag = true
+					break
+				}
+			}
+			if !hasMatchingTag {
+				continue
+			}
+		}
+
+		eligibleCards = append(eligibleCards, card)
+		cardsByRarity[card.Level] = append(cardsByRarity[card.Level], card)
 	}
 	if len(eligibleCards) == 0 {
 		return nil

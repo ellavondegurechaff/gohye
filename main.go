@@ -23,6 +23,7 @@ import (
 	"github.com/disgoorg/bot-template/bottemplate/economy/auction"
 	"github.com/disgoorg/bot-template/bottemplate/economy/claim"
 	"github.com/disgoorg/bot-template/bottemplate/economy/effects"
+	effectsHandlers "github.com/disgoorg/bot-template/bottemplate/economy/effects/handlers"
 	"github.com/disgoorg/bot-template/bottemplate/handlers"
 	"github.com/disgoorg/bot-template/bottemplate/logger"
 	"github.com/disgoorg/bot-template/bottemplate/services"
@@ -241,6 +242,8 @@ func main() {
 	h.Command("/dbtest", handlers.WrapWithLogging("dbtest", admin.DBTestHandler(b)))
 	h.Command("/deletecard", handlers.WrapWithLogging("deletecard", admin.DeleteCardHandler(b)))
 	h.Command("/init", handlers.WrapWithLogging("init", admin.InitHandler(b)))
+	h.Command("/gift", handlers.WrapWithLogging("gift", admin.GiftHandler(b)))
+	h.Command("/reset-daily", handlers.WrapWithLogging("reset-daily", admin.ResetDailyHandler(b)))
 
 	// Card-related commands
 	h.Command("/summon", handlers.WrapWithLogging("summon", cards.SummonHandler(b)))
@@ -278,17 +281,67 @@ func main() {
 	h.Command("/work", handlers.WrapWithLogging("work", workHandler.HandleWork))
 	h.Component("/work/", handlers.WrapComponentWithLogging("work", workHandler.HandleComponent))
 
-	// Initialize effect manager
+	// Initialize modern effect system
 	effectManager := effects.NewManager(
 		repositories.NewEffectRepository(b.DB.BunDB()),
 		b.UserRepository,
 		b.UserCardRepository,
+		b.CardRepository,
+		b.CollectionRepository,
 		b.DB,
 	)
 	b.EffectManager = effectManager
 
-	// Initialize effect integrator
+	// Initialize modern effect integrator
 	b.EffectIntegrator = effects.NewGameIntegrator(effectManager)
+
+	// Register all effect handlers inline to avoid import cycle
+	deps := effectManager.GetDependencies()
+	registry := effectManager.GetRegistry()
+
+	// Register passive effects
+	passiveEffects := []effects.EffectHandler{
+		effectsHandlers.NewTohrugiftHandler(deps),
+		effectsHandlers.NewCakedayHandler(deps),
+		effectsHandlers.NewHolygrailHandler(deps),
+		effectsHandlers.NewSkyfriendHandler(deps),
+		effectsHandlers.NewCherryblossHandler(deps),
+		effectsHandlers.NewRulerjeanneHandler(deps),
+		effectsHandlers.NewSpellcardHandler(deps),
+		effectsHandlers.NewWalpurgisnightHandler(deps),
+	}
+
+	for _, effect := range passiveEffects {
+		if err := effectManager.RegisterEffect(effect); err != nil {
+			slog.Error("Failed to register passive effect", slog.String("effect", effect.GetMetadata().ID), slog.Any("error", err))
+			os.Exit(-1)
+		}
+	}
+
+	// Register active effects
+	activeEffects := []effects.EffectHandler{
+		effectsHandlers.NewClaimRecallHandler(deps),
+		effectsHandlers.NewSpaceUnityHandler(deps),
+		effectsHandlers.NewJudgeDayHandler(deps, registry),
+		effectsHandlers.NewEnayanoHandler(deps),
+		effectsHandlers.NewPbocchiHandler(deps),
+	}
+
+	for _, effect := range activeEffects {
+		if err := effectManager.RegisterEffect(effect); err != nil {
+			slog.Error("Failed to register active effect", slog.String("effect", effect.GetMetadata().ID), slog.Any("error", err))
+			os.Exit(-1)
+		}
+	}
+
+	slog.Info("All effects registered successfully",
+		slog.Int("total_effects", len(passiveEffects)+len(activeEffects)),
+		slog.Int("passive_effects", len(passiveEffects)),
+		slog.Int("active_effects", len(activeEffects)))
+
+	slog.Info("Modern effect system initialized successfully",
+		slog.String("system", "modern_v2"),
+		slog.String("component", "effect_manager"))
 
 	// Shop commands
 	shopHandler := economyCommands.NewShopHandler(b, effectManager)

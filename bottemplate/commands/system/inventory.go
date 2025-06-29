@@ -3,7 +3,6 @@ package system
 import (
 	"context"
 	"fmt"
-	"log"
 	"strings"
 
 	"github.com/disgoorg/bot-template/bottemplate"
@@ -58,15 +57,18 @@ func (h *InventoryHandler) handleList(event *handler.CommandEvent) error {
 		})
 	}
 
-	actives, _, passives := groupItems(items)
+	actives, recipes, passives := groupItems(items)
 	var currentItems []*models.EffectItem
 	var title string
 
-	// Default to active effects
-	currentItems = actives
-	title = "📦 Your Inventory - Active Effects"
-
-	if len(currentItems) == 0 {
+	// Default to recipes first (most common), then actives, then passives
+	if len(recipes) > 0 {
+		currentItems = recipes
+		title = "📦 Your Inventory - Recipes"
+	} else if len(actives) > 0 {
+		currentItems = actives
+		title = "📦 Your Inventory - Active Effects"
+	} else {
 		currentItems = passives
 		title = "📦 Your Inventory - Passive Effects"
 	}
@@ -78,9 +80,18 @@ func (h *InventoryHandler) handleList(event *handler.CommandEvent) error {
 		})
 	}
 
+	selectedCategory := "recipe"
+	if len(recipes) == 0 {
+		if len(actives) > 0 {
+			selectedCategory = "active"
+		} else {
+			selectedCategory = "passive"
+		}
+	}
+	
 	components := []discord.ContainerComponent{
-		createInventoryCategories("active"),
-		createInventoryItems(currentItems, "active"),
+		createInventoryCategories(selectedCategory),
+		createInventoryItems(currentItems, selectedCategory),
 	}
 
 	return event.CreateMessage(discord.MessageCreate{
@@ -99,6 +110,13 @@ func (h *InventoryHandler) handleList(event *handler.CommandEvent) error {
 func createInventoryCategories(selectedValue string) discord.ContainerComponent {
 	return discord.NewActionRow(
 		discord.NewStringSelectMenu("/inventory_category", "Select Category",
+			discord.StringSelectMenuOption{
+				Label:       "Recipes",
+				Value:       "recipe",
+				Description: "View your purchased recipes",
+				Emoji:       &discord.ComponentEmoji{Name: "📜"},
+				Default:     selectedValue == "recipe",
+			},
 			discord.StringSelectMenuOption{
 				Label:       "Active Effects",
 				Value:       "active",
@@ -171,8 +189,12 @@ func (h *InventoryHandler) handleItemSelect(event *handler.ComponentEvent) error
 		description.WriteString("\u001b[1;36m🔮 Recipe Requirements\u001b[0m\n")
 		cards, err := h.effectManager.GetUserRecipeStatus(ctx, userID, itemID)
 		if err != nil {
-			log.Printf("[ERROR] Failed to get recipe status: %v", err)
-			description.WriteString("Failed to load recipe requirements\n")
+			// If no recipe found, this item is likely crafted already
+			if item.Type == models.EffectTypeRecipe {
+				description.WriteString("\u001b[1;32m✓ Recipe already crafted - effect ready to use!\u001b[0m\n")
+			} else {
+				description.WriteString("Recipe information not available\n")
+			}
 		} else {
 			for i, card := range cards {
 				if card == nil {
@@ -186,11 +208,11 @@ func (h *InventoryHandler) handleItemSelect(event *handler.ComponentEvent) error
 				cardName := strings.Title(strings.ReplaceAll(card.Name, "_", " "))
 
 				if hasCard {
-					description.WriteString(fmt.Sprintf("\u001b[1;32m✓ %s ⭐%s\u001b[0m\n",
-						cardName, strings.Repeat("", int(item.Recipe[i]))))
+					description.WriteString(fmt.Sprintf("\u001b[1;32m✓ %s %s\u001b[0m\n",
+						cardName, strings.Repeat("⭐", int(item.Recipe[i]))))
 				} else {
-					description.WriteString(fmt.Sprintf("\u001b[1;31m✗ %s ⭐%s\u001b[0m\n",
-						cardName, strings.Repeat("", int(item.Recipe[i]))))
+					description.WriteString(fmt.Sprintf("\u001b[1;31m✗ %s %s\u001b[0m\n",
+						cardName, strings.Repeat("⭐", int(item.Recipe[i]))))
 				}
 			}
 		}
@@ -237,7 +259,7 @@ func (h *InventoryHandler) handleCategorySelect(event *handler.ComponentEvent) e
 		}
 		selectedValue = data.Values[0]
 	case discord.ButtonInteractionData:
-		selectedValue = "active" // Default to active when coming from back button
+		selectedValue = "recipe" // Default to recipes when coming from back button
 	default:
 		return event.CreateMessage(discord.MessageCreate{
 			Content: "Invalid interaction data",
@@ -253,11 +275,14 @@ func (h *InventoryHandler) handleCategorySelect(event *handler.ComponentEvent) e
 		return utils.EH.CreateEphemeralError(event, fmt.Sprintf("Failed to fetch inventory: %v", err))
 	}
 
-	actives, _, passives := groupItems(items)
+	actives, recipes, passives := groupItems(items)
 	var currentItems []*models.EffectItem
 	var title string
 
 	switch selectedValue {
+	case "recipe":
+		currentItems = recipes
+		title = "📦 Your Inventory - Recipes"
 	case "active":
 		currentItems = actives
 		title = "📦 Your Inventory - Active Effects"
@@ -326,6 +351,13 @@ func groupItems(items []*models.EffectItem) (actives, recipes, passives []*model
 			recipes = append(recipes, item)
 		case models.EffectTypePassive:
 			passives = append(passives, item)
+		default:
+			// Handle items based on their passive flag as fallback
+			if item.Passive {
+				passives = append(passives, item)
+			} else {
+				actives = append(actives, item)
+			}
 		}
 	}
 	return

@@ -11,6 +11,7 @@ import (
 	"github.com/disgoorg/bot-template/bottemplate/database/models"
 	"github.com/disgoorg/bot-template/bottemplate/database/repositories"
 	"github.com/disgoorg/bot-template/bottemplate/economy/auction"
+	"github.com/disgoorg/bot-template/bottemplate/utils"
 	"github.com/disgoorg/disgo/bot"
 	"github.com/disgoorg/disgo/discord"
 	"github.com/disgoorg/disgo/handler"
@@ -91,6 +92,9 @@ func (h *AuctionHandler) Register(r handler.Router) {
 	// Component patterns must start with /
 	r.Component("/auction/confirm", h.HandleConfirmation)
 	r.Component("/auction/cancel", h.HandleCancel)
+	
+	// Register auction list pagination components
+	r.Component("/auction-list/", h.CreateAuctionListComponentHandler())
 }
 
 func (h *AuctionHandler) HandleCreate(event *handler.CommandEvent) error {
@@ -116,6 +120,14 @@ func (h *AuctionHandler) HandleCreate(event *handler.CommandEvent) error {
 	if err != nil {
 		return event.CreateMessage(discord.MessageCreate{
 			Content: "Failed to get card details",
+			Flags:   discord.MessageFlagEphemeral,
+		})
+	}
+
+	// Prevent auctioning level 5 (legendary) cards
+	if card.Level >= 5 {
+		return event.CreateMessage(discord.MessageCreate{
+			Content: "❌ Level 5 (legendary) cards cannot be auctioned",
 			Flags:   discord.MessageFlagEphemeral,
 		})
 	}
@@ -217,72 +229,57 @@ func formatDuration(d time.Duration) string {
 
 func (h *AuctionHandler) HandleList(event *handler.CommandEvent) error {
 	ctx := context.Background()
-	auctions, err := h.manager.GetActiveAuctions(ctx)
+	userID := event.User().ID.String()
+	
+	// Create data fetcher
+	fetcher := &AuctionListDataFetcher{
+		manager:  h.manager,
+		cardRepo: h.cardRepo,
+	}
+	
+	// Create formatter
+	formatter := &AuctionListFormatter{}
+	
+	// Create validator
+	validator := &AuctionListValidator{}
+	
+	// Create factory configuration
+	factoryConfig := utils.PaginationFactoryConfig{
+		ItemsPerPage: 10,
+		Prefix:       "auction-list",
+		Parser:       utils.NewRegularParser("auction-list"),
+		Fetcher:      fetcher,
+		Formatter:    formatter,
+		Validator:    validator,
+	}
+	
+	// Create factory
+	factory := utils.NewPaginationFactory(factoryConfig)
+	
+	// Create initial pagination params
+	params := utils.PaginationParams{
+		UserID: userID,
+		Page:   0,
+		Query:  "",
+	}
+	
+	// Create initial embed and components
+	embed, components, err := factory.CreateInitialPaginationEmbed(ctx, params)
 	if err != nil {
+		if err.Error() == "no items found" {
+			return event.CreateMessage(discord.MessageCreate{
+				Content: "No active auctions found.",
+				Flags:   discord.MessageFlagEphemeral,
+			})
+		}
 		return event.CreateMessage(discord.MessageCreate{
 			Content: fmt.Sprintf("Failed to get auctions: %s", err),
 			Flags:   discord.MessageFlagEphemeral,
 		})
 	}
 
-	if len(auctions) == 0 {
-		return event.CreateMessage(discord.MessageCreate{
-			Content: "No active auctions found.",
-			Flags:   discord.MessageFlagEphemeral,
-		})
-	}
-
-	var description strings.Builder
-	description.WriteString("```ansi\n")
-
-	for _, auction := range auctions {
-		card, err := h.cardRepo.GetByID(ctx, auction.CardID)
-		if err != nil {
-			continue
-		}
-
-		timeLeft := time.Until(auction.EndTime).Round(time.Second)
-		timeStr := formatDuration(timeLeft)
-
-		// Format card name by capitalizing each word
-		words := strings.Split(strings.ReplaceAll(card.Name, "_", " "), " ")
-		for i, word := range words {
-			words[i] = strings.Title(strings.ToLower(word))
-		}
-		cardName := strings.Join(words, " ")
-
-		// Format auction entry with enhanced colors but hide current price
-		bidStatus := "No bids"
-		if auction.BidCount > 0 {
-			bidStatus = fmt.Sprintf("%d bid(s)", auction.BidCount)
-		}
-
-		// Modified format to hide current price
-		description.WriteString(fmt.Sprintf("\u001b[36m[%s]\u001b[0m \u001b[33m%s\u001b[0m \u001b[32m[%s]\u001b[0m %s \u001b[97m%s\u001b[0m \u001b[94m[%s]\u001b[0m\n",
-			timeStr,                         // Cyan for time
-			auction.AuctionID,               // Gold for auction ID
-			bidStatus,                       // Green for bid status instead of price
-			strings.Repeat("★", card.Level), // Stars (no color)
-			cardName,                        // Bright white for name
-			strings.ToUpper(card.ColID)))    // Light blue for collection
-	}
-	description.WriteString("```")
-
-	embed := discord.NewEmbedBuilder().
-		SetTitle("🏛️ Auction House").
-		SetDescription(description.String()).
-		SetColor(config.BackgroundColor).
-		SetFooter(fmt.Sprintf("Page 1/%d • Bid to reveal current price", (len(auctions)+9)/10), "")
-
-	components := []discord.ContainerComponent{
-		discord.NewActionRow(
-			discord.NewPrimaryButton("◀ Previous", "auction:prev_page"),
-			discord.NewPrimaryButton("Next ▶", "auction:next_page"),
-		),
-	}
-
 	return event.CreateMessage(discord.MessageCreate{
-		Embeds:     []discord.Embed{embed.Build()},
+		Embeds:     []discord.Embed{embed},
 		Components: components,
 	})
 }
@@ -298,4 +295,151 @@ func (h *AuctionHandler) HandleCancel(event *handler.ComponentEvent) error {
 		},
 		Components: &[]discord.ContainerComponent{},
 	})
+}
+
+// CreateAuctionListComponentHandler creates component handler for auction list pagination
+func (h *AuctionHandler) CreateAuctionListComponentHandler() handler.ComponentHandler {
+	// Create data fetcher
+	fetcher := &AuctionListDataFetcher{
+		manager:  h.manager,
+		cardRepo: h.cardRepo,
+	}
+	
+	// Create formatter
+	formatter := &AuctionListFormatter{}
+	
+	// Create validator
+	validator := &AuctionListValidator{}
+	
+	// Create factory configuration
+	factoryConfig := utils.PaginationFactoryConfig{
+		ItemsPerPage: 10,
+		Prefix:       "auction-list",
+		Parser:       utils.NewRegularParser("auction-list"),
+		Fetcher:      fetcher,
+		Formatter:    formatter,
+		Validator:    validator,
+	}
+	
+	// Create factory and return handler
+	factory := utils.NewPaginationFactory(factoryConfig)
+	return factory.CreateHandler()
+}
+
+// AuctionListItem represents an auction item for pagination
+type AuctionListItem struct {
+	Auction *models.Auction
+	Card    *models.Card
+}
+
+// AuctionListDataFetcher implements DataFetcher for auction list
+type AuctionListDataFetcher struct {
+	manager  *auction.Manager
+	cardRepo repositories.CardRepository
+}
+
+func (f *AuctionListDataFetcher) FetchData(ctx context.Context, params utils.PaginationParams) ([]interface{}, error) {
+	auctions, err := f.manager.GetActiveAuctions(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	var items []interface{}
+	for _, auc := range auctions {
+		card, err := f.cardRepo.GetByID(ctx, auc.CardID)
+		if err != nil {
+			continue
+		}
+		
+		items = append(items, AuctionListItem{
+			Auction: auc,
+			Card:    card,
+		})
+	}
+
+	return items, nil
+}
+
+// AuctionListFormatter implements ItemFormatter for auction list
+type AuctionListFormatter struct{}
+
+func (f *AuctionListFormatter) FormatItems(allItems []interface{}, page, totalPages int, params utils.PaginationParams) (discord.Embed, error) {
+	// Calculate pagination indices
+	itemsPerPage := 10
+	startIdx := page * itemsPerPage
+	endIdx := min(startIdx+itemsPerPage, len(allItems))
+	
+	// Get items for this page only
+	pageItems := allItems[startIdx:endIdx]
+	
+	var description strings.Builder
+	description.WriteString("```ansi\n")
+
+	for _, item := range pageItems {
+		auctionItem := item.(AuctionListItem)
+		auction := auctionItem.Auction
+		card := auctionItem.Card
+
+		timeLeft := time.Until(auction.EndTime).Round(time.Second)
+		timeStr := formatDuration(timeLeft)
+
+		// Format card name by capitalizing each word
+		words := strings.Split(strings.ReplaceAll(card.Name, "_", " "), " ")
+		for i, word := range words {
+			words[i] = strings.Title(strings.ToLower(word))
+		}
+		cardName := strings.Join(words, " ")
+
+		// Format auction entry with enhanced colors and show current price
+		priceDisplay := fmt.Sprintf("%d 💰", auction.CurrentPrice)
+		bidStatus := "No bids"
+		if auction.BidCount > 0 {
+			bidStatus = fmt.Sprintf("%d bid(s)", auction.BidCount)
+		}
+
+		// Show current price and bid status
+		description.WriteString(fmt.Sprintf("\u001b[36m[%s]\u001b[0m \u001b[33m%s\u001b[0m \u001b[32m[%s]\u001b[0m \u001b[91m[%s]\u001b[0m %s \u001b[97m%s\u001b[0m \u001b[94m[%s]\u001b[0m\n",
+			timeStr,                         // Cyan for time
+			auction.AuctionID,               // Gold for auction ID
+			bidStatus,                       // Green for bid status
+			priceDisplay,                    // Red for current price
+			strings.Repeat("★", card.Level), // Stars (no color)
+			cardName,                        // Bright white for name
+			strings.ToUpper(card.ColID)))    // Light blue for collection
+	}
+	description.WriteString("```")
+
+	return discord.Embed{
+		Title:       fmt.Sprintf("🏛️ Auction House - Page %d/%d", page+1, totalPages),
+		Description: description.String(),
+		Color:       config.BackgroundColor,
+		Footer: &discord.EmbedFooter{
+			Text: "Use /auction bid to place bids",
+		},
+	}, nil
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func (f *AuctionListFormatter) FormatCopy(items []interface{}, params utils.PaginationParams) string {
+	var result []string
+	for _, item := range items {
+		auctionItem := item.(AuctionListItem)
+		auction := auctionItem.Auction
+		card := auctionItem.Card
+		result = append(result, fmt.Sprintf("%s: %s - %d 💰", auction.AuctionID, card.Name, auction.CurrentPrice))
+	}
+	return strings.Join(result, "\n")
+}
+
+// AuctionListValidator implements UserValidator for auction list
+type AuctionListValidator struct{}
+
+func (v *AuctionListValidator) ValidateUser(eventUserID string, params utils.PaginationParams) bool {
+	return eventUserID == params.UserID
 }

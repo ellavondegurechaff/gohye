@@ -13,7 +13,7 @@ import (
 
 // EconomicServiceInterface defines the contract for economic service operations
 type EconomicServiceInterface interface {
-	// Manager access (for backward compatibility)
+	// Manager access
 	GetAuctionManager() *auction.Manager
 	GetClaimManager() *claim.Manager
 	GetEffectsManager() *effects.Manager

@@ -219,3 +219,19 @@ All commands wrapped with logging for:
 - Grep the existing codebase for the existing functionalities before implementing new
 - Before implementing anything, Enter plan mode first.
 - Grep the codebase if you're unsure and never assume things.
+- Use the existing code pattern structure of our codebase.
+- Make the code organized and clean.
+- Let's proceed with refactoring the site from scratch with an improved design layout and minimalistic dark design approach.
+  - Put the refactoring plan in a .MD file.
+  - Ensure the new design is clean, modern, and focuses on user experience.
+  - Maintain the existing functionality while improving the visual and interaction design.
+
+## Additional Development Guidelines
+- **Refactoring Notes**:
+  - Strictly follow existing code pattern structure of the codebase
+  - Don't break any existing functionalities
+  - Always grep the codebase before implementing new features
+  - Enter plan mode before implementing anything
+  - Never assume things without verification
+  - Ensure code is organized and clean
+  - Approach any refactoring with a minimalistic and thoughtful design

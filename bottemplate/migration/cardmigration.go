@@ -126,10 +126,7 @@ func (m *Migrator) MigrateCardsFromJSON(ctx context.Context) error {
 	return nil
 }
 
-func logProgress(message string) {
-	timestamp := time.Now().Format("15:04:05")
-	fmt.Printf("[%s] %s\n", timestamp, message)
-}
+// logProgress function is defined in migrator.go
 
 func readJSONFile(filename string, v interface{}) error {
 	logProgress(fmt.Sprintf("Reading %s...", filename))

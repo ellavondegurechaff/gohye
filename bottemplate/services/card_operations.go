@@ -57,16 +57,35 @@ func (s *CardOperationsService) GetUserCardsWithDetails(ctx context.Context, use
 	if len(query) > 0 {
 		filters := utils.ParseSearchQuery(query)
 		
+		// Apply favorites filtering FIRST (on UserCards before search)
+		filteredUserCards := s.applyFavoritesFilter(userCards, filters)
+		
+		// Build card mappings for the filtered user cards
+		filteredCardMap := make(map[int64]*models.UserCard)
+		filteredCardIDs := make([]int64, len(filteredUserCards))
+		for i, userCard := range filteredUserCards {
+			filteredCardMap[userCard.CardID] = userCard
+			filteredCardIDs[i] = userCard.CardID
+		}
+		
+		// Get cards for the filtered user cards
+		filteredCards, err := s.cardRepo.GetByIDs(ctx, filteredCardIDs)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to fetch filtered card details: %w", err)
+		}
+		
+		// Run search on the favorites-filtered cards using unified search
 		var results []*models.Card
 		if filters.MultiOnly {
-			results = utils.WeightedSearchWithMulti(cards, filters, cardMap)
+			results = utils.WeightedSearchWithMulti(filteredCards, filters, filteredCardMap)
 		} else {
-			results = utils.WeightedSearch(cards, filters)
+			// Use SearchCardsInCollection which now uses UnifiedSearchService
+			results = s.SearchCardsInCollection(ctx, filteredCards, filters)
 		}
 
-		// Map filtered cards back to UserCards
+		// Map search results back to UserCards
 		for _, card := range results {
-			if userCard, ok := cardMap[card.ID]; ok {
+			if userCard, ok := filteredCardMap[card.ID]; ok {
 				displayCards = append(displayCards, userCard)
 			}
 		}
@@ -110,7 +129,7 @@ func (s *CardOperationsService) GetMissingCards(ctx context.Context, userID stri
 	// Apply search filter if provided
 	if query != "" {
 		filters := utils.ParseSearchQuery(query)
-		missingCards = utils.WeightedSearch(missingCards, filters)
+		missingCards = s.SearchCardsInCollection(ctx, missingCards, filters)
 	} else {
 		// Default sorting by level and name when no query is provided
 		sort.Slice(missingCards, func(i, j int) bool {
@@ -184,8 +203,23 @@ func (s *CardOperationsService) GetCardDifferences(ctx context.Context, userID, 
 	return diffCards, nil
 }
 
-// SearchCardsInCollection searches within a specific collection of cards
+// SearchCardsInCollection searches within a specific collection of cards using unified search
 func (s *CardOperationsService) SearchCardsInCollection(ctx context.Context, cards []*models.Card, filters utils.SearchFilters) []*models.Card {
+	// Use UnifiedSearchService for improved search accuracy
+	unifiedSearchService := NewUnifiedSearchService(s)
+	
+	// Extract query from filters for fuzzy search
+	query := filters.Name
+	if query == "" {
+		query = filters.Query
+	}
+	
+	// Use unified search if there's a query, otherwise fall back to WeightedSearch for filter-only operations
+	if query != "" {
+		return unifiedSearchService.SearchCards(ctx, cards, query, filters)
+	}
+	
+	// For filter-only operations (no text query), use existing WeightedSearch
 	return utils.WeightedSearch(cards, filters)
 }
 
@@ -234,4 +268,39 @@ func (s *CardOperationsService) sortUserCards(userCards []*models.UserCard, card
 		// Secondary sort by name (ascending)
 		return strings.ToLower(cardI.Name) < strings.ToLower(cardJ.Name)
 	})
+}
+
+// applyFavoritesFilter filters UserCards based on favorites setting
+func (s *CardOperationsService) applyFavoritesFilter(userCards []*models.UserCard, filters utils.SearchFilters) []*models.UserCard {
+	// Check if favorites query was used and determine the type
+	favQuery := ""
+	for _, term := range strings.Fields(strings.ToLower(filters.Query)) {
+		if term == "fav" || term == "!fav" {
+			favQuery = term
+			break
+		}
+	}
+	
+	// If no favorites query, return all cards
+	if favQuery == "" {
+		return userCards
+	}
+	
+	var filteredCards []*models.UserCard
+	for _, userCard := range userCards {
+		switch favQuery {
+		case "fav":
+			// Show only favorited cards (Favorite = true)
+			if userCard.Favorite {
+				filteredCards = append(filteredCards, userCard)
+			}
+		case "!fav":
+			// Show only non-favorited cards (Favorite = false)
+			if !userCard.Favorite {
+				filteredCards = append(filteredCards, userCard)
+			}
+		}
+	}
+	
+	return filteredCards
 }

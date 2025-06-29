@@ -3,6 +3,7 @@ package repositories
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/disgoorg/bot-template/bottemplate/config"
@@ -13,12 +14,22 @@ import (
 type CollectionRepository interface {
 	Create(ctx context.Context, collection *models.Collection) error
 	GetByID(ctx context.Context, id string) (*models.Collection, error)
+	GetByIDs(ctx context.Context, ids []string) ([]*models.Collection, error)
 	GetAll(ctx context.Context) ([]*models.Collection, error)
+	GetAllWithCardCounts(ctx context.Context) ([]*CollectionWithCardCount, error)
+	GetCollectionCount(ctx context.Context) (int64, error)
 	Update(ctx context.Context, collection *models.Collection) error
 	Delete(ctx context.Context, id string) error
 	BulkCreate(ctx context.Context, collections []*models.Collection) error
 	SearchCollections(ctx context.Context, search string) ([]*models.Collection, error)
 	GetCollectionProgress(ctx context.Context, collectionID string, limit int) ([]*models.CollectionProgressResult, error)
+	CreateWithStandardFormat(ctx context.Context, collectionID, displayName, groupType string, isPromo bool) error
+}
+
+// CollectionWithCardCount represents a collection with its card count
+type CollectionWithCardCount struct {
+	*models.Collection
+	CardCount int `bun:"card_count"`
 }
 
 type collectionRepository struct {
@@ -42,10 +53,56 @@ func (r *collectionRepository) GetByID(ctx context.Context, id string) (*models.
 	return collection, err
 }
 
+func (r *collectionRepository) GetByIDs(ctx context.Context, ids []string) ([]*models.Collection, error) {
+	if len(ids) == 0 {
+		return []*models.Collection{}, nil
+	}
+	
+	ctx, cancel := context.WithTimeout(ctx, config.DefaultQueryTimeout)
+	defer cancel()
+	
+	var collections []*models.Collection
+	err := r.db.NewSelect().
+		Model(&collections).
+		Where("id IN (?)", bun.In(ids)).
+		Scan(ctx)
+	return collections, err
+}
+
 func (r *collectionRepository) GetAll(ctx context.Context) ([]*models.Collection, error) {
 	var collections []*models.Collection
 	err := r.db.NewSelect().Model(&collections).Scan(ctx)
 	return collections, err
+}
+
+// GetAllWithCardCounts returns all collections with their card counts using a JOIN query for performance
+func (r *collectionRepository) GetAllWithCardCounts(ctx context.Context) ([]*CollectionWithCardCount, error) {
+	ctx, cancel := context.WithTimeout(ctx, config.DefaultQueryTimeout)
+	defer cancel()
+
+	var results []*CollectionWithCardCount
+	err := r.db.NewSelect().
+		Model((*models.Collection)(nil)).
+		ColumnExpr("col.*").
+		ColumnExpr("COALESCE(COUNT(cards.id), 0) AS card_count").
+		Join("LEFT JOIN cards ON cards.col_id = col.id").
+		Group("col.id").
+		Order("col.name ASC").
+		Scan(ctx, &results)
+	
+	return results, err
+}
+
+// GetCollectionCount returns the total number of collections
+func (r *collectionRepository) GetCollectionCount(ctx context.Context) (int64, error) {
+	ctx, cancel := context.WithTimeout(ctx, config.DefaultQueryTimeout)
+	defer cancel()
+
+	count, err := r.db.NewSelect().
+		Model((*models.Collection)(nil)).
+		Count(ctx)
+	
+	return int64(count), err
 }
 
 func (r *collectionRepository) Update(ctx context.Context, collection *models.Collection) error {
@@ -186,4 +243,24 @@ func (r *collectionRepository) GetCollectionProgress(ctx context.Context, collec
 	}
 
 	return results, nil
+}
+
+func (r *collectionRepository) CreateWithStandardFormat(ctx context.Context, collectionID, displayName, groupType string, isPromo bool) error {
+	ctx, cancel := context.WithTimeout(ctx, config.DefaultQueryTimeout)
+	defer cancel()
+
+	collection := &models.Collection{
+		ID:         strings.ToLower(collectionID),  // Force lowercase
+		Name:       displayName,                    // Keep original casing
+		Origin:     "",                            // Empty string (not null)
+		Aliases:    []string{strings.ToLower(collectionID)}, // ID in array
+		Promo:      isPromo,
+		Compressed: true,                          // Always true
+		Fragments:  false,                         // Always false
+		Tags:       []string{groupType},           // Single tag array
+		CreatedAt:  time.Now(),
+		UpdatedAt:  time.Now(),
+	}
+	
+	return r.Create(ctx, collection)
 }

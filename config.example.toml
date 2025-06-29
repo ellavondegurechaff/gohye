@@ -1,0 +1,63 @@
+# GoHYE Configuration Example
+# Copy this file to config.toml and update with your values
+
+[log]
+level = "info"
+format = "text" 
+add_source = true
+
+[bot]
+token = "your_discord_bot_token_here"
+dev_guilds = [] # Guild IDs for command testing
+
+[db]
+host = "localhost"
+port = 5432
+user = "username"
+password = "password"
+database = "database_name"
+pool_size = 10
+
+[web]
+host = "localhost"
+port = 8080
+
+# IMPORTANT: Generate a secure random string for session_key
+# Example: openssl rand -base64 32
+session_key = "your_secure_session_key_here_32_chars_minimum"
+
+# Discord OAuth2 Configuration
+[web.oauth]
+client_id = "your_discord_app_client_id"
+client_secret = "your_discord_app_client_secret"
+redirect_url = "http://localhost:8080/auth/callback"
+scopes = ["identify", "email", "guilds.members.read"]
+
+# Admin Access Control
+# Add Discord user IDs that should have admin access
+admin_users = [
+    "123456789012345678",  # Replace with actual Discord user IDs
+    "987654321098765432"
+]
+
+# Add Discord role IDs that grant admin access
+admin_roles = [
+    "234567890123456789",  # Replace with actual Discord role IDs
+    "345678901234567890"
+]
+
+# Guild ID where roles should be checked (required for role-based admin access)
+admin_guild_id = "456789012345678901"  # Replace with your Discord server ID
+
+# Rate limiting
+[web.rate_limit]
+enabled = true
+requests = 100  # requests per window
+window = 60     # window in seconds
+
+[spaces]
+key = "your_digitalocean_spaces_key"
+secret = "your_digitalocean_spaces_secret"
+region = "nyc3"
+bucket = "your_bucket_name"
+cardroot = "cards/"

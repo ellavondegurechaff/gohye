@@ -61,7 +61,7 @@ func (n *AuctionNotifier) NotifyAuctionEnd(ctx context.Context, auction *models.
 		SetColor(0x2b2d31)
 
 	if auction.TopBidderID != "" {
-		sellerEmbed.SetDescription(fmt.Sprintf("Your auction `%s` has ended with a winning bid of %d flakes!",
+		sellerEmbed.SetDescription(fmt.Sprintf("Your auction `%s` has ended with a final price of %d flakes!",
 			auction.AuctionID,
 			auction.CurrentPrice))
 	} else {
@@ -91,7 +91,7 @@ func (n *AuctionNotifier) NotifyAuctionEnd(ctx context.Context, auction *models.
 	if auction.TopBidderID != "" {
 		winnerEmbed := discord.NewEmbedBuilder().
 			SetTitle("🏛️ Auction Won!").
-			SetDescription(fmt.Sprintf("You won auction `%s` with a bid of %d flakes!",
+			SetDescription(fmt.Sprintf("You won auction `%s` with a final price of %d flakes!",
 				auction.AuctionID,
 				auction.CurrentPrice)).
 			SetColor(0x2b2d31)

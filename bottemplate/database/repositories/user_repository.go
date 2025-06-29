@@ -23,6 +23,7 @@ type UserRepository interface {
 	GetUsers(ctx context.Context) ([]*models.User, error)
 	UpdateLastWork(ctx context.Context, discordID string) error
 	GetBalance(ctx context.Context, userID string) (int64, error)
+	GetUserCount(ctx context.Context) (int64, error)
 }
 
 type userRepository struct {
@@ -181,4 +182,20 @@ func (r *userRepository) GetBalance(ctx context.Context, userID string) (int64, 
 	}
 
 	return user.Balance, nil
+}
+
+func (r *userRepository) GetUserCount(ctx context.Context) (int64, error) {
+	count, err := r.db.NewSelect().
+		Model((*models.User)(nil)).
+		Count(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("failed to count users: %w", err)
+	}
+	
+	slog.Info("Retrieved user count",
+		slog.String("type", "db"),
+		slog.String("operation", "GetUserCount"),
+		slog.Int64("count", int64(count)))
+		
+	return int64(count), nil
 }

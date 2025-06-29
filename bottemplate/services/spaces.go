@@ -2,6 +2,7 @@
 package services
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/disgoorg/bot-template/bottemplate/database/models"
 	"github.com/disgoorg/bot-template/bottemplate/utils"
 )
@@ -61,8 +63,18 @@ func NewSpacesService(spacesKey, spacesSecret, region, bucket, cardRoot string) 
 }
 
 func (s *SpacesService) GetCardImageURL(cardName string, colID string, level int, groupType string) string {
+	return s.GetCardImageURLWithFormat(cardName, colID, level, groupType, false)
+}
+
+func (s *SpacesService) GetCardImageURLWithFormat(cardName string, colID string, level int, groupType string, animated bool) string {
 	// Use cache manager to find the correct path
 	baseDir, _ := s.cacheManager.FindPathForCard(context.Background(), cardName, colID, level, groupType)
+
+	// Determine file extension based on animation status
+	extension := "jpg"
+	if animated {
+		extension = "gif"
+	}
 
 	var sb strings.Builder
 	sb.WriteString("https://cards.hyejoobot.com/")
@@ -72,7 +84,7 @@ func (s *SpacesService) GetCardImageURL(cardName string, colID string, level int
 	sb.WriteByte('/')
 	sb.WriteString(colID)
 	sb.WriteByte('/')
-	sb.WriteString(fmt.Sprintf("%d_%s.jpg", level, cardName))
+	sb.WriteString(fmt.Sprintf("%d_%s.%s", level, cardName, extension))
 
 	return sb.String()
 }
@@ -112,4 +124,30 @@ func (s *SpacesService) GetSpacesConfig() utils.SpacesConfig {
 			return s.GetCardImageURL(cardName, colID, level, groupType)
 		},
 	}
+}
+
+// UploadFile uploads a file to the specified path in Spaces
+func (s *SpacesService) UploadFile(ctx context.Context, data []byte, path string, contentType string) error {
+	input := &s3.PutObjectInput{
+		Bucket:       aws.String(s.bucket),
+		Key:          aws.String(path),
+		Body:         bytes.NewReader(data),
+		ContentType:  aws.String(contentType),
+		CacheControl: aws.String("public, max-age=31536000"),
+		ACL:          types.ObjectCannedACLPublicRead,
+	}
+
+	_, err := s.client.PutObject(ctx, input)
+	return err
+}
+
+// DeleteFile deletes a file from the specified path in Spaces
+func (s *SpacesService) DeleteFile(ctx context.Context, path string) error {
+	input := &s3.DeleteObjectInput{
+		Bucket: aws.String(s.bucket),
+		Key:    aws.String(path),
+	}
+
+	_, err := s.client.DeleteObject(ctx, input)
+	return err
 }

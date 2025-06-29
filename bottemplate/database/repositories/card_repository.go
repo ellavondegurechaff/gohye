@@ -37,6 +37,9 @@ type CardRepository interface {
 	GetAllByUserID(ctx context.Context, userID string) ([]*models.UserCard, error)
 	GetByIDs(ctx context.Context, ids []int64) ([]*models.Card, error)
 	GetByQuery(ctx context.Context, query string) (*models.Card, error)
+	GetLastCardID(ctx context.Context) (int64, error)
+	BatchCreateWithTransaction(ctx context.Context, tx bun.Tx, cards []*models.Card) error
+	GetCardCount(ctx context.Context) (int64, error)
 }
 
 type cardRepository struct {
@@ -535,17 +538,6 @@ func (r *cardRepository) setCache(key string, value interface{}, duration time.D
 	fmt.Printf("Cached value for key: %s (expires: %s)\n", key, entry.expiresAt)
 }
 
-// Add cache cleanup
-func (r *cardRepository) cleanExpiredCache() {
-	r.cache.Range(func(key, value interface{}) bool {
-		entry := value.(cacheEntry)
-		if time.Now().After(entry.expiresAt) {
-			r.cache.Delete(key)
-			fmt.Printf("Cleaned expired cache for key: %s\n", key)
-		}
-		return true
-	})
-}
 
 // Add this method for cache invalidation
 func (r *cardRepository) invalidateCache(cardID int64) {
@@ -666,4 +658,46 @@ func (r *cardRepository) GetByQuery(ctx context.Context, query string) (*models.
 	}
 
 	return card, nil
+}
+
+func (r *cardRepository) GetLastCardID(ctx context.Context) (int64, error) {
+	ctx, cancel := context.WithTimeout(ctx, config.DefaultQueryTimeout)
+	defer cancel()
+
+	var maxID int64
+	err := r.db.NewSelect().
+		Model((*models.Card)(nil)).
+		ColumnExpr("COALESCE(MAX(id), 0)").
+		Scan(ctx, &maxID)
+	return maxID, err
+}
+
+func (r *cardRepository) BatchCreateWithTransaction(ctx context.Context, tx bun.Tx, cards []*models.Card) error {
+	if len(cards) == 0 {
+		return nil
+	}
+	
+	now := time.Now()
+	for _, card := range cards {
+		card.CreatedAt = now
+		card.UpdatedAt = now
+	}
+	
+	_, err := tx.NewInsert().
+		Model(&cards).
+		Exec(ctx)
+	
+	return err
+}
+
+// GetCardCount returns the total number of cards for performance
+func (r *cardRepository) GetCardCount(ctx context.Context) (int64, error) {
+	ctx, cancel := context.WithTimeout(ctx, config.DefaultQueryTimeout)
+	defer cancel()
+
+	count, err := r.db.NewSelect().
+		Model((*models.Card)(nil)).
+		Count(ctx)
+	
+	return int64(count), err
 }

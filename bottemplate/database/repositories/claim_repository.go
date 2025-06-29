@@ -217,10 +217,6 @@ func (r *claimRepository) GetClaimInfo(ctx context.Context, userID string) (*Cla
 	}, nil
 }
 
-func (r *claimRepository) calculateClaimCost() int64 {
-	return r.basePrice
-}
-
 func (r *claimRepository) GetBasePrice() int64 {
 	return r.basePrice
 }

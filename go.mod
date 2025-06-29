@@ -1,6 +1,8 @@
 module github.com/disgoorg/bot-template
 
-go 1.22
+go 1.23.0
+
+toolchain go1.24.2
 
 require (
 	github.com/disgoorg/disgo v0.18.7
@@ -12,7 +14,13 @@ require (
 
 require (
 	github.com/hashicorp/golang-lru v1.0.2
+	github.com/sahilm/fuzzy v0.1.1
 	go.mongodb.org/mongo-driver v1.17.1
+)
+
+require (
+	github.com/kylelemons/godebug v1.1.0 // indirect
+	github.com/stretchr/testify v1.10.0 // indirect
 )
 
 require (
@@ -52,9 +60,9 @@ require (
 	github.com/uptrace/bun v1.2.5
 	github.com/uptrace/bun/dialect/pgdialect v1.2.5
 	github.com/uptrace/bun/driver/pgdriver v1.2.5
-	golang.org/x/crypto v0.28.0 // indirect
-	golang.org/x/net v0.26.0 // indirect
-	golang.org/x/sync v0.10.0
-	golang.org/x/sys v0.26.0 // indirect
-	golang.org/x/text v0.21.0 // indirect
+	golang.org/x/crypto v0.39.0 // indirect
+	golang.org/x/net v0.41.0 // indirect
+	golang.org/x/sync v0.15.0
+	golang.org/x/sys v0.33.0 // indirect
+	golang.org/x/text v0.26.0 // indirect
 )

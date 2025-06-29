@@ -3,6 +3,7 @@ package pricing
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/disgoorg/bot-template/bottemplate/database"
@@ -242,6 +243,18 @@ func (ma *MarketAnalyzer) GetMarketStats(ctx context.Context, cardID int64, curr
 		Scan(ctx, &stats)
 
 	if err != nil {
+		// Check if error is due to missing table - provide fallback data
+		if strings.Contains(err.Error(), "does not exist") || strings.Contains(err.Error(), "relation") {
+			// Table doesn't exist, use current price as fallback
+			stats = MarketStats{
+				MinPrice24h:        currentPrice,
+				MaxPrice24h:        currentPrice,
+				AvgPrice24h:        float64(currentPrice),
+				UniqueOwners:       0,
+				PriceChangePercent: 0,
+			}
+			return &stats, nil
+		}
 		return nil, fmt.Errorf("failed to fetch market stats: %w", err)
 	}
 

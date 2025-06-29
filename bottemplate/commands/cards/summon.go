@@ -44,19 +44,32 @@ func SummonHandler(b *bottemplate.Bot) handler.CommandHandler {
 			return utils.EH.CreateSystemError(e, "Failed to fetch your collection")
 		}
 
-		// Find the first matching card from filtered results
+		// Find the best matching card from filtered results (optimized with UnifiedSearchService)
 		var matchedCard *models.Card
 		if len(userCards) > 0 && len(cards) > 0 {
 			// Build card mappings for efficient lookup
 			_, cardMap := cardOperationsService.BuildCardMappings(userCards, cards)
 			
-			// Find first card with amount > 0
+			// Extract owned cards with amount > 0
+			var ownedCards []*models.Card
 			for _, userCard := range userCards {
 				if userCard.Amount > 0 {
 					if card, exists := cardMap[userCard.CardID]; exists {
-						matchedCard = card
-						break
+						ownedCards = append(ownedCards, card)
 					}
+				}
+			}
+			
+			// Use UnifiedSearchService for best match finding
+			if len(ownedCards) > 0 {
+				unifiedSearchService := services.NewUnifiedSearchService(cardOperationsService)
+				result, err := unifiedSearchService.SearchSingleCard(ctx, ownedCards, cardName)
+				if err == nil && result != nil {
+					matchedCard = result
+				}
+				// Fallback to first owned card if unified search fails
+				if matchedCard == nil && len(ownedCards) > 0 {
+					matchedCard = ownedCards[0]
 				}
 			}
 		}

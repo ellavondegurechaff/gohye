@@ -175,3 +175,136 @@ type MongoUserCard struct {
 	Mark      string             `bson:"mark"`
 	UpdatedAt time.Time          `bson:"updated_at"`
 }
+
+// MongoCollection represents a collection in MongoDB.
+type MongoCollection struct {
+	ID         primitive.ObjectID `bson:"_id"`
+	ColID      string             `bson:"id"`
+	Name       string             `bson:"name"`
+	Origin     string             `bson:"origin"`
+	Aliases    []string           `bson:"aliases"`
+	Compressed bool               `bson:"compressed"`
+	Promo      bool               `bson:"promo"`
+	Tags       []string           `bson:"tags"`
+	Fragments  bool               `bson:"fragments"`
+	Added      time.Time          `bson:"added"`
+	UpdatedAt  time.Time          `bson:"updatedAt"`
+}
+
+// MongoCard represents a card in MongoDB.
+type MongoCard struct {
+	ID        primitive.ObjectID `bson:"_id"`
+	CardID    int32              `bson:"id"`
+	Name      string             `bson:"name"`
+	Level     int32              `bson:"level"`
+	ColID     string             `bson:"col"`
+	Animated  bool               `bson:"animated"`
+	Tags      string             `bson:"tags"` // Tags as string in MongoDB
+	Added     time.Time          `bson:"added"`
+	URL       string             `bson:"url"`
+	ShortURL  string             `bson:"shorturl"`
+	UpdatedAt time.Time          `bson:"updatedAt"`
+}
+
+// MongoClaim represents a claim in MongoDB.
+type MongoClaim struct {
+	ID      primitive.ObjectID `bson:"_id"`
+	ClaimID string             `bson:"id"`
+	Cards   []int32            `bson:"cards"` // Array of card IDs
+	Promo   bool               `bson:"promo"`
+	Lock    string             `bson:"lock"`
+	Date    time.Time          `bson:"date"`
+	User    string             `bson:"user"`
+	Guild   string             `bson:"guild"`
+	Cost    int32              `bson:"cost"`
+}
+
+// MongoAuction represents an auction in MongoDB.
+type MongoAuction struct {
+	ID         primitive.ObjectID `bson:"_id"`
+	AuctionID  string             `bson:"id"`
+	Finished   bool               `bson:"finished"`
+	Cancelled  bool               `bson:"cancelled"`
+	Price      int64              `bson:"price"`
+	HighBid    int64              `bson:"highbid"`
+	Card       int32              `bson:"card"`
+	Bids       []MongoAuctionBid  `bson:"bids"`
+	Author     string             `bson:"author"`
+	Expires    time.Time          `bson:"expires"`
+	Time       time.Time          `bson:"time"`
+	Guild      string             `bson:"guild"`
+	LastBidder string             `bson:"lastbidder"`
+}
+
+// MongoAuctionBid represents a bid within an auction.
+type MongoAuctionBid struct {
+	User string    `bson:"user"`
+	Bid  int64     `bson:"bid"`
+	Time time.Time `bson:"time"`
+}
+
+// MongoUserEffect represents a user effect in MongoDB.
+type MongoUserEffect struct {
+	ID           primitive.ObjectID `bson:"_id"`
+	UserID       string             `bson:"userid"`
+	EffectID     string             `bson:"id"`
+	Uses         int32              `bson:"uses"`
+	CooldownEnds time.Time          `bson:"cooldownends"`
+	Expires      time.Time          `bson:"expires"`
+	Notified     bool               `bson:"notified"`
+}
+
+// MongoUserQuest represents a user quest in MongoDB.
+type MongoUserQuest struct {
+	ID        primitive.ObjectID `bson:"_id"`
+	UserID    string             `bson:"userid"`
+	QuestID   string             `bson:"questid"`
+	Type      string             `bson:"type"`
+	Completed bool               `bson:"completed"`
+	Created   time.Time          `bson:"created"`
+	Expiry    time.Time          `bson:"expiry"`
+}
+
+// MongoUserInventory represents a user inventory item in MongoDB.
+type MongoUserInventory struct {
+	ID       primitive.ObjectID `bson:"_id"`
+	Cards    []int32            `bson:"cards"`
+	UserID   string             `bson:"userid"`
+	ItemID   string             `bson:"id"`
+	Acquired time.Time          `bson:"acquired"`
+}
+
+// MigrationStats tracks migration progress and issues
+type MigrationStats struct {
+	Tables map[string]*TableStats `json:"tables"`
+	StartTime time.Time `json:"start_time"`
+	EndTime time.Time `json:"end_time"`
+	TotalErrors int `json:"total_errors"`
+	TotalSkipped int `json:"total_skipped"`
+	TotalProcessed int `json:"total_processed"`
+}
+
+// TableStats tracks stats for individual tables
+type TableStats struct {
+	TableName string `json:"table_name"`
+	Processed int `json:"processed"`
+	Successful int `json:"successful"`
+	Skipped int `json:"skipped"`
+	Errors int `json:"errors"`
+	SkippedRecords []SkippedRecord `json:"skipped_records"`
+	ErrorRecords []ErrorRecord `json:"error_records"`
+}
+
+// SkippedRecord tracks why a record was skipped
+type SkippedRecord struct {
+	Reason string `json:"reason"`
+	Data string `json:"data"` // JSON representation of the record
+	Timestamp time.Time `json:"timestamp"`
+}
+
+// ErrorRecord tracks migration errors
+type ErrorRecord struct {
+	Error string `json:"error"`
+	Data string `json:"data"` // JSON representation of the record
+	Timestamp time.Time `json:"timestamp"`
+}

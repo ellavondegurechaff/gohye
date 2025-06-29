@@ -30,6 +30,7 @@ type EconomicService struct {
 	userRepo         repositories.UserRepository
 	cardRepo         repositories.CardRepository
 	userCardRepo     repositories.UserCardRepository
+	collectionRepo   repositories.CollectionRepository
 	auctionRepo      repositories.AuctionRepository
 	effectRepo       repositories.EffectRepository
 	economyStatsRepo repositories.EconomyStatsRepository
@@ -157,7 +158,7 @@ func (s *EconomicService) initializeManagers() {
 	s.claimManager = claim.NewManager(s.config.ClaimCooldownPeriod)
 
 	// Initialize effects manager
-	s.effectsManager = effects.NewManager(s.effectRepo, s.userRepo, s.userCardRepo, s.db)
+	s.effectsManager = effects.NewManager(s.effectRepo, s.userRepo, s.userCardRepo, s.cardRepo, s.collectionRepo, s.db)
 
 	// Initialize economy monitor
 	s.economyMonitor = economy.NewEconomyMonitor(

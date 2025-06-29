@@ -1,122 +1,21 @@
 [{
-	"resource": "/C:/Users/Yuqi/Desktop/hyego/gohye/bottemplate/commands/system/useeffect.go",
-	"owner": "_generated_diagnostic_collection_name_#4",
+	"resource": "/C:/Users/Yuqi/Desktop/hyego/gohye/bottemplate/commands/cards/levelup.go",
+	"owner": "_generated_diagnostic_collection_name_#3",
 	"code": {
-		"value": "WrongAssignCount",
+		"value": "NoNewVar",
 		"target": {
 			"$mid": 1,
 			"path": "/golang.org/x/tools/internal/typesinternal",
 			"scheme": "https",
 			"authority": "pkg.go.dev",
-			"fragment": "WrongAssignCount"
+			"fragment": "NoNewVar"
 		}
 	},
 	"severity": 8,
-	"message": "assignment mismatch: 2 variables but event.SlashCommandInteractionData().String returns 1 value",
+	"message": "no new variables on left side of :=",
 	"source": "compiler",
-	"startLineNumber": 46,
-	"startColumn": 17,
-	"endLineNumber": 46,
-	"endColumn": 69
-},{
-	"resource": "/C:/Users/Yuqi/Desktop/hyego/gohye/bottemplate/commands/system/useeffect.go",
-	"owner": "_generated_diagnostic_collection_name_#4",
-	"code": {
-		"value": "WrongAssignCount",
-		"target": {
-			"$mid": 1,
-			"path": "/golang.org/x/tools/internal/typesinternal",
-			"scheme": "https",
-			"authority": "pkg.go.dev",
-			"fragment": "WrongAssignCount"
-		}
-	},
-	"severity": 8,
-	"message": "assignment mismatch: 2 variables but event.SlashCommandInteractionData().String returns 1 value",
-	"source": "compiler",
-	"startLineNumber": 47,
-	"startColumn": 13,
-	"endLineNumber": 47,
-	"endColumn": 68
-},{
-	"resource": "/c:/Users/Yuqi/Desktop/hyego/gohye/bottemplate/database/models/effect.go",
-	"owner": "_generated_diagnostic_collection_name_#4",
-	"code": {
-		"value": "DuplicateDecl",
-		"target": {
-			"$mid": 1,
-			"path": "/golang.org/x/tools/internal/typesinternal",
-			"scheme": "https",
-			"authority": "pkg.go.dev",
-			"fragment": "DuplicateDecl"
-		}
-	},
-	"severity": 8,
-	"message": "UserSlot redeclared in this block (see details)",
-	"source": "compiler",
-	"startLineNumber": 62,
-	"startColumn": 6,
-	"endLineNumber": 62,
-	"endColumn": 14,
-	"relatedInformation": [
-		{
-			"startLineNumber": 9,
-			"startColumn": 6,
-			"endLineNumber": 9,
-			"endColumn": 14,
-			"message": "",
-			"resource": "/C:/Users/Yuqi/Desktop/hyego/gohye/bottemplate/database/models/user_slot.go"
-		}
-	]
-},{
-	"resource": "/c:/Users/Yuqi/Desktop/hyego/gohye/bottemplate/database/models/user_slot.go",
-	"owner": "_generated_diagnostic_collection_name_#4",
-	"code": {
-		"value": "DuplicateDecl",
-		"target": {
-			"$mid": 1,
-			"path": "/golang.org/x/tools/internal/typesinternal",
-			"scheme": "https",
-			"authority": "pkg.go.dev",
-			"fragment": "DuplicateDecl"
-		}
-	},
-	"severity": 8,
-	"message": "UserSlot redeclared in this block",
-	"source": "compiler",
-	"startLineNumber": 9,
-	"startColumn": 6,
-	"endLineNumber": 9,
-	"endColumn": 14,
-	"relatedInformation": [
-		{
-			"startLineNumber": 62,
-			"startColumn": 6,
-			"endLineNumber": 62,
-			"endColumn": 14,
-			"message": "other declaration of UserSlot",
-			"resource": "/C:/Users/Yuqi/Desktop/hyego/gohye/bottemplate/database/models/effect.go"
-		}
-	]
-},{
-	"resource": "/c:/Users/Yuqi/Desktop/hyego/gohye/bottemplate/economy/effects/effect_manager.go",
-	"owner": "_generated_diagnostic_collection_name_#4",
-	"code": {
-		"value": "IncompatibleAssign",
-		"target": {
-			"$mid": 1,
-			"path": "/golang.org/x/tools/internal/typesinternal",
-			"scheme": "https",
-			"authority": "pkg.go.dev",
-			"fragment": "IncompatibleAssign"
-		}
-	},
-	"severity": 8,
-	"message": "cannot use time.Now().Add(time.Duration(effect.Duration) * time.Hour) (value of struct type time.Time) as *time.Time value in struct literal",
-	"source": "compiler",
-	"startLineNumber": 105,
-	"startColumn": 14,
-	"endLineNumber": 105,
-	"endColumn": 72,
-	"modelVersionId": 5
+	"startLineNumber": 90,
+	"startColumn": 2,
+	"endLineNumber": 90,
+	"endColumn": 55
 }]

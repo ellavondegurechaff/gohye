@@ -95,6 +95,14 @@ func (h *ShopHandler) handleList(event *handler.CommandEvent) error {
 		title = "Shop - Passive Effects"
 	}
 
+	// Check if we still have no items
+	if len(currentItems) == 0 {
+		return event.CreateMessage(discord.MessageCreate{
+			Content: "❌ No items available in the shop",
+			Flags:   discord.MessageFlagEphemeral,
+		})
+	}
+
 	components := []discord.ContainerComponent{
 		createShopComponents("active")[0],
 		createItemSelectMenu(currentItems, "active"),
@@ -320,21 +328,27 @@ func (h *ShopHandler) handleItemSelect(event *handler.ComponentEvent) error {
 		})
 	}
 
-	// Enhanced recipe formatting
+	// Enhanced recipe formatting - show actual recipe breakdown
 	recipeText := ""
 	if len(item.Recipe) > 0 {
-		stars := strings.Repeat("⭐", int(item.Recipe[0]))
-		cardWord := "card"
-		if len(item.Recipe) > 1 {
-			cardWord = "cards"
+		// Count cards by star level
+		starCounts := make(map[int64]int)
+		for _, stars := range item.Recipe {
+			starCounts[stars]++
 		}
-		recipeText = fmt.Sprintf("* Required Recipe: %d %s %s (collect %d %d-star %s to craft)",
-			len(item.Recipe),
-			stars,
-			cardWord,
-			len(item.Recipe),
-			item.Recipe[0],
-			cardWord)
+		
+		// Build recipe text showing actual requirements
+		var recipeParts []string
+		for stars := int64(1); stars <= 5; stars++ {
+			if count := starCounts[stars]; count > 0 {
+				starDisplay := strings.Repeat("⭐", int(stars))
+				recipeParts = append(recipeParts, fmt.Sprintf("%dx %s", count, starDisplay))
+			}
+		}
+		
+		if len(recipeParts) > 0 {
+			recipeText = fmt.Sprintf("* Required Recipe: %s cards", strings.Join(recipeParts, " + "))
+		}
 	}
 
 	embed := discord.NewEmbedBuilder().
