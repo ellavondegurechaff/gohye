@@ -205,22 +205,22 @@ func (s *CardOperationsService) GetCardDifferences(ctx context.Context, userID, 
 
 // SearchCardsInCollection searches within a specific collection of cards using unified search
 func (s *CardOperationsService) SearchCardsInCollection(ctx context.Context, cards []*models.Card, filters utils.SearchFilters) []*models.Card {
-	// Use UnifiedSearchService for improved search accuracy
+	// Check if this is a filter-only operation (levels, collections, tags, etc. without name search)
+	hasNameQuery := filters.Name != "" && filters.Name != filters.Query
+	hasFilterQuery := len(filters.Levels) > 0 || len(filters.AntiLevels) > 0 || 
+					  len(filters.Collections) > 0 || len(filters.AntiCollections) > 0 ||
+					  len(filters.Tags) > 0 || len(filters.AntiTags) > 0 ||
+					  filters.Animated || filters.ExcludeAnimated ||
+					  filters.PromoOnly || filters.ExcludePromo
+	
+	// For filter-only operations or when name is just the parsed query, use WeightedSearch
+	if !hasNameQuery || hasFilterQuery {
+		return utils.WeightedSearch(cards, filters)
+	}
+	
+	// Use UnifiedSearchService for text-based name searches
 	unifiedSearchService := NewUnifiedSearchService(s)
-	
-	// Extract query from filters for fuzzy search
-	query := filters.Name
-	if query == "" {
-		query = filters.Query
-	}
-	
-	// Use unified search if there's a query, otherwise fall back to WeightedSearch for filter-only operations
-	if query != "" {
-		return unifiedSearchService.SearchCards(ctx, cards, query, filters)
-	}
-	
-	// For filter-only operations (no text query), use existing WeightedSearch
-	return utils.WeightedSearch(cards, filters)
+	return unifiedSearchService.SearchCards(ctx, cards, filters.Name, filters)
 }
 
 // BuildCardMappings creates optimized lookup maps for card operations

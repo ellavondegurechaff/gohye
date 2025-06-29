@@ -60,43 +60,60 @@ func (h *AuctionHelpers) getMarketPrice(ctx context.Context, cardID int64) (int6
 	return avgPrice, nil
 }
 
-// getUserCardByName finds a user's card by name using search functionality
+// getUserCardByName finds a user's card by name using enhanced search functionality
 func (h *AuctionHelpers) getUserCardByName(ctx context.Context, userID string, cardName string) (*models.UserCard, error) {
-	// First get all user's cards
+	// Try direct query first (optimized approach)
+	if card, err := h.manager.cardRepo.GetByQuery(ctx, cardName); err == nil {
+		// Check if user owns this card
+		if userCard, err := h.manager.UserCardRepo.GetUserCard(ctx, userID, card.ID); err == nil && userCard.Amount > 0 {
+			return userCard, nil
+		}
+	}
+
+	// Fallback to comprehensive search within user's cards
 	userCards, err := h.manager.UserCardRepo.GetAllByUserID(ctx, userID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user cards: %w", err)
 	}
 
-	// Get all cards for searching
-	cards, err := h.manager.cardRepo.GetAll(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get cards: %w", err)
-	}
-
-	// Create a map of owned cards for quick lookup
-	ownedCards := make(map[int64]*models.UserCard)
+	// Filter for cards with amount > 0 and create lookup map
+	cardIDs := make([]int64, 0, len(userCards))
+	userCardMap := make(map[int64]*models.UserCard)
 	for _, uc := range userCards {
 		if uc.Amount > 0 {
-			ownedCards[uc.CardID] = uc
+			cardIDs = append(cardIDs, uc.CardID)
+			userCardMap[uc.CardID] = uc
 		}
 	}
 
-	// Use weighted search on all cards
+	if len(cardIDs) == 0 {
+		return nil, fmt.Errorf("no cards available for auction")
+	}
+
+	// Get card details for user's owned cards only
+	cards, err := h.manager.cardRepo.GetByIDs(ctx, cardIDs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get card details: %w", err)
+	}
+
+	// Use enhanced search filters with user-specific filtering
 	filters := utils.ParseSearchQuery(cardName)
 	filters.SortBy = utils.SortByLevel
 	filters.SortDesc = true
 
-	searchResults := utils.WeightedSearch(cards, filters)
+	searchResults := utils.WeightedSearchWithMulti(cards, filters, userCardMap)
 
-	// Find the first matching card that the user owns
-	for _, result := range searchResults {
-		if userCard, ok := ownedCards[result.ID]; ok {
-			return userCard, nil
-		}
+	if len(searchResults) == 0 {
+		return nil, fmt.Errorf("no matching owned cards found")
 	}
 
-	return nil, fmt.Errorf("no matching owned cards found")
+	// Return the UserCard for the best match
+	bestCard := searchResults[0]
+	if userCard, exists := userCardMap[bestCard.ID]; exists {
+		return userCard, nil
+	}
+
+	return nil, fmt.Errorf("internal error: card found but user ownership not matched")
 }
 
 

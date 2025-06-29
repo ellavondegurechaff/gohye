@@ -136,7 +136,7 @@ func (h *AuctionHandler) HandleCreate(event *handler.CommandEvent) error {
 	embed := discord.NewEmbedBuilder().
 		SetTitle("🏛️ Confirm Auction Creation").
 		SetDescription(fmt.Sprintf("Please confirm that you want to create an auction for **%s**", card.Name)).
-		AddField("Card", fmt.Sprintf("%s %s", strings.Repeat("★", card.Level), card.Name), false).
+		AddField("Card", fmt.Sprintf("%s %s", utils.GetPromoRarityPlainText(card.ColID, card.Level), card.Name), false).
 		AddField("Start Price", fmt.Sprintf("%d 💰", startPrice), true).
 		AddField("Duration", formatDuration(duration), true).
 		AddField("Collection", strings.ToUpper(card.ColID), true).
@@ -403,7 +403,7 @@ func (f *AuctionListFormatter) FormatItems(allItems []interface{}, page, totalPa
 			auction.AuctionID,               // Gold for auction ID
 			bidStatus,                       // Green for bid status
 			priceDisplay,                    // Red for current price
-			strings.Repeat("★", card.Level), // Stars (no color)
+			utils.GetPromoRarityPlainText(card.ColID, card.Level), // Stars or promo emoji (no color)
 			cardName,                        // Bright white for name
 			strings.ToUpper(card.ColID)))    // Light blue for collection
 	}

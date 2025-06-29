@@ -42,22 +42,32 @@ func HasHandler(b *bottemplate.Bot) handler.CommandHandler {
 		targetUser := e.SlashCommandInteractionData().User("user")
 		query := e.SlashCommandInteractionData().String("card_query")
 
-		// Try to find the card using CardOperationsService
-		cards, err := b.CardRepository.GetAll(ctx)
-		if err != nil {
-			return utils.EH.CreateErrorEmbed(e, "Failed to search for cards")
+		// Try direct query first (optimized approach)
+		var card *models.Card
+		var err error
+		
+		// First try GetByQuery for exact matches
+		if directCard, queryErr := b.CardRepository.GetByQuery(ctx, query); queryErr == nil {
+			card = directCard
+		} else {
+			// Fallback to comprehensive search for fuzzy matches
+			cards, getAllErr := b.CardRepository.GetAll(ctx)
+			if getAllErr != nil {
+				return utils.EH.CreateErrorEmbed(e, "Failed to search for cards")
+			}
+
+			// Use enhanced search filters
+			filters := utils.ParseSearchQuery(query)
+			filters.SortBy = utils.SortByLevel
+			filters.SortDesc = true
+
+			searchResults := cardOperationsService.SearchCardsInCollection(ctx, cards, filters)
+			if len(searchResults) == 0 {
+				return utils.EH.CreateErrorEmbed(e, fmt.Sprintf("No cards found matching '%s'", query))
+			}
+
+			card = searchResults[0]
 		}
-
-		filters := utils.ParseSearchQuery(query)
-		filters.SortBy = utils.SortByLevel
-		filters.SortDesc = true
-
-		searchResults := cardOperationsService.SearchCardsInCollection(ctx, cards, filters)
-		if len(searchResults) == 0 {
-			return utils.EH.CreateErrorEmbed(e, fmt.Sprintf("No cards found matching '%s'", query))
-		}
-
-		card := searchResults[0]
 
 		// Check if user has the card
 		userCard, err := b.UserCardRepository.GetUserCard(ctx, targetUser.ID.String(), card.ID)

@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 	"unicode"
+
+	"github.com/disgoorg/bot-template/bottemplate/config"
 )
 
 // CardDisplayInfo represents the formatted display information for a card
@@ -54,7 +56,7 @@ func GetCardDisplayInfo(cardName string, colID string, level int, groupType stri
 		FormattedName:       FormatCardName(cardName),
 		FormattedCollection: FormatCollectionName(colID),
 		ImageURL:            imageURL,
-		Stars:               GetStarsDisplay(level),
+		Stars:               GetPromoRarityDisplay(colID, level),
 		Hyperlink:           fmt.Sprintf("[%s](%s)", FormatCardName(cardName), imageURL),
 	}
 }
@@ -67,6 +69,38 @@ func GetStarsDisplay(level int) string {
 	return fmt.Sprintf("`%s`", strings.Repeat("★", level))
 }
 
+// GetPromoRarityDisplay returns promo emoji or stars based on collection and level
+func GetPromoRarityDisplay(colID string, level int) string {
+	if config.IsPromoCollection(colID) {
+		// For promo collections, repeat the emoji based on level
+		if level < 1 || level > 5 {
+			return "`✧`"
+		}
+		emoji := config.GetPromoEmoji(colID)
+		return fmt.Sprintf("`%s`", strings.Repeat(emoji, level))
+	}
+	// Fall back to regular stars for non-promo collections
+	return GetStarsDisplay(level)
+}
+
+// GetPromoRarityPlainText returns promo emoji or stars for plain text (without backticks)
+func GetPromoRarityPlainText(colID string, level int) string {
+	if config.IsPromoCollection(colID) {
+		// For promo collections, repeat the emoji based on level
+		if level < 1 || level > 5 {
+			return "✧"
+		}
+		emoji := config.GetPromoEmoji(colID)
+		return strings.Repeat(emoji, level)
+	}
+	// Fall back to regular stars for non-promo collections
+	if level < 1 || level > 5 {
+		return "✧"
+	}
+	return strings.Repeat("★", level)
+}
+
+
 
 // SpacesConfig holds the configuration for DigitalOcean Spaces
 type SpacesConfig struct {
@@ -78,7 +112,21 @@ type SpacesConfig struct {
 
 // FormatCardEntry formats a single card entry with hyperlink and icons
 func FormatCardEntry(displayInfo CardDisplayInfo, favorite bool, animated bool, amount int, extraInfo ...string) string {
+	return FormatCardEntryWithIndicators(displayInfo, favorite, animated, amount, false, false, extraInfo...)
+}
+
+// FormatCardEntryWithIndicators formats a single card entry with all indicators including new and lock
+func FormatCardEntryWithIndicators(displayInfo CardDisplayInfo, favorite bool, animated bool, amount int, isNew bool, isLocked bool, extraInfo ...string) string {
+	var prefix strings.Builder
 	var icons strings.Builder
+
+	// Add prefix indicators
+	if isNew {
+		prefix.WriteString("🆕 ")
+	}
+	if isLocked {
+		prefix.WriteString(" `🔒`")
+	}
 
 	if favorite {
 		icons.WriteString(" `❤️`")
@@ -97,7 +145,8 @@ func FormatCardEntry(displayInfo CardDisplayInfo, favorite bool, animated bool, 
 		}
 	}
 
-	return fmt.Sprintf("* %s %s%s `[%s]`",
+	return fmt.Sprintf("* %s%s %s%s `[%s]`",
+		prefix.String(),
 		displayInfo.Stars,
 		displayInfo.Hyperlink,
 		icons.String(),

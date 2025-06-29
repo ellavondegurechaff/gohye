@@ -21,8 +21,14 @@ import (
 
 var SearchCards = discord.SlashCommandCreate{
 	Name:        "searchcards",
-	Description: "🔍 Search through the card collection with various filters",
-	Options:     utils.CommonFilterOptions,
+	Description: "🔍 Search through the card collection with advanced query syntax",
+	Options: []discord.ApplicationCommandOption{
+		discord.ApplicationCommandOptionString{
+			Name:        "query",
+			Description: "Search query (supports level=3, !promo, #girlgroups, etc.)",
+			Required:    false,
+		},
+	},
 }
 
 type cacheEntry struct {
@@ -77,24 +83,25 @@ func (sc *searchCache) set(key string, cards []*models.Card, totalCount int) {
 
 func SearchCardsHandler(b *bottemplate.Bot) handler.CommandHandler {
 	return func(event *handler.CommandEvent) error {
-		// Get search parameters
-		name := strings.TrimSpace(event.SlashCommandInteractionData().String("name"))
-		collection := strings.TrimSpace(event.SlashCommandInteractionData().String("collection"))
-		level := int(event.SlashCommandInteractionData().Int("level"))
-
-		filters := utils.FilterInfo{
-			Name:       name,
-			Level:      level,
-			Collection: collection,
-			Animated:   event.SlashCommandInteractionData().Bool("animated"),
-		}
-
-		// Convert to repository filters
-		repoFilters := repositories.SearchFilters{
-			Name:       filters.Name,
-			Level:      filters.Level,
-			Collection: filters.Collection,
-			Animated:   filters.Animated,
+		// Get single query parameter
+		query := strings.TrimSpace(event.SlashCommandInteractionData().String("query"))
+		
+		// Use enhanced search filters for parsing
+		var repoFilters repositories.SearchFilters
+		if query != "" {
+			// Parse using enhanced parser for advanced query syntax
+			enhancedFilters := utils.ParseSearchQuery(query)
+			
+			// Convert enhanced filters to repository filters
+			repoFilters = repositories.SearchFilters{
+				Name:       enhancedFilters.Name,
+				Level:      getFirstLevel(enhancedFilters.Levels),
+				Collection: getFirstCollection(enhancedFilters.Collections),
+				Animated:   enhancedFilters.Animated,
+			}
+		} else {
+			// Empty query - show all cards with basic pagination
+			repoFilters = repositories.SearchFilters{}
 		}
 
 		// Generate cache key
@@ -150,6 +157,22 @@ func SearchCardsHandler(b *bottemplate.Bot) handler.CommandHandler {
 			return utils.EH.UpdateInteractionResponse(event, "Search Timeout", "Search took too long to complete")
 		}
 	}
+}
+
+// getFirstLevel extracts the first level from enhanced filters, or 0 if none
+func getFirstLevel(levels []int) int {
+	if len(levels) > 0 {
+		return levels[0]
+	}
+	return 0
+}
+
+// getFirstCollection extracts the first collection from enhanced filters, or empty string if none
+func getFirstCollection(collections []string) string {
+	if len(collections) > 0 {
+		return collections[0]
+	}
+	return ""
 }
 
 func generateCacheKey(filters repositories.SearchFilters) string {
@@ -256,7 +279,7 @@ func buildSearchDescription(cards []*models.Card, filters repositories.SearchFil
 			}
 
 			description.WriteString(fmt.Sprintf("* %s %s%s [%s]\n",
-				strings.Repeat("⭐", card.Level),
+				utils.GetPromoRarityPlainText(card.ColID, card.Level),
 				utils.FormatCardName(card.Name),
 				animatedIcon,
 				strings.Trim(utils.FormatCollectionName(card.ColID), "[]"),

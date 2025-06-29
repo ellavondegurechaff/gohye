@@ -68,6 +68,12 @@ func CardsHandler(b *bottemplate.Bot) handler.CommandHandler {
 	return func(event *handler.CommandEvent) error {
 		query := strings.TrimSpace(event.SlashCommandInteractionData().String("query"))
 		
+		// Get user data for new card detection
+		user, err := b.UserRepository.GetByDiscordID(context.Background(), event.User().ID.String())
+		if err != nil {
+			return utils.EH.CreateErrorEmbed(event, "Failed to fetch user data")
+		}
+		
 		// Use CardOperationsService to get user cards with details and filtering
 		displayCards, _, err := cardOperationsService.GetUserCardsWithDetails(context.Background(), event.User().ID.String(), query)
 		if err != nil {
@@ -78,8 +84,8 @@ func CardsHandler(b *bottemplate.Bot) handler.CommandHandler {
 			return utils.EH.CreateErrorEmbed(event, "No cards found")
 		}
 
-		// Convert to CardDisplayItem slice for pagination handler
-		displayItems, err := cardDisplayService.ConvertUserCardsToDisplayItems(context.Background(), displayCards)
+		// Convert to CardDisplayItem slice with user data for new card detection
+		displayItems, err := cardDisplayService.ConvertUserCardsToDisplayItemsWithUser(context.Background(), displayCards, user)
 		if err != nil {
 			return utils.EH.CreateErrorEmbed(event, "Failed to prepare card display")
 		}
@@ -146,14 +152,20 @@ type CardsDataFetcher struct {
 }
 
 func (cdf *CardsDataFetcher) FetchData(ctx context.Context, params utils.PaginationParams) ([]interface{}, error) {
+	// Get user data for new card detection
+	user, err := cdf.bot.UserRepository.GetByDiscordID(ctx, params.UserID)
+	if err != nil {
+		return nil, err
+	}
+	
 	// Use CardOperationsService to get user cards with details and filtering
 	displayCards, _, err := cdf.cardOperationsService.GetUserCardsWithDetails(ctx, params.UserID, params.Query)
 	if err != nil {
 		return nil, err
 	}
 
-	// Convert to CardDisplayItem slice
-	displayItems, err := cdf.cardDisplayService.ConvertUserCardsToDisplayItems(ctx, displayCards)
+	// Convert to CardDisplayItem slice with user data
+	displayItems, err := cdf.cardDisplayService.ConvertUserCardsToDisplayItemsWithUser(ctx, displayCards, user)
 	if err != nil {
 		return nil, err
 	}

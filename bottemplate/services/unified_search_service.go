@@ -50,7 +50,7 @@ func NewUnifiedSearchService(cardOps *CardOperationsService) *UnifiedSearchServi
 // SearchCards performs intelligent card search using fuzzy matching + filters
 func (s *UnifiedSearchService) SearchCards(ctx context.Context, cards []*models.Card, query string, filters utils.SearchFilters) []*models.Card {
 	log.Printf("[DEBUG] SearchCards: query='%s', total_cards=%d", query, len(cards))
-	
+
 	if len(cards) == 0 {
 		log.Printf("[DEBUG] SearchCards: no cards provided")
 		return nil
@@ -65,7 +65,7 @@ func (s *UnifiedSearchService) SearchCards(ctx context.Context, cards []*models.
 	// Step 1: Apply collection/level/type filters first to reduce search space
 	filteredCards := s.applyBasicFilters(cards, filters)
 	log.Printf("[DEBUG] SearchCards: after basic filters: %d cards remain", len(filteredCards))
-	
+
 	// Special debug logging for halloween taeha search
 	if strings.Contains(strings.ToLower(query), "halloween") && strings.Contains(strings.ToLower(query), "taeha") {
 		log.Printf("[DEBUG] HALLOWEEN TAEHA SEARCH DEBUG:")
@@ -81,7 +81,7 @@ func (s *UnifiedSearchService) SearchCards(ctx context.Context, cards []*models.
 			}
 		}
 		log.Printf("[DEBUG] Found %d total cards with 'halloween'", count)
-		
+
 		log.Printf("[DEBUG] Filtered cards with 'halloween':")
 		count = 0
 		for i, card := range filteredCards {
@@ -92,7 +92,7 @@ func (s *UnifiedSearchService) SearchCards(ctx context.Context, cards []*models.
 		}
 		log.Printf("[DEBUG] Found %d filtered cards with 'halloween'", count)
 	}
-	
+
 	if len(filteredCards) == 0 {
 		log.Printf("[DEBUG] SearchCards: no cards after basic filtering")
 		return nil
@@ -116,7 +116,7 @@ func (s *UnifiedSearchService) SearchCards(ctx context.Context, cards []*models.
 	// Step 3: Perform fuzzy search
 	normalizedQuery := s.normalizeQuery(query)
 	log.Printf("[DEBUG] SearchCards: normalized query='%s'", normalizedQuery)
-	
+
 	matches := fuzzy.FindFrom(normalizedQuery, searchItems)
 	log.Printf("[DEBUG] SearchCards: fuzzy search found %d matches", len(matches))
 
@@ -142,7 +142,7 @@ func (s *UnifiedSearchService) SearchCards(ctx context.Context, cards []*models.
 // SearchSingleCard finds the best matching card for a query
 func (s *UnifiedSearchService) SearchSingleCard(ctx context.Context, cards []*models.Card, query string) (*models.Card, error) {
 	log.Printf("[DEBUG] SearchSingleCard: query='%s', total_cards=%d", query, len(cards))
-	
+
 	// Use default filters for single card search - ENABLE PROMO ACCESS
 	filters := utils.SearchFilters{
 		Query:     query,
@@ -153,7 +153,7 @@ func (s *UnifiedSearchService) SearchSingleCard(ctx context.Context, cards []*mo
 
 	results := s.SearchCards(ctx, cards, query, filters)
 	log.Printf("[DEBUG] SearchSingleCard: found %d results", len(results))
-	
+
 	if len(results) == 0 {
 		log.Printf("[DEBUG] SearchSingleCard: NO MATCHES for query='%s'", query)
 		return nil, nil
@@ -166,7 +166,7 @@ func (s *UnifiedSearchService) SearchSingleCard(ctx context.Context, cards []*mo
 // SearchSingleCardAdmin finds the best matching card for admin commands (bypasses all filters)
 func (s *UnifiedSearchService) SearchSingleCardAdmin(ctx context.Context, cards []*models.Card, query string) (*models.Card, error) {
 	log.Printf("[DEBUG] SearchSingleCardAdmin: query='%s', total_cards=%d (ADMIN MODE - no filters)", query, len(cards))
-	
+
 	if len(cards) == 0 {
 		log.Printf("[DEBUG] SearchSingleCardAdmin: no cards provided")
 		return nil, nil
@@ -190,7 +190,7 @@ func (s *UnifiedSearchService) SearchSingleCardAdmin(ctx context.Context, cards 
 	// Perform fuzzy search without filters
 	normalizedQuery := s.normalizeQuery(query)
 	log.Printf("[DEBUG] SearchSingleCardAdmin: normalized query='%s'", normalizedQuery)
-	
+
 	matches := fuzzy.FindFrom(normalizedQuery, searchItems)
 	log.Printf("[DEBUG] SearchSingleCardAdmin: fuzzy search found %d matches", len(matches))
 
@@ -226,13 +226,13 @@ func (s *UnifiedSearchService) normalizeCardName(cardName string) string {
 	// Replace underscores and hyphens with spaces
 	normalized := strings.ReplaceAll(cardName, "_", " ")
 	normalized = strings.ReplaceAll(normalized, "-", " ")
-	
+
 	// Convert to lowercase for case-insensitive matching
 	normalized = strings.ToLower(normalized)
-	
+
 	// Clean up multiple spaces
 	normalized = strings.Join(strings.Fields(normalized), " ")
-	
+
 	return normalized
 }
 
@@ -253,7 +253,7 @@ func (s *UnifiedSearchService) applyBasicFilters(cards []*models.Card, filters u
 	for _, card := range cards {
 		excluded := false
 		excludeReason := ""
-		
+
 		// Apply collection filters
 		if len(filters.Collections) > 0 {
 			found := false
@@ -329,7 +329,7 @@ func (s *UnifiedSearchService) applyBasicFilters(cards []*models.Card, filters u
 				}
 			}
 		}
-		
+
 		if excluded {
 			excludedCount++
 			excludedReasons[excludeReason]++

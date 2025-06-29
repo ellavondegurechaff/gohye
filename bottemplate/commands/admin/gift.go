@@ -8,7 +8,7 @@ import (
 
 	"github.com/disgoorg/bot-template/bottemplate"
 	"github.com/disgoorg/bot-template/bottemplate/database/models"
-	"github.com/disgoorg/bot-template/bottemplate/services"
+	"github.com/disgoorg/bot-template/bottemplate/database/repositories"
 	"github.com/disgoorg/disgo/discord"
 	"github.com/disgoorg/disgo/handler"
 	"github.com/uptrace/bun"
@@ -205,7 +205,7 @@ func addCardToUser(ctx context.Context, tx bun.Tx, userID string, cardID int64, 
 	return nil
 }
 
-// findCardByName finds a card by name using fuzzy search (similar to forge command pattern)
+// findCardByName finds a card by name using the same search method as /searchcards
 func findCardByName(ctx context.Context, b *bottemplate.Bot, query string) (*models.Card, error) {
 	fmt.Printf("[DEBUG] Gift findCardByName: query='%s'\n", query)
 	
@@ -214,29 +214,25 @@ func findCardByName(ctx context.Context, b *bottemplate.Bot, query string) (*mod
 		return nil, fmt.Errorf("please provide a card name")
 	}
 
-	// Get all cards from repository (same pattern as forge command)
-	cards, err := b.CardRepository.GetAll(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to search for cards: %v", err)
+	// Use the same search method as /searchcards for consistency
+	filters := repositories.SearchFilters{
+		Name: query, // Set the name filter to use the complex search logic
 	}
-	fmt.Printf("[DEBUG] Gift findCardByName: loaded %d total cards\n", len(cards))
-
-	// Use UnifiedSearchService ADMIN MODE for improved search accuracy (bypasses promo filters)
-	cardOperationsService := services.NewCardOperationsService(b.CardRepository, b.UserCardRepository)
-	unifiedSearchService := services.NewUnifiedSearchService(cardOperationsService)
 	
-	card, err := unifiedSearchService.SearchSingleCardAdmin(ctx, cards, query)
+	// Use the main Search method that /searchcards uses
+	cards, _, err := b.CardRepository.Search(ctx, filters, 0, 50) // Get first 50 results
 	if err != nil {
 		fmt.Printf("[DEBUG] Gift findCardByName: search error: %v\n", err)
 		return nil, fmt.Errorf("search failed: %v", err)
 	}
 	
-	if card == nil {
+	if len(cards) == 0 {
 		fmt.Printf("[DEBUG] Gift findCardByName: NO CARD FOUND for query='%s'\n", query)
 		return nil, fmt.Errorf("no cards found matching '%s'", query)
 	}
 
+	// Return the best match (first result from ordered query)
+	card := cards[0]
 	fmt.Printf("[DEBUG] Gift findCardByName: FOUND card='%s' (ID=%d)\n", card.Name, card.ID)
-	// Return the best match
 	return card, nil
 }

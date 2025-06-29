@@ -40,6 +40,11 @@ type CardRepository interface {
 	GetLastCardID(ctx context.Context) (int64, error)
 	BatchCreateWithTransaction(ctx context.Context, tx bun.Tx, cards []*models.Card) error
 	GetCardCount(ctx context.Context) (int64, error)
+	
+	// Enhanced search methods for optimization
+	GetByNameOrIDFuzzy(ctx context.Context, query string) (*models.Card, error)
+	SearchByNameFuzzy(ctx context.Context, query string, limit int) ([]*models.Card, error)
+	SearchAdminMode(ctx context.Context, query string, filters SearchFilters) ([]*models.Card, error)
 }
 
 type cardRepository struct {
@@ -613,10 +618,9 @@ func (r *cardRepository) GetAllByUserID(ctx context.Context, userID string) ([]*
 
 	err := r.db.NewSelect().
 		Model(&userCards).
-		TableExpr("user_cards").
-		ColumnExpr("user_cards.*").
 		Where("user_id = ?", userID).
-		Order("level DESC, id ASC").
+		Order("level DESC").
+		Order("id ASC").
 		Scan(ctx)
 
 	if err != nil {
@@ -700,4 +704,112 @@ func (r *cardRepository) GetCardCount(ctx context.Context) (int64, error) {
 		Count(ctx)
 	
 	return int64(count), err
+}
+
+// GetByNameOrIDFuzzy finds a single card by name or ID with fuzzy matching - optimized for price stats
+func (r *cardRepository) GetByNameOrIDFuzzy(ctx context.Context, query string) (*models.Card, error) {
+	ctx, cancel := context.WithTimeout(ctx, config.DefaultQueryTimeout)
+	defer cancel()
+
+	card := new(models.Card)
+	
+	// Try exact ID match first
+	err := r.db.NewSelect().
+		Model(card).
+		Where("id::text = ?", query).
+		Scan(ctx)
+	
+	if err == nil {
+		return card, nil
+	}
+	
+	// Try exact name match (case insensitive)
+	err = r.db.NewSelect().
+		Model(card).
+		Where("LOWER(name) = LOWER(?)", query).
+		Scan(ctx)
+	
+	if err == nil {
+		return card, nil
+	}
+	
+	// Try fuzzy name match with LIKE
+	err = r.db.NewSelect().
+		Model(card).
+		Where("LOWER(name) LIKE LOWER(?)", "%"+query+"%").
+		OrderExpr("LENGTH(name)").  // Prefer shorter matches
+		Limit(1).
+		Scan(ctx)
+
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, fmt.Errorf("no card found matching query: %s", query)
+		}
+		return nil, err
+	}
+
+	return card, nil
+}
+
+// SearchByNameFuzzy performs fuzzy search by name with limit - optimized for admin commands
+func (r *cardRepository) SearchByNameFuzzy(ctx context.Context, query string, limit int) ([]*models.Card, error) {
+	ctx, cancel := context.WithTimeout(ctx, config.DefaultQueryTimeout)
+	defer cancel()
+
+	if limit <= 0 {
+		limit = 10 // Default reasonable limit
+	}
+
+	var cards []*models.Card
+	err := r.db.NewSelect().
+		Model(&cards).
+		Where("LOWER(name) LIKE LOWER(?)", "%"+query+"%").
+		OrderExpr("LENGTH(name)").Order("name").  // Prefer shorter, then alphabetical
+		Limit(limit).
+		Scan(ctx)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to search cards: %w", err)
+	}
+
+	return cards, nil
+}
+
+// SearchAdminMode performs admin search without promo/exclusion filters
+func (r *cardRepository) SearchAdminMode(ctx context.Context, query string, filters SearchFilters) ([]*models.Card, error) {
+	ctx, cancel := context.WithTimeout(ctx, config.DefaultQueryTimeout)
+	defer cancel()
+
+	// Start with base query
+	selectQuery := r.db.NewSelect().Model((*models.Card)(nil))
+
+	// Apply name filter if provided
+	if query != "" {
+		selectQuery = selectQuery.Where("LOWER(name) LIKE LOWER(?)", "%"+query+"%")
+	}
+
+	// Apply other filters
+	if filters.Level != 0 {
+		selectQuery = selectQuery.Where("level = ?", filters.Level)
+	}
+	
+	if filters.Collection != "" {
+		selectQuery = selectQuery.Where("LOWER(col_id) LIKE LOWER(?)", "%"+filters.Collection+"%")
+	}
+	
+	if filters.Animated {
+		selectQuery = selectQuery.Where("animated = true")
+	}
+
+	// Admin mode: no promo/exclusion filtering, order by relevance
+	selectQuery = selectQuery.OrderExpr("LENGTH(name)").Order("level DESC", "name")
+	
+	var cards []*models.Card
+	err := selectQuery.Scan(ctx, &cards)
+	
+	if err != nil {
+		return nil, fmt.Errorf("failed to perform admin search: %w", err)
+	}
+
+	return cards, nil
 }

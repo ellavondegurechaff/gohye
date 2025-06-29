@@ -44,7 +44,7 @@ func NewDefaultConfig() *Config {
 			Level3: 0.4, // Reduced from 0.6
 			Level4: 0.2, // Reduced from 0.4
 		},
-		ExpGainCooldown:    time.Minute * 1, // Increased from 1 minute
+		ExpGainCooldown:    0, // Temporarily disabled cooldown
 		DailyExpGainLimit:  30,              // Reduced from 50
 		WeeklyExpGainLimit: 180,             // Reduced from 300
 		CriticalExpChance:  0.10,            // Reduced from 0.15

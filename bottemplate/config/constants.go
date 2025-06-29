@@ -186,3 +186,204 @@ const (
 	MaxBioLength        = 500
 	MaxCommandLength    = 2000
 )
+
+// Promo Collection Emoji Constants
+const (
+	// Seasonal Events
+	EmojiHalloween   = "🎃"
+	EmojiChristmas   = "❄"
+	EmojiValentine   = "🍫"
+	EmojiBirthday    = "🍰"
+	EmojiEaster      = "🐰"
+	EmojiLunar       = "🧧"
+
+	// Special Events  
+	EmojiLimited     = "🔥"
+	EmojiSpecial     = "✨"
+	EmojiLiveAuction = "💎"
+	EmojiLottery     = "🎁"
+	EmojiFanart      = "🎨"
+	EmojiJackpot     = "🎯"
+	EmojiSigned      = "💫"
+
+	// Anniversary & Celebration
+	EmojiAnniversary = "🎉"
+	EmojiSmiley      = "☀️"
+	EmojiFlowerCrown = "🌺"
+
+	// Music & Album
+	EmojiAlbumGirl   = "📀"
+	EmojiAlbumBoy    = "📀"
+
+	// Collaboration Events
+	EmojiCollabGeneral = "🧩"
+	EmojiTwizone       = "🌹"
+	EmojiOneTheStory   = "🌸"
+	EmojiBlackVelvet   = "🍨"
+	EmojiStrayBTS      = "🧬"
+	EmojiGot7Teen      = "🧭"
+	EmojiItzidle       = "💄"
+	EmojiMonstaEXO     = "👾"
+	EmojiMystical      = "🦋"
+	EmojiPetsEvent     = "🐾"
+
+	// Year-specific Variants
+	EmojiHalloween18   = "🍬"
+	EmojiChristmas18   = "🎄"
+	EmojiValentine19   = "💗"
+	EmojiHalloween19   = "👻"
+	EmojiChristmas19   = "☃️"
+	EmojiBirthday20    = "🎈"
+	EmojiHalloween20   = "🎃"
+	EmojiXmas20        = "🎀"
+	EmojiHalloween21   = "🔮"
+	EmojiXmas21        = "☃️"
+	EmojiValentines22  = "❣️"
+	EmojiHalloween23   = "👻"
+	EmojiWinter23      = "⛸️"
+	EmojiChuseok24     = "🌕"
+	EmojiXmas24        = "🌧️"
+	EmojiSummerEvent   = "🍹"
+)
+
+// PromoCollectionEmojis maps collection IDs to their special emojis
+// 
+// To add a new promo collection:
+// 1. Add the emoji constant above in the appropriate category
+// 2. Add the mapping here: "collection_id": EmojiConstant,
+// 3. The system will automatically use the emoji for all cards in that collection
+//
+// Note: Collection IDs should match exactly with the database col_id field
+var PromoCollectionEmojis = map[string]string{
+	// Main seasonal events
+	"halloween":      EmojiHalloween,
+	"christmas":      EmojiChristmas,
+	"valentine":      EmojiValentine,
+	"birthdays":      EmojiBirthday,
+	"easter21":       EmojiEaster,
+	"lunar":          EmojiLunar,
+
+	// Special events
+	"limited":        EmojiLimited,
+	"special":        EmojiSpecial,
+	"liveauction":    EmojiLiveAuction,
+	"lottery":        EmojiLottery,
+	"fanarts":        EmojiFanart,
+	"jackpot":        EmojiJackpot,
+	"signed":         EmojiSigned,
+
+	// Anniversary & celebration
+	"anniversary21":  EmojiAnniversary,
+	"smileyevent":    EmojiSmiley,
+	"flowercrown":    EmojiFlowerCrown,
+
+	// Music & albums
+	"ggalbums":       EmojiAlbumGirl,
+	"bgalbums":       EmojiAlbumBoy,
+
+	// Collaboration events (using general collab emoji)
+	"izonesomeday":       EmojiCollabGeneral,
+	"loonaoec":           EmojiCollabGeneral,
+	"izonedaydream":      EmojiCollabGeneral,
+	"izonepinkblusher":   EmojiCollabGeneral,
+	"gugudansemina":      EmojiCollabGeneral,
+	"loonaonethird":      EmojiCollabGeneral,
+	"loonayyxy":          EmojiCollabGeneral,
+	"pristinv":           EmojiCollabGeneral,
+	"snsdohggsnsdtts":    EmojiCollabGeneral,
+	"wjmk":               EmojiCollabGeneral,
+	"wjsnchocome":        EmojiCollabGeneral,
+	"exocbx":             EmojiCollabGeneral,
+	"seventeenbss":       EmojiCollabGeneral,
+	"day6evenofday":      EmojiCollabGeneral,
+	"btobblue":           EmojiCollabGeneral,
+	"snsdohgg":           EmojiCollabGeneral,
+	"snsdtts":            EmojiCollabGeneral,
+	"orangecaramel":      EmojiCollabGeneral,
+	"btob4u":             EmojiCollabGeneral,
+	"ninemusesa":         EmojiCollabGeneral,
+	"rainbowpixie":       EmojiCollabGeneral,
+	"rainbowblaxx":       EmojiCollabGeneral,
+	"superjuniorkry":     EmojiCollabGeneral,
+	"aoacream":           EmojiCollabGeneral,
+	"pinkfantasyshadow":  EmojiCollabGeneral,
+	"pinkfantasyshy":     EmojiCollabGeneral,
+	"spicas":             EmojiCollabGeneral,
+	"fanaticsflavor":     EmojiCollabGeneral,
+	"tripleh":            EmojiCollabGeneral,
+	"wowthing":           EmojiCollabGeneral,
+	"berrygoodhh":        EmojiCollabGeneral,
+	"honeybee":           EmojiCollabGeneral,
+	"girlsnextdoor":      EmojiCollabGeneral,
+	"nuestw":             EmojiCollabGeneral,
+	"sunnygirls":         EmojiCollabGeneral,
+	"teenteen":           EmojiCollabGeneral,
+	"purplehashtag":      EmojiCollabGeneral,
+	"notfriends":         EmojiCollabGeneral,
+	"hairintheair":       EmojiCollabGeneral,
+	"rgpbside":           EmojiCollabGeneral,
+	"wjsntheblack":       EmojiCollabGeneral,
+	"taran4":             EmojiCollabGeneral,
+	"elastu":             EmojiCollabGeneral,
+
+	// Special collaboration events (unique emojis)
+	"twizonevent":    EmojiTwizone,
+	"onethestory":    EmojiOneTheStory,
+	"blackvelvet":    EmojiBlackVelvet,
+	"straybts":       EmojiStrayBTS,
+	"got7teen":       EmojiGot7Teen,
+	"itzidle":        EmojiItzidle,
+	"monstaexo":      EmojiMonstaEXO,
+	"mystical":       EmojiMystical,
+	"petsevent":      EmojiPetsEvent,
+
+	// Year-specific variants
+	"halloween18":    EmojiHalloween18,
+	"christmas18":    EmojiChristmas18,
+	"valentine19":    EmojiValentine19,
+	"halloween19":    EmojiHalloween19,
+	"christmas19":    EmojiChristmas19,
+	"birthday20":     EmojiBirthday20,
+	"halloween20":    EmojiHalloween20,
+	"xmas20":         EmojiXmas20,
+	"halloween21":    EmojiHalloween21,
+	"xmas21":         EmojiXmas21,
+	"valentines22":   EmojiValentines22,
+	"halloween23":    EmojiHalloween23,
+	"winterevent23":  EmojiWinter23,
+	"chuseok24":      EmojiChuseok24,
+	"xmas24":         EmojiXmas24,
+	"summerevent":    EmojiSummerEvent,
+}
+
+// Helper functions for emoji management
+
+// IsPromoCollection checks if a collection ID has a special promo emoji
+func IsPromoCollection(colID string) bool {
+	_, exists := PromoCollectionEmojis[colID]
+	return exists
+}
+
+// GetPromoEmoji returns the emoji for a promo collection, or empty string if not promo
+func GetPromoEmoji(colID string) string {
+	return PromoCollectionEmojis[colID]
+}
+
+// AddPromoEmoji allows runtime addition of new promo emojis (for future extensibility)
+func AddPromoEmoji(colID, emoji string) {
+	PromoCollectionEmojis[colID] = emoji
+}
+
+// RemovePromoEmoji allows runtime removal of promo emojis (for future extensibility)
+func RemovePromoEmoji(colID string) {
+	delete(PromoCollectionEmojis, colID)
+}
+
+// GetAllPromoCollections returns all promo collection IDs
+func GetAllPromoCollections() []string {
+	collections := make([]string, 0, len(PromoCollectionEmojis))
+	for colID := range PromoCollectionEmojis {
+		collections = append(collections, colID)
+	}
+	return collections
+}

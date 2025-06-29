@@ -179,7 +179,7 @@ func (r *userCardRepository) GetUserCardsByName(ctx context.Context, userID stri
 		*models.UserCard
 		Card *models.Card `bun:"rel:belongs-to,join:card_id=id"`
 	}
-	
+
 	err := r.db.NewSelect().
 		Model(&userCardsWithCards).
 		Relation("Card").

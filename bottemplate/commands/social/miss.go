@@ -30,10 +30,10 @@ func MissHandler(b *bottemplate.Bot) handler.CommandHandler {
 	cardDisplayService := services.NewCardDisplayService(b.CardRepository, b.SpacesService)
 	cardOperationsService := services.NewCardOperationsService(b.CardRepository, b.UserCardRepository)
 	
-	// Create pagination handler
+	// Create pagination handler with minimal items per page to prevent Discord form body errors
 	paginationHandler := &utils.PaginationHandler{
 		Config: utils.PaginationConfig{
-			ItemsPerPage: config.CardsPerPage,
+			ItemsPerPage: 3, // Further reduced to prevent form body errors
 			Prefix:       "miss",
 		},
 		FormatItems: func(items []interface{}, page, totalPages int, userID, query string) (discord.Embed, error) {
@@ -137,9 +137,9 @@ func MissComponentHandler(b *bottemplate.Bot) handler.ComponentHandler {
 	// Create validator
 	validator := &MissValidator{}
 	
-	// Create factory configuration
+	// Create factory configuration with minimal items per page to prevent Discord form body errors
 	factoryConfig := utils.PaginationFactoryConfig{
-		ItemsPerPage: config.CardsPerPage,
+		ItemsPerPage: 3, // Further reduced to prevent form body errors
 		Prefix:       "miss",
 		Parser:       utils.NewRegularParser("miss"),
 		Fetcher:      fetcher,

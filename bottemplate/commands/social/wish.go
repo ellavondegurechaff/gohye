@@ -287,7 +287,7 @@ func handleWishRemove(ctx context.Context, b *bottemplate.Bot, e *handler.Comman
 
 	description := fmt.Sprintf("```ansi\n\x1b[32m%s\x1b[0m [%s] %s\n```",
 		cardInfo.FormattedName,
-		strings.Repeat("⭐", cardToRemove.Level),
+		utils.GetPromoRarityPlainText(cardToRemove.ColID, cardToRemove.Level),
 		cardInfo.FormattedCollection)
 
 	embed := discord.NewEmbedBuilder().
@@ -406,7 +406,7 @@ func formatWishEmbed(cardInfo utils.CardDisplayInfo, card *models.Card) discord.
 
 	description.WriteString(fmt.Sprintf("\x1b[32m%s\x1b[0m [%s] %s",
 		cardInfo.FormattedName,
-		strings.Repeat("⭐", card.Level),
+		utils.GetPromoRarityPlainText(card.ColID, card.Level),
 		cardInfo.FormattedCollection))
 
 	description.WriteString("\n```")

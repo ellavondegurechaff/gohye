@@ -61,14 +61,22 @@ func (c *LevelUpCommand) Handle(event *handler.CommandEvent) error {
 	}
 
 	cardQuery := event.SlashCommandInteractionData().String("card_name")
-	card, err := c.cardRepo.GetByQuery(ctx, cardQuery)
+	
+	// Search only within user's owned cards
+	card, err := c.findCard(ctx, event.User().ID.String(), cardQuery)
 	if err != nil {
-		return createErrorEmbed(event, "Card Not Found", fmt.Sprintf("Could not find a card matching '%s'. Please check the card name or ID.", cardQuery))
+		return createErrorEmbed(event, "Card Not Found", fmt.Sprintf("Could not find a card matching '%s' in your collection. Use /cards to see your cards.", cardQuery))
 	}
 
+	// Get the user's card data
 	userCard, err := c.cardRepo.GetUserCard(ctx, event.User().ID.String(), card.ID)
 	if err != nil {
-		return createErrorEmbed(event, "Card Not Owned", fmt.Sprintf("You don't own the card '%s'. Please check your collection.", card.Name))
+		return createErrorEmbed(event, "Card Access Error", "Failed to access your card data.")
+	}
+	
+	// Safety check to prevent nil pointer dereference
+	if userCard == nil {
+		return createErrorEmbed(event, "Card Data Error", "Card data is invalid.")
 	}
 
 	if combineWith := event.SlashCommandInteractionData().String("combine_with"); combineWith != "" {
@@ -82,6 +90,11 @@ func (c *LevelUpCommand) Handle(event *handler.CommandEvent) error {
 		}
 		return createErrorEmbed(event, "Error", err.Error())
 	}
+	
+	// Safety check to prevent nil pointer dereference
+	if result == nil {
+		return createErrorEmbed(event, "Leveling Error", "Failed to process leveling result.")
+	}
 
 	// Check for collection completion after successful level up
 	go c.bot.CompletionChecker.CheckCompletionForCards(context.Background(), event.User().ID.String(), []int64{userCard.CardID})
@@ -90,6 +103,16 @@ func (c *LevelUpCommand) Handle(event *handler.CommandEvent) error {
 	cardDetails, err := c.cardRepo.GetByID(ctx, userCard.CardID)
 	if err != nil {
 		return createErrorEmbed(event, "Error", "Failed to fetch card details")
+	}
+	
+	// Safety check to prevent nil pointer dereference
+	if cardDetails == nil {
+		return createErrorEmbed(event, "Card Details Error", "Card details are invalid.")
+	}
+	
+	// Safety check for bot services
+	if c.bot == nil || c.bot.SpacesService == nil {
+		return createErrorEmbed(event, "Service Error", "Bot services are not available.")
 	}
 
 	cardInfo := utils.GetCardDisplayInfo(
@@ -101,6 +124,9 @@ func (c *LevelUpCommand) Handle(event *handler.CommandEvent) error {
 			Bucket:   c.bot.SpacesService.GetBucket(),
 			Region:   c.bot.SpacesService.GetRegion(),
 			CardRoot: c.bot.SpacesService.GetCardRoot(),
+			GetImageURL: func(cardName string, colID string, level int, groupType string) string {
+				return c.bot.SpacesService.GetCardImageURL(cardName, colID, level, groupType)
+			},
 		},
 	)
 
@@ -129,7 +155,7 @@ func (c *LevelUpCommand) Handle(event *handler.CommandEvent) error {
 			cardInfo.FormattedName,
 			cardInfo.FormattedCollection,
 			result.NewLevel,
-			utils.GetStarsDisplay(result.NewLevel),
+			utils.GetPromoRarityDisplay(cardDetails.ColID, result.NewLevel),
 			expBar,
 			expPercentage,
 			result.ExpGained,
@@ -153,19 +179,31 @@ func (c *LevelUpCommand) handleCombine(event *handler.CommandEvent, mainCard *mo
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	fodderCard, err := c.cardRepo.GetByQuery(ctx, fodderCardQuery)
+	// Search only within user's owned cards for combine fodder
+	fodderCard, err := c.findCard(ctx, event.User().ID.String(), fodderCardQuery)
 	if err != nil {
-		return createErrorEmbed(event, "Fodder Card Not Found", fmt.Sprintf("Could not find a card matching '%s' to combine with.", fodderCardQuery))
+		return createErrorEmbed(event, "Fodder Card Not Found", fmt.Sprintf("Could not find a card matching '%s' in your collection to combine with.", fodderCardQuery))
 	}
 
+	// Get the user's fodder card data
 	userFodderCard, err := c.cardRepo.GetUserCard(ctx, event.User().ID.String(), fodderCard.ID)
 	if err != nil {
-		return createErrorEmbed(event, "Fodder Card Not Owned", fmt.Sprintf("You don't own the card '%s' to use for combining.", fodderCard.Name))
+		return createErrorEmbed(event, "Fodder Card Access Error", "Failed to access your fodder card data.")
+	}
+	
+	// Safety checks to prevent nil pointer dereference
+	if userFodderCard == nil {
+		return createErrorEmbed(event, "Fodder Card Data Error", "Fodder card data is invalid.")
 	}
 
 	result, err := c.levelingService.CombineCards(ctx, mainCard, userFodderCard)
 	if err != nil {
 		return createErrorEmbed(event, "Combination Failed", err.Error())
+	}
+	
+	// Safety check to prevent nil pointer dereference
+	if result == nil {
+		return createErrorEmbed(event, "Combination Error", "Failed to process combination result.")
 	}
 
 	// Check for collection completion after successful card combination
@@ -186,6 +224,9 @@ func (c *LevelUpCommand) handleCombine(event *handler.CommandEvent, mainCard *mo
 			Bucket:   c.bot.SpacesService.GetBucket(),
 			Region:   c.bot.SpacesService.GetRegion(),
 			CardRoot: c.bot.SpacesService.GetCardRoot(),
+			GetImageURL: func(cardName string, colID string, level int, groupType string) string {
+				return c.bot.SpacesService.GetCardImageURL(cardName, colID, level, groupType)
+			},
 		},
 	)
 
@@ -204,7 +245,7 @@ func (c *LevelUpCommand) handleCombine(event *handler.CommandEvent, mainCard *mo
 		cardInfo.FormattedName,
 		cardInfo.FormattedCollection,
 		result.NewLevel,
-		utils.GetStarsDisplay(result.NewLevel),
+		utils.GetPromoRarityDisplay(cardCombineDetails.ColID, result.NewLevel),
 		expBar,
 		expPercentage,
 		result.ExpGained,
@@ -272,6 +313,61 @@ func createExpBar(current, required int64) string {
 	}
 	bar.WriteString("』")
 	return bar.String()
+}
+
+// findCard finds a card by name using enhanced search within user's collection
+func (c *LevelUpCommand) findCard(ctx context.Context, userID, query string) (*models.Card, error) {
+	// Handle empty query
+	if query == "" {
+		return nil, fmt.Errorf("please provide a card name")
+	}
+
+	// Try direct query first (optimized approach)
+	card, err := c.cardRepo.GetByQuery(ctx, query)
+	if err == nil {
+		// Check if user owns this card
+		userCard, err := c.cardRepo.GetUserCard(ctx, userID, card.ID)
+		if err == nil && userCard.Amount > 0 {
+			return card, nil
+		}
+	}
+
+	// Fallback to comprehensive search within user's cards
+	userCards, err := c.cardRepo.GetAllByUserID(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch user cards: %v", err)
+	}
+
+	// Get card IDs and create lookup map for cards with amount > 0
+	cardIDs := make([]int64, 0, len(userCards))
+	userCardMap := make(map[int64]*models.UserCard)
+	for _, uc := range userCards {
+		if uc.Amount > 0 {
+			cardIDs = append(cardIDs, uc.CardID)
+			userCardMap[uc.CardID] = uc
+		}
+	}
+
+	if len(cardIDs) == 0 {
+		return nil, fmt.Errorf("you don't have any cards available")
+	}
+
+	// Get card details
+	cards, err := c.cardRepo.GetByIDs(ctx, cardIDs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch card details: %v", err)
+	}
+
+	// Use enhanced search filters
+	filters := utils.ParseSearchQuery(query)
+	searchResults := utils.WeightedSearchWithMulti(cards, filters, userCardMap)
+
+	if len(searchResults) == 0 {
+		return nil, fmt.Errorf("no cards found matching '%s'", query)
+	}
+
+	// Return the best match
+	return searchResults[0], nil
 }
 
 func LevelUpHandler(b *bottemplate.Bot) handler.CommandHandler {

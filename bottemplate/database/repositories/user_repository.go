@@ -24,6 +24,7 @@ type UserRepository interface {
 	UpdateLastWork(ctx context.Context, discordID string) error
 	GetBalance(ctx context.Context, userID string) (int64, error)
 	GetUserCount(ctx context.Context) (int64, error)
+	UpdateLastCard(ctx context.Context, discordID string, cardID int64) error
 }
 
 type userRepository struct {
@@ -198,4 +199,26 @@ func (r *userRepository) GetUserCount(ctx context.Context) (int64, error) {
 		slog.Int64("count", int64(count)))
 		
 	return int64(count), nil
+}
+
+func (r *userRepository) UpdateLastCard(ctx context.Context, discordID string, cardID int64) error {
+	// Update the last_card in user_stats JSONB field
+	_, err := r.db.NewUpdate().
+		Model((*models.User)(nil)).
+		Set("user_stats = jsonb_set(user_stats, '{last_card}', ?)", cardID).
+		Set("updated_at = ?", time.Now()).
+		Where("discord_id = ?", discordID).
+		Exec(ctx)
+	
+	if err != nil {
+		return fmt.Errorf("failed to update last card: %w", err)
+	}
+	
+	slog.Debug("Successfully updated user's last card",
+		slog.String("type", "db"),
+		slog.String("operation", "UpdateLastCard"),
+		slog.String("discord_id", discordID),
+		slog.Int64("card_id", cardID))
+	
+	return nil
 }

@@ -143,11 +143,11 @@ func (h *ClaimHandler) HandleCommand(e *handler.CommandEvent) error {
 		return utils.EH.CreateError(e, "Error", "Failed to fetch cards")
 	}
 
-	// Filter out promo and excluded collection cards
+	// Filter out promo, excluded, and limited collection cards
 	var cards []*models.Card
 	for _, card := range allCards {
-		// Check if card's collection is not promo or excluded
-		if colInfo, exists := utils.GetCollectionInfo(card.ColID); exists && !colInfo.IsPromo && !colInfo.IsExcluded {
+		// Check if card's collection is not promo, excluded, or limited
+		if colInfo, exists := utils.GetCollectionInfo(card.ColID); exists && !colInfo.IsPromo && !colInfo.IsExcluded && card.ColID != "limited" {
 			cards = append(cards, card)
 		}
 	}
@@ -176,7 +176,7 @@ func (h *ClaimHandler) HandleCommand(e *handler.CommandEvent) error {
 	var cardList strings.Builder
 	cardList.WriteString("**✨ New Cards**\n\n")
 	for _, card := range selectedCards {
-		stars := utils.GetStarsDisplay(card.Level)
+		stars := utils.GetPromoRarityDisplay(card.ColID, card.Level)
 		collection := fmt.Sprintf("`[%s]`", strings.ToUpper(card.ColID))
 
 		// Check if user already has it
@@ -392,7 +392,7 @@ func selectRandomCard(cards []*models.Card, bot *bottemplate.Bot, userID string,
 		ctx := context.Background()
 		baseChance := float64(weights[3]) // 3-star base chance
 		modifiedChance := bot.EffectIntegrator.ApplyClaimEffects(ctx, userID, baseChance)
-		
+
 		if modifiedChance > baseChance {
 			// Increase 3-star weight, reduce others proportionally
 			weights[3] = int(modifiedChance)

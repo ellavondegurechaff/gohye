@@ -12,7 +12,6 @@ import (
 	"github.com/disgoorg/bot-template/bottemplate/config"
 	"github.com/disgoorg/bot-template/bottemplate/economy"
 	economicUtils "github.com/disgoorg/bot-template/bottemplate/economy/utils"
-	"github.com/disgoorg/bot-template/bottemplate/services"
 	"github.com/disgoorg/bot-template/bottemplate/utils"
 	"github.com/disgoorg/disgo/discord"
 	"github.com/disgoorg/disgo/handler"
@@ -103,7 +102,7 @@ func handleCardByID(b *bottemplate.Bot, event *handler.CommandEvent, cardID int6
 	}
 
 	// Generate star display based on card level
-	stars := strings.Repeat("⭐", card.Level)
+	stars := utils.GetPromoRarityPlainText(card.ColID, card.Level)
 
 	timestamp := fmt.Sprintf("<t:%d:R>", time.Now().Unix())
 
@@ -322,28 +321,14 @@ func handleCardByName(b *bottemplate.Bot, event *handler.CommandEvent, cardName 
 	ctx, cancel := context.WithTimeout(context.Background(), config.DefaultQueryTimeout)
 	defer cancel()
 
-	// Get all cards for unified search (more comprehensive than GetByName)
-	allCards, err := b.CardRepository.GetAll(ctx)
+	// Use optimized search method - direct database query instead of GetAll() + search
+	card, err := b.CardRepository.GetByNameOrIDFuzzy(ctx, cardName)
 	if err != nil {
-		return utils.EH.CreateError(event, "Failed to search for cards",
-			"An error occurred while searching for cards")
-	}
-
-	// Use UnifiedSearchService for improved search accuracy
-	cardOperationsService := services.NewCardOperationsService(b.CardRepository, b.UserCardRepository)
-	unifiedSearchService := services.NewUnifiedSearchService(cardOperationsService)
-	
-	card, err := unifiedSearchService.SearchSingleCard(ctx, allCards, cardName)
-	if err != nil {
-		return utils.EH.CreateError(event, "Search failed", err.Error())
-	}
-	
-	if card == nil {
 		return utils.EH.CreateError(event, "Card Not Found",
 			fmt.Sprintf("No card found matching '%s'", cardName))
 	}
 
-	// Use the best match
+	// Use the found card
 	return handleCardByID(b, event, card.ID)
 }
 

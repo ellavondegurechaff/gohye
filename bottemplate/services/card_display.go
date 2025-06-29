@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/disgoorg/bot-template/bottemplate/cardleveling"
 	"github.com/disgoorg/bot-template/bottemplate/config"
 	"github.com/disgoorg/bot-template/bottemplate/database/models"
 	"github.com/disgoorg/bot-template/bottemplate/interfaces"
@@ -39,6 +40,7 @@ type CardDisplayItem interface {
 type UserCardDisplay struct {
 	UserCard *models.UserCard
 	Card     *models.Card
+	User     *models.User // Optional user data for new card detection
 }
 
 func (ucd *UserCardDisplay) GetCardID() int64 {
@@ -57,8 +59,39 @@ func (ucd *UserCardDisplay) IsAnimated() bool {
 	return ucd.Card.Animated
 }
 
+// IsNewCard returns true if card was obtained after user's last daily
+func (ucd *UserCardDisplay) IsNewCard() bool {
+	if ucd.User == nil {
+		return false
+	}
+	return ucd.UserCard.Obtained.After(ucd.User.LastDaily)
+}
+
+// IsLocked returns true if the card is locked
+func (ucd *UserCardDisplay) IsLocked() bool {
+	return ucd.UserCard.Locked
+}
+
 func (ucd *UserCardDisplay) GetExtraInfo() []string {
-	return nil
+	var extras []string
+
+	// Add EXP percentage for non-promo, non-level-5 cards with EXP
+	if ucd.UserCard.Level < 5 && ucd.UserCard.Exp > 0 && !config.IsPromoCollection(ucd.Card.ColID) {
+		expPercent := calculateExpPercentage(ucd.UserCard.Exp, ucd.UserCard.Level)
+		extras = append(extras, fmt.Sprintf("`%d%%`", expPercent))
+	}
+
+	// Add custom mark if exists
+	if ucd.UserCard.Mark != "" {
+		extras = append(extras, fmt.Sprintf("`%s`", ucd.UserCard.Mark))
+	}
+
+	// Add rating for non-promo cards with rating
+	if ucd.UserCard.Rating > 0 && !config.IsPromoCollection(ucd.Card.ColID) {
+		extras = append(extras, fmt.Sprintf("`(%d⏫)`", ucd.UserCard.Rating))
+	}
+
+	return extras
 }
 
 // MissingCardDisplay wraps a Card for missing card display
@@ -134,13 +167,27 @@ func (cds *CardDisplayService) FormatCardDisplayItems(ctx context.Context, items
 			cds.spacesService.GetSpacesConfig(),
 		)
 
-		entry := utils.FormatCardEntry(
-			displayInfo,
-			item.IsFavorite(),
-			item.IsAnimated(),
-			item.GetAmount(),
-			item.GetExtraInfo()...,
-		)
+		var entry string
+		// Check if this is a UserCardDisplay to show new and lock indicators
+		if userCardDisplay, ok := item.(*UserCardDisplay); ok {
+			entry = utils.FormatCardEntryWithIndicators(
+				displayInfo,
+				item.IsFavorite(),
+				item.IsAnimated(),
+				item.GetAmount(),
+				userCardDisplay.IsNewCard(),
+				userCardDisplay.IsLocked(),
+				item.GetExtraInfo()...,
+			)
+		} else {
+			entry = utils.FormatCardEntry(
+				displayInfo,
+				item.IsFavorite(),
+				item.IsAnimated(),
+				item.GetAmount(),
+				item.GetExtraInfo()...,
+			)
+		}
 
 		description.WriteString(entry + "\n")
 	}
@@ -186,13 +233,13 @@ func (cds *CardDisplayService) FormatCopyText(ctx context.Context, items []CardD
 			continue
 		}
 
-		stars := strings.Repeat("★", card.Level)
+		stars := utils.GetPromoRarityPlainText(card.ColID, card.Level)
 		line := fmt.Sprintf("%s %s [%s]", stars, utils.FormatCardName(card.Name), card.ColID)
-		
+
 		if item.GetAmount() > 1 {
 			line += fmt.Sprintf(" x%d", item.GetAmount())
 		}
-		
+
 		sb.WriteString(line + "\n")
 	}
 
@@ -212,6 +259,26 @@ func (cds *CardDisplayService) ConvertUserCardsToDisplayItems(ctx context.Contex
 		items = append(items, &UserCardDisplay{
 			UserCard: userCard,
 			Card:     card,
+		})
+	}
+
+	return items, nil
+}
+
+// ConvertUserCardsToDisplayItemsWithUser converts UserCard slice to CardDisplayItem slice with User data
+func (cds *CardDisplayService) ConvertUserCardsToDisplayItemsWithUser(ctx context.Context, userCards []*models.UserCard, user *models.User) ([]CardDisplayItem, error) {
+	items := make([]CardDisplayItem, 0, len(userCards))
+
+	for _, userCard := range userCards {
+		card, err := cds.cardRepo.GetByID(ctx, userCard.CardID)
+		if err != nil {
+			continue // Skip cards we can't fetch
+		}
+
+		items = append(items, &UserCardDisplay{
+			UserCard: userCard,
+			Card:     card,
+			User:     user,
 		})
 	}
 
@@ -371,4 +438,28 @@ func (cds *CardDisplayService) CreatePaginatedCardsEmbed(
 		query,
 		color,
 	)
+}
+
+// calculateExpPercentage calculates EXP percentage using our cardleveling system
+func calculateExpPercentage(currentExp int64, level int) int {
+	if level >= 5 {
+		return 100 // Level 5 cards are maxed
+	}
+
+	calculator := cardleveling.NewCalculator(cardleveling.NewDefaultConfig())
+	requiredExp := calculator.CalculateExpRequirement(level)
+
+	if requiredExp <= 0 {
+		return 0
+	}
+
+	percentage := int((currentExp * 100) / requiredExp)
+	if percentage > 100 {
+		percentage = 100
+	}
+	if percentage < 0 {
+		percentage = 0
+	}
+
+	return percentage
 }

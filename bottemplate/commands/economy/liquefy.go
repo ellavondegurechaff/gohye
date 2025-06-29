@@ -72,6 +72,13 @@ func (h *LiquefyHandler) HandleLiquefy(e *handler.CommandEvent) error {
 					Flags:   discord.MessageFlagEphemeral,
 				})
 			}
+			// Check liquefy eligibility
+			if !utils.IsCardLiquefyEligible(card, userCard) {
+				return e.CreateMessage(discord.MessageCreate{
+					Content: "❌ This card cannot be liquefied (may be locked, favorite with 1 copy, level 4+, or from restricted collection)",
+					Flags:   discord.MessageFlagEphemeral,
+				})
+			}
 			return h.showLiquefyConfirmation(e, card, vm)
 		}
 	}
@@ -82,6 +89,13 @@ func (h *LiquefyHandler) HandleLiquefy(e *handler.CommandEvent) error {
 		log.Printf("[DEBUG] Found exact match: %+v", card)
 		userCard, err := h.bot.UserCardRepository.GetByUserIDAndCardID(ctx, userID, card.ID)
 		if err == nil && userCard != nil && userCard.Amount > 0 {
+			// Check liquefy eligibility
+			if !utils.IsCardLiquefyEligible(card, userCard) {
+				return e.CreateMessage(discord.MessageCreate{
+					Content: "❌ This card cannot be liquefied (may be locked, favorite with 1 copy, level 4+, or from restricted collection)",
+					Flags:   discord.MessageFlagEphemeral,
+				})
+			}
 			return h.showLiquefyConfirmation(e, card, vm)
 		}
 	}
@@ -102,6 +116,13 @@ func (h *LiquefyHandler) HandleLiquefy(e *handler.CommandEvent) error {
 			log.Printf("[DEBUG] User doesn't own card: %+v", userCard)
 			return e.CreateMessage(discord.MessageCreate{
 				Content: "❌ You don't own this card",
+				Flags:   discord.MessageFlagEphemeral,
+			})
+		}
+		// Check liquefy eligibility for weighted search result
+		if !utils.IsCardLiquefyEligible(card, userCard) {
+			return e.CreateMessage(discord.MessageCreate{
+				Content: "❌ This card cannot be liquefied (may be locked, favorite with 1 copy, level 4+, or from restricted collection)",
 				Flags:   discord.MessageFlagEphemeral,
 			})
 		}
@@ -133,7 +154,7 @@ func (h *LiquefyHandler) showLiquefyConfirmation(e *handler.CommandEvent, card *
 		SetDescription(fmt.Sprintf("```md\n## Card Details\n* Name: %s\n* Collection: %s\n* Level: %s\n* Vial Yield: %d 🍷\n```\n⚠️ Warning: This action cannot be undone!",
 			card.Name,
 			card.ColID,
-			strings.Repeat("⭐", card.Level),
+			utils.GetPromoRarityPlainText(card.ColID, card.Level),
 			vials)).
 		SetTimestamp(time.Now()).
 		Build()
@@ -238,48 +259,70 @@ func (h *LiquefyHandler) HandleComponent(e *handler.ComponentEvent) error {
 	}
 }
 
-// findCardByName finds a card by name using weighted search (similar to forge command pattern)
+// findCardByName finds a card by name using enhanced search
 func (h *LiquefyHandler) findCardByName(ctx context.Context, query, userID string) (*models.Card, error) {
 	// Handle empty query
 	if query == "" {
 		return nil, fmt.Errorf("please provide a card name")
 	}
 
-	// Get all cards from repository (same pattern as forge command)
-	cards, err := h.bot.CardRepository.GetAll(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to search for cards: %v", err)
+	// Try direct query first (optimized approach)
+	card, err := h.bot.CardRepository.GetByQuery(ctx, query)
+	if err == nil {
+		// Check if user owns this card
+		userCard, err := h.bot.CardRepository.GetUserCard(ctx, userID, card.ID)
+		if err == nil && userCard.Amount > 0 {
+			return card, nil
+		}
 	}
 
-	// Parse search query and perform weighted search (same as forge command)
-	filters := utils.ParseSearchQuery(query)
-	filters.SortBy = utils.SortByLevel
-	filters.SortDesc = true
+	// Fallback to comprehensive search within user's cards
+	userCards, err := h.bot.CardRepository.GetAllByUserID(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch user cards: %v", err)
+	}
 
-	// Use CardOperationsService for consistent search behavior
-	searchResults := h.cardOperationsService.SearchCardsInCollection(ctx, cards, filters)
-	
+	// Get card IDs and create lookup map
+	cardIDs := make([]int64, 0, len(userCards))
+	userCardMap := make(map[int64]*models.UserCard)
+	for _, uc := range userCards {
+		cardIDs = append(cardIDs, uc.CardID)
+		userCardMap[uc.CardID] = uc
+	}
+
+	if len(cardIDs) == 0 {
+		return nil, fmt.Errorf("you don't have any cards available")
+	}
+
+	// Get card details
+	cards, err := h.bot.CardRepository.GetByIDs(ctx, cardIDs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch card details: %v", err)
+	}
+
+	// Filter cards using centralized liquefy eligibility logic
+	var liquefyEligibleCards []*models.Card
+	eligibleUserCardMap := make(map[int64]*models.UserCard)
+	for _, card := range cards {
+		userCard := userCardMap[card.ID]
+		if utils.IsCardLiquefyEligible(card, userCard) {
+			liquefyEligibleCards = append(liquefyEligibleCards, card)
+			eligibleUserCardMap[card.ID] = userCard
+		}
+	}
+
+	if len(liquefyEligibleCards) == 0 {
+		return nil, fmt.Errorf("no cards available for liquefying (cards may be locked, favorites, level 4+, or from restricted collections)")
+	}
+
+	// Use enhanced search filters on eligible cards
+	filters := utils.ParseSearchQuery(query)
+	searchResults := utils.WeightedSearchWithMulti(liquefyEligibleCards, filters, eligibleUserCardMap)
+
 	if len(searchResults) == 0 {
 		return nil, fmt.Errorf("no cards found matching '%s'", query)
 	}
 
-	// Find first card that the user owns
-	for _, card := range searchResults {
-		// Check if user owns this card
-		userCard, err := h.bot.UserCardRepository.GetUserCard(ctx, userID, card.ID)
-		if err != nil {
-			// User doesn't own this card, continue to next
-			continue
-		}
-
-		// Skip cards with zero amount
-		if userCard.Amount <= 0 {
-			continue
-		}
-
-		// Found a valid card
-		return card, nil
-	}
-
-	return nil, fmt.Errorf("you don't own any cards matching '%s'", query)
+	// Return the best match
+	return searchResults[0], nil
 }
