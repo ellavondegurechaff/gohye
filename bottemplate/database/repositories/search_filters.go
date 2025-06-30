@@ -51,6 +51,18 @@ type SearchFilters struct {
 	AmountMax   int64
 	AmountExact int64
 	
+	// Star rating filtering (card property)
+	StarMin   int
+	StarMax   int
+	StarExact int
+	Stars     []int // Exact star matches
+	AntiStars []int // Star exclusions
+	
+	// Experience filtering (user property)
+	ExpMin   int64
+	ExpMax   int64
+	ExpExact int64
+	
 	// Sorting
 	SortBy   string
 	SortDesc bool
@@ -113,6 +125,14 @@ func (rf *SearchFilters) ToUtilsFilters() map[string]interface{} {
 		"amountMin":         rf.AmountMin,
 		"amountMax":         rf.AmountMax,
 		"amountExact":       rf.AmountExact,
+		"starMin":           rf.StarMin,
+		"starMax":           rf.StarMax,
+		"starExact":         rf.StarExact,
+		"stars":             rf.Stars,
+		"antiStars":         rf.AntiStars,
+		"expMin":            rf.ExpMin,
+		"expMax":            rf.ExpMax,
+		"expExact":          rf.ExpExact,
 		"sortBy":            rf.SortBy,
 		"sortDesc":          rf.SortDesc,
 		"userQuery":         rf.UserQuery,
@@ -134,7 +154,8 @@ func (rf *SearchFilters) IsUserQuery() bool {
 		   rf.WishOnly || rf.ExcludeWish ||
 		   rf.LastCard ||
 		   rf.Diff > 0 ||
-		   rf.AmountMin > 0 || rf.AmountMax > 0 || rf.AmountExact > 0
+		   rf.AmountMin > 0 || rf.AmountMax > 0 || rf.AmountExact > 0 ||
+		   rf.ExpMin > 0 || rf.ExpMax > 0 || rf.ExpExact > 0
 }
 
 // IsEvalQuery checks if this filter requires evaluation/rating data

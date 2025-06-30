@@ -75,11 +75,13 @@ func (ucd *UserCardDisplay) IsLocked() bool {
 func (ucd *UserCardDisplay) GetExtraInfo() []string {
 	var extras []string
 
-	// Add EXP percentage for non-promo, non-level-5 cards with EXP
-	if ucd.UserCard.Level < 5 && ucd.UserCard.Exp > 0 && !config.IsPromoCollection(ucd.Card.ColID) {
+	// Add EXP percentage only for non-promo, non-fragment cards below level 5
+	colInfo, exists := utils.GetCollectionInfo(ucd.Card.ColID)
+	if exists && !colInfo.IsPromo && !colInfo.IsFragments && ucd.UserCard.Level < 5 {
 		expPercent := calculateExpPercentage(ucd.UserCard.Exp, ucd.UserCard.Level)
 		extras = append(extras, fmt.Sprintf("`%d%%`", expPercent))
 	}
+	// For promo cards, fragments, and level 5 cards, no EXP is shown
 
 	// Add custom mark if exists
 	if ucd.UserCard.Mark != "" {
@@ -89,6 +91,96 @@ func (ucd *UserCardDisplay) GetExtraInfo() []string {
 	// Add rating for non-promo cards with rating
 	if ucd.UserCard.Rating > 0 && !config.IsPromoCollection(ucd.Card.ColID) {
 		extras = append(extras, fmt.Sprintf("`(%d⏫)`", ucd.UserCard.Rating))
+	}
+
+	return extras
+}
+
+// UserCardDisplayWithContext wraps a UserCard for context-aware display based on sorting
+type UserCardDisplayWithContext struct {
+	UserCard *models.UserCard
+	Card     *models.Card
+	User     *models.User // Optional user data for new card detection
+	Filters  utils.SearchFilters // Search context for display decisions
+}
+
+func (ucdc *UserCardDisplayWithContext) GetCardID() int64 {
+	return ucdc.UserCard.CardID
+}
+
+func (ucdc *UserCardDisplayWithContext) GetAmount() int {
+	return int(ucdc.UserCard.Amount)
+}
+
+func (ucdc *UserCardDisplayWithContext) IsFavorite() bool {
+	return ucdc.UserCard.Favorite
+}
+
+func (ucdc *UserCardDisplayWithContext) IsAnimated() bool {
+	return ucdc.Card.Animated
+}
+
+// IsNewCard returns true if card was obtained after user's last daily
+func (ucdc *UserCardDisplayWithContext) IsNewCard() bool {
+	if ucdc.User == nil {
+		return false
+	}
+	return ucdc.UserCard.Obtained.After(ucdc.User.LastDaily)
+}
+
+// IsLocked returns true if the card is locked
+func (ucdc *UserCardDisplayWithContext) IsLocked() bool {
+	return ucdc.UserCard.Locked
+}
+
+func (ucdc *UserCardDisplayWithContext) GetExtraInfo() []string {
+	var extras []string
+
+	// Context-aware display based on sorting criteria
+	switch ucdc.Filters.SortBy {
+	case utils.SortByExp:
+		// Show EXP percentage when sorting by experience (except for promo, fragments, and level 5)
+		colInfo, exists := utils.GetCollectionInfo(ucdc.Card.ColID)
+		if exists && !colInfo.IsPromo && !colInfo.IsFragments && ucdc.UserCard.Level < 5 {
+			expPercent := calculateExpPercentage(ucdc.UserCard.Exp, ucdc.UserCard.Level)
+			extras = append(extras, fmt.Sprintf("**`%d%%`**", expPercent))
+		}
+	case utils.SortByAmount:
+		// Prominently show amount when sorting by amount
+		if ucdc.UserCard.Amount > 1 {
+			extras = append(extras, fmt.Sprintf("**x%d**", ucdc.UserCard.Amount))
+		}
+	case utils.SortByRating:
+		// Show rating when sorting by rating
+		if ucdc.UserCard.Rating > 0 {
+			extras = append(extras, fmt.Sprintf("**★%d**", ucdc.UserCard.Rating))
+		} else {
+			extras = append(extras, "**★0**")
+		}
+	case utils.SortByDate:
+		// Show relative date when sorting by date
+		if !ucdc.UserCard.Obtained.IsZero() {
+			// You could add relative time formatting here
+			extras = append(extras, fmt.Sprintf("**%s**", ucdc.UserCard.Obtained.Format("Jan 2")))
+		}
+	default:
+		// Default behavior - show EXP percentage only for non-promo, non-fragment cards below level 5
+		colInfo, exists := utils.GetCollectionInfo(ucdc.Card.ColID)
+		if exists && !colInfo.IsPromo && !colInfo.IsFragments && ucdc.UserCard.Level < 5 {
+			expPercent := calculateExpPercentage(ucdc.UserCard.Exp, ucdc.UserCard.Level)
+			extras = append(extras, fmt.Sprintf("`%d%%`", expPercent))
+		}
+		// For promo cards, fragments, and level 5 cards, no EXP is shown
+		
+		// Show amount for multiples in default view
+		if ucdc.UserCard.Amount > 1 {
+			extras = append(extras, fmt.Sprintf("`x%d`", ucdc.UserCard.Amount))
+		}
+	}
+
+	// Always add custom mark if exists
+	if ucdc.UserCard.Mark != "" {
+		extras = append(extras, fmt.Sprintf("`%s`", ucdc.UserCard.Mark))
 	}
 
 	return extras
@@ -279,6 +371,27 @@ func (cds *CardDisplayService) ConvertUserCardsToDisplayItemsWithUser(ctx contex
 			UserCard: userCard,
 			Card:     card,
 			User:     user,
+		})
+	}
+
+	return items, nil
+}
+
+// ConvertUserCardsToDisplayItemsWithUserAndContext converts UserCard slice to CardDisplayItem slice with User data and sorting context
+func (cds *CardDisplayService) ConvertUserCardsToDisplayItemsWithUserAndContext(ctx context.Context, userCards []*models.UserCard, user *models.User, filters utils.SearchFilters) ([]CardDisplayItem, error) {
+	items := make([]CardDisplayItem, 0, len(userCards))
+
+	for _, userCard := range userCards {
+		card, err := cds.cardRepo.GetByID(ctx, userCard.CardID)
+		if err != nil {
+			continue // Skip cards we can't fetch
+		}
+
+		items = append(items, &UserCardDisplayWithContext{
+			UserCard: userCard,
+			Card:     card,
+			User:     user,
+			Filters:  filters,
 		})
 	}
 

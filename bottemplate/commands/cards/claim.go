@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/disgoorg/bot-template/bottemplate"
+	"github.com/disgoorg/bot-template/bottemplate/cardleveling"
 	"github.com/disgoorg/bot-template/bottemplate/config"
 	"github.com/disgoorg/bot-template/bottemplate/database/models"
 	"github.com/disgoorg/bot-template/bottemplate/utils"
@@ -153,29 +154,39 @@ func (h *ClaimHandler) HandleCommand(e *handler.CommandEvent) error {
 	}
 
 	// Randomly pick cards (with effect modifications)
-	var selectedCards []*models.Card
+	type cardWithEXP struct {
+		card *models.Card
+		exp  int64
+	}
+	var selectedCardsWithEXP []cardWithEXP
 	for i := 0; i < count; i++ {
 		// Apply tohrugift effect for first claim of the day
 		isFirstClaim := currentDailyClaims == 0 && i == 0
 		card := selectRandomCard(cards, h.bot, userID, isFirstClaim, groupType)
 		if card != nil {
-			selectedCards = append(selectedCards, card)
+			// Calculate initial EXP for non-promo, non-fragment cards
+			var exp int64
+			if colInfo, exists := utils.GetCollectionInfo(card.ColID); exists && !colInfo.IsPromo && !colInfo.IsFragments {
+				exp = calculateInitialEXP(card.Level)
+			}
+			selectedCardsWithEXP = append(selectedCardsWithEXP, cardWithEXP{card: card, exp: exp})
 		}
 	}
 
-	if len(selectedCards) == 0 {
+	if len(selectedCardsWithEXP) == 0 {
 		return utils.EH.CreateError(e, "Error", "No cards available")
 	}
 
 	// Sort by level descending
-	sort.Slice(selectedCards, func(i, j int) bool {
-		return selectedCards[i].Level > selectedCards[j].Level
+	sort.Slice(selectedCardsWithEXP, func(i, j int) bool {
+		return selectedCardsWithEXP[i].card.Level > selectedCardsWithEXP[j].card.Level
 	})
 
 	// Build the new-cards listing text
 	var cardList strings.Builder
 	cardList.WriteString("**✨ New Cards**\n\n")
-	for _, card := range selectedCards {
+	for _, cardWithExp := range selectedCardsWithEXP {
+		card := cardWithExp.card
 		stars := utils.GetPromoRarityDisplay(card.ColID, card.Level)
 		collection := fmt.Sprintf("`[%s]`", strings.ToUpper(card.ColID))
 
@@ -190,25 +201,44 @@ func (h *ClaimHandler) HandleCommand(e *handler.CommandEvent) error {
 			hasCard = true
 		}
 
-		cardList.WriteString(fmt.Sprintf(
-			"%s **[%s](%s)** %s%s\n",
-			stars,
-			utils.FormatCardName(card.Name),
-			getCardImageURL(card, h.bot),
-			collection,
-			func() string {
-				if hasCard {
-					return fmt.Sprintf(" `#%d`", userCard.Amount+1)
-				}
-				return ""
-			}(),
-		))
+		// Build EXP display for new cards
+		expDisplay := ""
+		// Check if card collection is not promo, not fragments, and not level 5
+		colInfo, exists := utils.GetCollectionInfo(card.ColID)
+		if exists && !colInfo.IsPromo && !colInfo.IsFragments && card.Level < 5 {
+			// Show EXP only for non-promo, non-fragment cards below level 5
+			if card.Level < 4 {
+				expPercent := calculateExpPercentage(cardWithExp.exp, card.Level)
+				expDisplay = fmt.Sprintf(" `%d%%`", expPercent)
+			} else {
+				// Level 4 cards always show 0% (they don't get initial EXP)
+				expDisplay = " `0%`"
+			}
+		}
+		// For promo cards, fragments, and level 5 cards, expDisplay remains empty
+
+		// Format: stars [name](url) [collection] exp% #amount
+		cardName := utils.FormatCardName(card.Name)
+		amountDisplay := ""
+		if hasCard {
+			amountDisplay = fmt.Sprintf(" `#%d`", userCard.Amount+1)
+		}
+
+		// Build the line with proper spacing
+		line := fmt.Sprintf("%s **[%s](%s)** %s", stars, cardName, getCardImageURL(card, h.bot), collection)
+		if expDisplay != "" {
+			line += expDisplay
+		}
+		if amountDisplay != "" {
+			line += amountDisplay
+		}
+		cardList.WriteString(line + "\n")
 	}
 	cardList.WriteString("\n\n")
 
 	// Deduct balance & update claim stats per card
-	for i, card := range selectedCards {
-		if err := claimCard(ctx, h.bot, card.ID, userID, claimCosts[i], count); err != nil {
+	for i, cardWithExp := range selectedCardsWithEXP {
+		if err := claimCard(ctx, h.bot, cardWithExp.card.ID, userID, claimCosts[i], cardWithExp.exp); err != nil {
 			return fmt.Errorf("failed to claim card: %w", err)
 		}
 	}
@@ -261,8 +291,8 @@ func (h *ClaimHandler) HandleCommand(e *handler.CommandEvent) error {
 	embed := discord.NewEmbedBuilder().
 		SetDescription(cardList.String()).
 		SetColor(utils.SuccessColor).
-		SetImage(getCardImageURL(selectedCards[0], h.bot)).
-		SetFooter(fmt.Sprintf("Card 1/%d • Claimed by %s", len(selectedCards), e.User().Username), "").
+		SetImage(getCardImageURL(selectedCardsWithEXP[0].card, h.bot)).
+		SetFooter(fmt.Sprintf("Card 1/%d • Claimed by %s", len(selectedCardsWithEXP), e.User().Username), "").
 		AddField("", receiptText, false)
 
 	components := []discord.ContainerComponent{
@@ -277,9 +307,9 @@ func (h *ClaimHandler) HandleCommand(e *handler.CommandEvent) error {
 	}
 
 	// Check for collection completion after successful claim
-	claimedCardIDs := make([]int64, len(selectedCards))
-	for i, card := range selectedCards {
-		claimedCardIDs[i] = card.ID
+	claimedCardIDs := make([]int64, len(selectedCardsWithEXP))
+	for i, cardWithExp := range selectedCardsWithEXP {
+		claimedCardIDs[i] = cardWithExp.card.ID
 	}
 	go h.bot.CompletionChecker.CheckCompletionForCards(context.Background(), userID, claimedCardIDs)
 
@@ -377,6 +407,73 @@ func (h *ClaimHandler) HandleComponent(e *handler.ComponentEvent) error {
 	})
 }
 
+// calculateExpPercentage calculates the EXP percentage for display
+func calculateExpPercentage(currentExp int64, level int) int {
+	if level >= 5 {
+		return 100 // Level 5 cards are maxed
+	}
+
+	calculator := cardleveling.NewCalculator(cardleveling.NewDefaultConfig())
+	requiredExp := calculator.CalculateExpRequirement(level)
+
+	if requiredExp <= 0 {
+		return 0
+	}
+
+	percentage := int((currentExp * 100) / requiredExp)
+	// Ensure at least 1% shows if there's any EXP
+	if percentage == 0 && currentExp > 0 {
+		percentage = 1
+	}
+	if percentage > 100 {
+		percentage = 100
+	}
+	return percentage
+}
+
+// calculateInitialEXP calculates the initial EXP for a newly claimed card
+// All cards get at least some EXP to start with (minimum 1% of required)
+func calculateInitialEXP(cardLevel int) int64 {
+	// Skip EXP for level 4+ cards
+	if cardLevel >= 4 {
+		return 0
+	}
+
+	// Random multiplier from 0-8 (0 gives minimal EXP, 1-8 gives more)
+	multiplier := rand.Intn(9)
+
+	// Calculate EXP based on card level
+	// Ensure minimum is at least 1% of required EXP
+	var exp int64
+	switch cardLevel {
+	case 1:
+		// Required: 4500, so 1% = 45
+		if multiplier == 0 {
+			exp = int64(rand.Intn(50) + 45) // 45-94 for minimal EXP (1-2%)
+		} else {
+			exp = int64(multiplier*125) + 45 // 170-1045
+		}
+	case 2:
+		// Required: 22500 (15000 * 1.5), so 1% = 225
+		if multiplier == 0 {
+			exp = int64(rand.Intn(225) + 225) // 225-449 for minimal EXP (1-2%)
+		} else {
+			exp = int64(float64(multiplier)*187.5) + 225 // 412-1725
+		}
+	case 3:
+		// Required: 101250 (45000 * 2.25), so 1% = 1013
+		if multiplier == 0 {
+			exp = int64(rand.Intn(500) + 1013) // 1013-1512 for minimal EXP (1-1.5%)
+		} else {
+			exp = int64(multiplier*250) + 1013 // 1263-3013
+		}
+	default:
+		exp = 0
+	}
+
+	return exp
+}
+
 func selectRandomCard(cards []*models.Card, bot *bottemplate.Bot, userID string, isFirstClaim bool, groupType string) *models.Card {
 	// Weighted rarities
 	weights := map[int]int{
@@ -450,7 +547,7 @@ func selectRandomCard(cards []*models.Card, bot *bottemplate.Bot, userID string,
 	return eligibleCards[rand.Intn(len(eligibleCards))]
 }
 
-func claimCard(ctx context.Context, b *bottemplate.Bot, cardID int64, userID string, claimCost int64, _ int) error {
+func claimCard(ctx context.Context, b *bottemplate.Bot, cardID int64, userID string, claimCost int64, initialExp int64) error {
 	tx, err := b.DB.BunDB().BeginTx(ctx, &sql.TxOptions{
 		Isolation: sql.LevelRepeatableRead,
 	})
@@ -478,14 +575,14 @@ func claimCard(ctx context.Context, b *bottemplate.Bot, cardID int64, userID str
 	}
 
 	// Upsert the user_card
-	if err := updateUserCard(ctx, tx, userID, cardID); err != nil {
+	if err := updateUserCard(ctx, tx, userID, cardID, initialExp); err != nil {
 		return fmt.Errorf("failed to handle user card: %w", err)
 	}
 
 	return tx.Commit()
 }
 
-func updateUserCard(ctx context.Context, tx bun.Tx, userID string, cardID int64) error {
+func updateUserCard(ctx context.Context, tx bun.Tx, userID string, cardID int64, initialExp int64) error {
 	result, err := tx.NewUpdate().
 		Model((*models.UserCard)(nil)).
 		Set("amount = amount + 1").
@@ -502,10 +599,12 @@ func updateUserCard(ctx context.Context, tx bun.Tx, userID string, cardID int64)
 	}
 
 	if rowsAffected == 0 {
+		// New card - set initial EXP
 		userCard := &models.UserCard{
 			UserID:    userID,
 			CardID:    cardID,
 			Amount:    1,
+			Exp:       initialExp,
 			Obtained:  time.Now(),
 			CreatedAt: time.Now(),
 			UpdatedAt: time.Now(),

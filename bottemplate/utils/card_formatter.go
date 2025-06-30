@@ -119,6 +119,7 @@ func FormatCardEntry(displayInfo CardDisplayInfo, favorite bool, animated bool, 
 func FormatCardEntryWithIndicators(displayInfo CardDisplayInfo, favorite bool, animated bool, amount int, isNew bool, isLocked bool, extraInfo ...string) string {
 	var prefix strings.Builder
 	var icons strings.Builder
+	var expDisplay string
 
 	// Add prefix indicators
 	if isNew {
@@ -138,18 +139,25 @@ func FormatCardEntryWithIndicators(displayInfo CardDisplayInfo, favorite bool, a
 		icons.WriteString(fmt.Sprintf(" `x%d`", amount))
 	}
 
-	// Add any extra info (like diff percentage, miss count, etc.)
+	// Extract EXP from extra info and handle other extra info separately
 	for _, info := range extraInfo {
 		if info != "" {
-			icons.WriteString(" " + info)
+			// Check if this is an EXP percentage (contains %)
+			if strings.Contains(info, "%") && strings.Contains(info, "`") {
+				expDisplay = " " + info
+			} else {
+				icons.WriteString(" " + info)
+			}
 		}
 	}
 
-	return fmt.Sprintf("* %s%s %s%s `[%s]`",
+	// Format: prefix stars [hyperlink] icons [collection] exp%
+	return fmt.Sprintf("* %s%s %s%s `[%s]`%s",
 		prefix.String(),
 		displayInfo.Stars,
 		displayInfo.Hyperlink,
 		icons.String(),
 		strings.Trim(displayInfo.FormattedCollection, "[]"),
+		expDisplay,
 	)
 }

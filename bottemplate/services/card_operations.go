@@ -27,14 +27,20 @@ func NewCardOperationsService(cardRepo interfaces.CardRepositoryInterface, userC
 
 // GetUserCardsWithDetails fetches user cards with card details and applies filtering
 func (s *CardOperationsService) GetUserCardsWithDetails(ctx context.Context, userID string, query string) ([]*models.UserCard, []*models.Card, error) {
+	userCards, cards, _, err := s.GetUserCardsWithDetailsAndFilters(ctx, userID, query)
+	return userCards, cards, err
+}
+
+// GetUserCardsWithDetailsAndFilters fetches user cards with card details, applies filtering, and returns the parsed filters
+func (s *CardOperationsService) GetUserCardsWithDetailsAndFilters(ctx context.Context, userID string, query string) ([]*models.UserCard, []*models.Card, utils.SearchFilters, error) {
 	// Get user's cards
 	userCards, err := s.userCardRepo.GetAllByUserID(ctx, userID)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to fetch user cards: %w", err)
+		return nil, nil, utils.SearchFilters{}, fmt.Errorf("failed to fetch user cards: %w", err)
 	}
 
 	if len(userCards) == 0 {
-		return userCards, nil, nil
+		return userCards, nil, utils.SearchFilters{}, nil
 	}
 
 	// Extract card IDs for bulk query
@@ -49,13 +55,15 @@ func (s *CardOperationsService) GetUserCardsWithDetails(ctx context.Context, use
 	// Get card details with bulk query
 	cards, err := s.cardRepo.GetByIDs(ctx, cardIDs)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to fetch card details: %w", err)
+		return nil, nil, utils.SearchFilters{}, fmt.Errorf("failed to fetch card details: %w", err)
 	}
 
-	// Apply search filters if query exists
+	// Parse search filters
+	filters := utils.SearchFilters{}
 	var displayCards []*models.UserCard
+	
 	if len(query) > 0 {
-		filters := utils.ParseSearchQuery(query)
+		filters = utils.ParseSearchQuery(query)
 		
 		// Apply favorites filtering FIRST (on UserCards before search)
 		filteredUserCards := s.applyFavoritesFilter(userCards, filters)
@@ -71,7 +79,7 @@ func (s *CardOperationsService) GetUserCardsWithDetails(ctx context.Context, use
 		// Get cards for the filtered user cards
 		filteredCards, err := s.cardRepo.GetByIDs(ctx, filteredCardIDs)
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to fetch filtered card details: %w", err)
+			return nil, nil, utils.SearchFilters{}, fmt.Errorf("failed to fetch filtered card details: %w", err)
 		}
 		
 		// Run search on the favorites-filtered cards using unified search
@@ -95,7 +103,7 @@ func (s *CardOperationsService) GetUserCardsWithDetails(ctx context.Context, use
 		s.sortUserCards(displayCards, cards)
 	}
 
-	return displayCards, cards, nil
+	return displayCards, cards, filters, nil
 }
 
 // GetMissingCards returns cards the user doesn't own, with optional filtering

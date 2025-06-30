@@ -74,8 +74,8 @@ func CardsHandler(b *bottemplate.Bot) handler.CommandHandler {
 			return utils.EH.CreateErrorEmbed(event, "Failed to fetch user data")
 		}
 		
-		// Use CardOperationsService to get user cards with details and filtering
-		displayCards, _, err := cardOperationsService.GetUserCardsWithDetails(context.Background(), event.User().ID.String(), query)
+		// Use CardOperationsService to get user cards with details, filtering, and search context
+		displayCards, _, filters, err := cardOperationsService.GetUserCardsWithDetailsAndFilters(context.Background(), event.User().ID.String(), query)
 		if err != nil {
 			return utils.EH.CreateErrorEmbed(event, "Failed to fetch cards")
 		}
@@ -84,8 +84,8 @@ func CardsHandler(b *bottemplate.Bot) handler.CommandHandler {
 			return utils.EH.CreateErrorEmbed(event, "No cards found")
 		}
 
-		// Convert to CardDisplayItem slice with user data for new card detection
-		displayItems, err := cardDisplayService.ConvertUserCardsToDisplayItemsWithUser(context.Background(), displayCards, user)
+		// Convert to CardDisplayItem slice with user data for new card detection and sorting context
+		displayItems, err := cardDisplayService.ConvertUserCardsToDisplayItemsWithUserAndContext(context.Background(), displayCards, user, filters)
 		if err != nil {
 			return utils.EH.CreateErrorEmbed(event, "Failed to prepare card display")
 		}

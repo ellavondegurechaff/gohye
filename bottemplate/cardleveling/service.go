@@ -33,12 +33,6 @@ func (s *Service) GainExp(ctx context.Context, userCard *models.UserCard) (*Leve
 		return nil, errors.New("card not found")
 	}
 
-	// Check if card is eligible
-	card, err := s.cardRepo.GetByID(ctx, userCard.CardID)
-	if err != nil {
-		return nil, err
-	}
-
 	// Verify the card belongs to the user
 	ownedCard, err := s.cardRepo.GetUserCard(ctx, userCard.UserID, userCard.CardID)
 	if err != nil {
@@ -48,7 +42,7 @@ func (s *Service) GainExp(ctx context.Context, userCard *models.UserCard) (*Leve
 		return nil, errors.New("invalid card ownership")
 	}
 
-	if card.Level >= 5 {
+	if userCard.Level >= 5 {
 		return nil, errors.New("level 5 cards cannot gain experience")
 	}
 
@@ -59,16 +53,16 @@ func (s *Service) GainExp(ctx context.Context, userCard *models.UserCard) (*Leve
 	}
 
 	// Calculate exp gain
-	expConfig := s.calculator.CalculateExpGain(card.Level, stats)
+	expConfig := s.calculator.CalculateExpGain(userCard.Level, stats)
 	expGained := s.calculator.CalculateFinalExp(expConfig)
 
 	// Update exp and check for level up
 	newExp := userCard.Exp + expGained
-	requiredExp := s.calculator.CalculateExpRequirement(card.Level)
+	requiredExp := s.calculator.CalculateExpRequirement(userCard.Level)
 
 	result := &LevelingResult{
 		Success:     true,
-		NewLevel:    card.Level,
+		NewLevel:    userCard.Level,
 		CurrentExp:  newExp,
 		RequiredExp: requiredExp,
 		ExpGained:   expGained,
@@ -77,7 +71,10 @@ func (s *Service) GainExp(ctx context.Context, userCard *models.UserCard) (*Leve
 	// Check for level up
 	if newExp >= requiredExp {
 		result.NewLevel++
+		userCard.Level = result.NewLevel // Update the actual card's level
 		newExp = 0
+		// Recalculate required exp for the new level
+		result.RequiredExp = s.calculator.CalculateExpRequirement(result.NewLevel)
 	}
 
 	// Update database
@@ -114,7 +111,10 @@ func (s *Service) CombineCards(ctx context.Context, mainCard, fodderCard *models
 	// Check for level up
 	if newExp >= requiredExp && mainCard.Level < 5 {
 		result.NewLevel++
+		mainCard.Level = result.NewLevel // Update the actual card's level
 		newExp = 0
+		// Recalculate required exp for the new level
+		result.RequiredExp = s.calculator.CalculateExpRequirement(result.NewLevel)
 		result.Bonuses = append(result.Bonuses, "🎉 Level up! Ready to proceed to next level!")
 	}
 

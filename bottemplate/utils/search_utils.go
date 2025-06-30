@@ -40,6 +40,20 @@ type AmountFilter struct {
 	Exact int64  // =amount
 }
 
+// StarFilter represents star rating-based filtering criteria (card property)
+type StarFilter struct {
+	Min   int  // >star
+	Max   int  // <star
+	Exact int  // =star
+}
+
+// ExpFilter represents experience-based filtering criteria (user property)
+type ExpFilter struct {
+	Min   int64  // >exp
+	Max   int64  // <exp
+	Exact int64  // =exp
+}
+
 // SearchFilters represents all possible search criteria
 type SearchFilters struct {
 	// Existing fields (unchanged for backward compatibility)
@@ -59,10 +73,16 @@ type SearchFilters struct {
 	
 	// Enhanced filtering inspired by legacy JS system
 	AntiCollections []string     // !collection - collections to exclude
-	AntiLevels      []int        // !level - levels to exclude
+	AntiLevels      []int        // !level - levels to exclude (deprecated: use AntiStars)
 	Tags            []string     // #tag - tag filters
 	AntiTags        []string     // !#tag - anti-tag filters
 	AmountFilter    AmountFilter // >amount, <amount, =amount
+	StarFilter      StarFilter   // >star, <star, =star (card star rating 1-5)
+	ExpFilter       ExpFilter    // >exp, <exp, =exp (user experience points)
+	
+	// Improved terminology for clarity (preferred over Levels/AntiLevels)
+	Stars           []int        // Exact star rating matches (1, 2, 3, 4, 5)
+	AntiStars       []int        // Star rating exclusions (-1, -2, etc.)
 	
 	// Enhanced user-specific filters
 	ExcludeFavorites bool  // !fav - exclude favorites
@@ -119,6 +139,7 @@ type CollectionInfo struct {
 	IsPromo         bool
 	IsExcluded      bool // Excludes specific collections like signed, liveauction, lottery
 	IsForgeExcluded bool // Excludes collections from forge operations (fragments, album, etc.)
+	IsFragments     bool // Collection contains fragment cards
 }
 
 var (
@@ -126,7 +147,7 @@ var (
 	cacheMutex      sync.RWMutex
 	
 	// List of collection IDs that should be excluded from general card operations
-	excludedCollections = []string{"signed", "liveauction", "lottery"}
+	excludedCollections = []string{"signed", "liveauction", "lottery", "ggalbums", "bgalbums", "birthdays", "removed"}
 	
 	// List of collection IDs that should be excluded from forge operations
 	// Based on legacy system: fragments, album, liveauction, jackpot, birthdays, limited
@@ -161,6 +182,7 @@ func InitializeCollectionInfo(collections []*models.Collection) {
 			IsPromo:         collection.Promo,
 			IsExcluded:      isExcluded,
 			IsForgeExcluded: isForgeExcluded,
+			IsFragments:     collection.Fragments,
 		})
 	}
 }
@@ -200,6 +222,7 @@ func RefreshCollectionCache(collections []*models.Collection) {
 			IsPromo:         collection.Promo,
 			IsExcluded:      isExcluded,
 			IsForgeExcluded: isForgeExcluded,
+			IsFragments:     collection.Fragments,
 		})
 	}
 }
@@ -313,6 +336,8 @@ func ParseSearchQuery(query string) SearchFilters {
 		AntiLevels:      make([]int, 0),
 		Tags:            make([]string, 0),
 		AntiTags:        make([]string, 0),
+		Stars:           make([]int, 0),
+		AntiStars:       make([]int, 0),
 	}
 
 	terms := strings.Fields(strings.ToLower(query))
@@ -358,23 +383,33 @@ func ParseSearchQuery(query string) SearchFilters {
 			}
 		}
 
-		// Handle level filters (1-5) and negative level filters (-1, -2, etc.)
+		// Handle star/level filters (1-5) and negative filters (-1, -2, etc.)
 		if len(term) == 1 && term[0] >= '1' && term[0] <= '5' {
 			level, _ := strconv.Atoi(term)
-			filters.Levels = append(filters.Levels, level)
+			filters.Levels = append(filters.Levels, level) // Backward compatibility
+			filters.Stars = append(filters.Stars, level)   // New terminology
 			continue
 		}
 		if len(term) == 2 && term[0] == '-' && term[1] >= '1' && term[1] <= '5' {
 			level, _ := strconv.Atoi(term[1:])
-			filters.AntiLevels = append(filters.AntiLevels, level)
+			filters.AntiLevels = append(filters.AntiLevels, level) // Backward compatibility
+			filters.AntiStars = append(filters.AntiStars, level)   // New terminology
 			continue
 		}
 
-		// Handle level=X syntax
+		// Handle level=X and star=X syntax for backward compatibility
 		if strings.Contains(term, "level=") {
 			levelStr := strings.TrimPrefix(term, "level=")
 			if level, err := strconv.Atoi(levelStr); err == nil && level >= 1 && level <= 5 {
-				filters.Levels = append(filters.Levels, level)
+				filters.Levels = append(filters.Levels, level) // Backward compatibility
+				filters.Stars = append(filters.Stars, level)   // New terminology
+				continue
+			}
+		}
+		if strings.Contains(term, "star=") {
+			starStr := strings.TrimPrefix(term, "star=")
+			if star, err := strconv.Atoi(starStr); err == nil && star >= 1 && star <= 5 {
+				filters.Stars = append(filters.Stars, star)
 				continue
 			}
 		}
@@ -411,9 +446,24 @@ func parseComparisonOperator(term string, filters *SearchFilters) bool {
 
 	// Handle sort operators (enhanced with legacy system operators)
 	switch substr {
-	case "level", "star":
+	case "level":
 		filters.SortBy = SortByLevel
 		filters.SortDesc = operator == '>'
+		return true
+	case "star":
+		// >star means show higher stars first (descending), <star means show lower stars first (ascending)
+		filters.SortBy = SortByLevel
+		filters.SortDesc = operator == '>'
+		
+		// Also set star range filtering based on operator
+		switch operator {
+		case '>':
+			// >star means stars > 1, so show 2-5 star cards in descending order (5,4,3,2)
+			filters.StarFilter.Min = 2
+		case '<':
+			// <star means stars < 5, so show 1-4 star cards in ascending order (1,2,3,4)
+			filters.StarFilter.Max = 4
+		}
 		return true
 	case "name":
 		filters.SortBy = SortByName
@@ -439,7 +489,7 @@ func parseComparisonOperator(term string, filters *SearchFilters) bool {
 		filters.UserQuery = true // rating sorting requires user data
 		filters.EvalQuery = true // rating requires evaluation data
 		return true
-	case "levels":
+	case "levels", "exp":
 		filters.SortBy = SortByExp
 		filters.SortDesc = operator == '>'
 		filters.UserQuery = true // exp sorting requires user data
@@ -468,17 +518,64 @@ func parseComparisonOperator(term string, filters *SearchFilters) bool {
 			return true
 		}
 	}
-	
-	// Handle level comparison (>3, <5, =4) - for direct amounts
-	if level, err := strconv.Atoi(substr); err == nil && level >= 1 && level <= 5 {
-		filters.UserQuery = true
+
+	// Handle star rating filtering (>star=3, <star=5, =star=4)
+	if strings.HasPrefix(substr, "star=") {
+		starStr := strings.TrimPrefix(substr, "star=")
+		if star, err := strconv.Atoi(starStr); err == nil && star >= 1 && star <= 5 {
+			switch operator {
+			case '>':
+				filters.StarFilter.Min = star + 1
+			case '<':
+				filters.StarFilter.Max = star - 1
+			case '=':
+				filters.StarFilter.Exact = star
+			}
+			return true
+		}
+	}
+
+	// Handle experience filtering (>exp=100, <exp=500, =exp=250)
+	if strings.HasPrefix(substr, "exp=") {
+		expStr := strings.TrimPrefix(substr, "exp=")
+		if exp, err := strconv.ParseInt(expStr, 10, 64); err == nil {
+			filters.UserQuery = true // exp filtering requires user data
+			switch operator {
+			case '>':
+				filters.ExpFilter.Min = exp + 1
+			case '<':
+				filters.ExpFilter.Max = exp - 1
+			case '=':
+				filters.ExpFilter.Exact = exp
+			}
+			return true
+		}
+	}
+
+	// Handle experience filtering without value (>exp, <exp) - default to 0
+	if substr == "exp" {
+		filters.UserQuery = true // exp filtering requires user data
 		switch operator {
 		case '>':
-			filters.AmountFilter.Min = int64(level)
+			filters.ExpFilter.Min = 1 // >exp means any exp > 0
 		case '<':
-			filters.AmountFilter.Max = int64(level)
+			filters.ExpFilter.Max = 0 // <exp means exp = 0 (no exp)
 		case '=':
-			filters.AmountFilter.Exact = int64(level)
+			filters.ExpFilter.Exact = 0 // =exp means exp = 0
+		}
+		return true
+	}
+
+	// Handle direct amount comparison (>3, <5, =4) - legacy behavior for amount filtering
+	if amount, err := strconv.ParseInt(substr, 10, 64); err == nil {
+		filters.UserQuery = true // amount filtering requires user data
+		switch operator {
+		case '>':
+			filters.AmountFilter.Min = amount + 1
+		case '<':
+			filters.AmountFilter.Max = amount - 1
+		case '=':
+			filters.AmountFilter.Exact = amount
 		}
 		return true
 	}
@@ -576,12 +673,14 @@ func parseNegativeFilter(term string, filters *SearchFilters) bool {
 		filters.UserQuery = true // miss mode requires user data
 		return true
 	default:
-		// Check if it's a level filter (!3, -4)
+		// Check if it's a star/level filter (!3, -4, !star, -star)
 		if level, err := strconv.Atoi(substr); err == nil && level >= 1 && level <= 5 {
 			if isExclude {
-				filters.AntiLevels = append(filters.AntiLevels, level)
+				filters.AntiLevels = append(filters.AntiLevels, level) // Backward compatibility
+				filters.AntiStars = append(filters.AntiStars, level)   // New terminology
 			} else {
-				filters.Levels = append(filters.Levels, level)
+				filters.Levels = append(filters.Levels, level) // Backward compatibility  
+				filters.Stars = append(filters.Stars, level)   // New terminology
 			}
 			return true
 		}
@@ -945,6 +1044,40 @@ func applyCardFilters(card *models.Card, filters SearchFilters) bool {
 		}
 	}
 
+	// Check star filters (preferred over Levels for clarity)
+	if len(filters.Stars) > 0 {
+		starMatch := false
+		for _, star := range filters.Stars {
+			if card.Level == star {
+				starMatch = true
+				break
+			}
+		}
+		if !starMatch {
+			return false
+		}
+	}
+
+	// Check anti-star filters (!star)
+	if len(filters.AntiStars) > 0 {
+		for _, antiStar := range filters.AntiStars {
+			if card.Level == antiStar {
+				return false // Exclude this star rating
+			}
+		}
+	}
+
+	// Check star range filters (>star, <star, =star)
+	if filters.StarFilter.Min > 0 && card.Level < filters.StarFilter.Min {
+		return false
+	}
+	if filters.StarFilter.Max > 0 && card.Level > filters.StarFilter.Max {
+		return false
+	}
+	if filters.StarFilter.Exact > 0 && card.Level != filters.StarFilter.Exact {
+		return false
+	}
+
 	// Check animated filters
 	if filters.Animated && !card.Animated {
 		return false
@@ -1016,6 +1149,17 @@ func applyUserCardFilters(userCard *models.UserCard, filters SearchFilters) bool
 		return false
 	}
 	if filters.ExcludeLocked && userCard.Locked {
+		return false
+	}
+
+	// Check experience range filters (>exp, <exp, =exp)
+	if filters.ExpFilter.Min > 0 && userCard.Exp < filters.ExpFilter.Min {
+		return false
+	}
+	if filters.ExpFilter.Max > 0 && userCard.Exp > filters.ExpFilter.Max {
+		return false
+	}
+	if filters.ExpFilter.Exact > 0 && userCard.Exp != filters.ExpFilter.Exact {
 		return false
 	}
 

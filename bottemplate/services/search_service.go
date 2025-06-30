@@ -81,7 +81,8 @@ func (ss *SearchService) SearchUserCards(ctx context.Context, userID, query stri
 
 	// Apply search filters
 	var results []*models.Card
-	if filters.MultiOnly {
+	// Use user-aware search if there are any user-specific filters
+	if ss.hasUserSpecificFilters(filters) {
 		results = utils.WeightedSearchWithMulti(cards, filters, cardMap)
 	} else {
 		results = utils.WeightedSearch(cards, filters)
@@ -1072,4 +1073,17 @@ func (ss *SearchService) applyNewCardFilterGlobal(ctx context.Context, cards []*
 	}
 	
 	return filtered
+}
+
+// hasUserSpecificFilters checks if the search filters contain any user-specific criteria
+func (ss *SearchService) hasUserSpecificFilters(filters utils.SearchFilters) bool {
+	return filters.AmountFilter.Min > 0 || filters.AmountFilter.Max > 0 || filters.AmountFilter.Exact > 0 ||
+		   filters.ExpFilter.Min > 0 || filters.ExpFilter.Max > 0 || filters.ExpFilter.Exact > 0 ||
+		   filters.Favorites || filters.ExcludeFavorites ||
+		   filters.LockedOnly || filters.ExcludeLocked ||
+		   filters.MultiOnly || filters.SingleOnly ||
+		   filters.NewOnly || filters.ExcludeNew ||
+		   filters.RatedOnly || filters.ExcludeRated ||
+		   filters.WishOnly || filters.ExcludeWish ||
+		   filters.LastCard || filters.Diff > 0
 }
