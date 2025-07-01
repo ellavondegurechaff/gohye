@@ -97,6 +97,12 @@ func (s *CardOperationsService) GetUserCardsWithDetailsAndFilters(ctx context.Co
 				displayCards = append(displayCards, userCard)
 			}
 		}
+		
+		// Apply user-specific sorting after mapping back to UserCards
+		// This is needed for sorts like experience, amount, rating that require UserCard data
+		if needsUserCardSorting(filters.SortBy) {
+			s.sortUserCardsWithFilters(displayCards, cards, filters)
+		}
 	} else {
 		// If no query, use all cards but sort them
 		displayCards = userCards
@@ -244,6 +250,76 @@ func (s *CardOperationsService) BuildCardMappings(userCards []*models.UserCard, 
 	}
 
 	return userCardMap, cardMap
+}
+
+// needsUserCardSorting checks if the sort criteria requires UserCard data
+func needsUserCardSorting(sortBy string) bool {
+	return sortBy == "exp" || sortBy == "amount" || sortBy == "rating" || sortBy == "date"
+}
+
+// sortUserCardsWithFilters sorts user cards based on the provided filters
+func (s *CardOperationsService) sortUserCardsWithFilters(userCards []*models.UserCard, cards []*models.Card, filters utils.SearchFilters) {
+	if len(userCards) == 0 {
+		return
+	}
+
+	// Create a map for O(1) lookups
+	cardMap := make(map[int64]*models.Card, len(cards))
+	for _, card := range cards {
+		cardMap[card.ID] = card
+	}
+
+	// Sort based on the filter criteria
+	sort.Slice(userCards, func(i, j int) bool {
+		cardI, okI := cardMap[userCards[i].CardID]
+		cardJ, okJ := cardMap[userCards[j].CardID]
+
+		// Handle missing cards by putting them at the end
+		if !okI || !okJ {
+			return okJ
+		}
+
+		switch filters.SortBy {
+		case "exp":
+			// Sort by experience (descending if SortDesc=true)
+			if userCards[i].Exp != userCards[j].Exp {
+				if filters.SortDesc {
+					return userCards[i].Exp > userCards[j].Exp
+				}
+				return userCards[i].Exp < userCards[j].Exp
+			}
+		case "amount":
+			// Sort by amount
+			if userCards[i].Amount != userCards[j].Amount {
+				if filters.SortDesc {
+					return userCards[i].Amount > userCards[j].Amount
+				}
+				return userCards[i].Amount < userCards[j].Amount
+			}
+		case "rating":
+			// Sort by rating
+			if userCards[i].Rating != userCards[j].Rating {
+				if filters.SortDesc {
+					return userCards[i].Rating > userCards[j].Rating
+				}
+				return userCards[i].Rating < userCards[j].Rating
+			}
+		case "date":
+			// Sort by obtained date
+			if !userCards[i].Obtained.Equal(userCards[j].Obtained) {
+				if filters.SortDesc {
+					return userCards[i].Obtained.After(userCards[j].Obtained)
+				}
+				return userCards[i].Obtained.Before(userCards[j].Obtained)
+			}
+		}
+
+		// Default tie-breaker: sort by card level (descending), then name (ascending)
+		if cardI.Level != cardJ.Level {
+			return cardI.Level > cardJ.Level
+		}
+		return strings.ToLower(cardI.Name) < strings.ToLower(cardJ.Name)
+	})
 }
 
 // sortUserCards sorts user cards by level and name (helper method)

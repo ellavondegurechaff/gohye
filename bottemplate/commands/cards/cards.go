@@ -39,11 +39,21 @@ func CardsHandler(b *bottemplate.Bot) handler.CommandHandler {
 				displayItems[i] = item.(services.CardDisplayItem)
 			}
 
-			return cardDisplayService.CreatePaginatedCardsEmbed(
+			// Calculate total items from pagination data
+			itemsPerPage := config.CardsPerPage
+			totalItems := totalPages * itemsPerPage
+			if page == totalPages-1 {
+				// Last page might have fewer items
+				totalItems = (totalPages-1)*itemsPerPage + len(items)
+			}
+
+			return cardDisplayService.CreateCardsEmbed(
 				context.Background(),
 				"My Collection",
 				displayItems,
 				page,
+				totalPages,
+				totalItems,
 				query,
 				config.BackgroundColor,
 			)
@@ -190,11 +200,21 @@ func (cf *CardsFormatter) FormatItems(items []interface{}, page, totalPages int,
 		displayItems[i] = item.(services.CardDisplayItem)
 	}
 
-	return cf.cardDisplayService.CreatePaginatedCardsEmbed(
+	// Calculate total items from pagination data
+	itemsPerPage := config.CardsPerPage
+	totalItems := totalPages * itemsPerPage
+	if page == totalPages-1 {
+		// Last page might have fewer items
+		totalItems = (totalPages-1)*itemsPerPage + len(items)
+	}
+
+	return cf.cardDisplayService.CreateCardsEmbed(
 		context.Background(),
 		"My Collection",
 		displayItems,
 		page,
+		totalPages,
+		totalItems,
 		params.Query,
 		config.BackgroundColor,
 	)

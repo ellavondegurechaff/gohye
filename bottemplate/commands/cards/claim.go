@@ -236,6 +236,12 @@ func (h *ClaimHandler) HandleCommand(e *handler.CommandEvent) error {
 	}
 	cardList.WriteString("\n\n")
 
+	// Store card IDs for navigation
+	cardIDs := make([]int64, len(selectedCardsWithEXP))
+	for i, cardWithExp := range selectedCardsWithEXP {
+		cardIDs[i] = cardWithExp.card.ID
+	}
+
 	// Deduct balance & update claim stats per card
 	for i, cardWithExp := range selectedCardsWithEXP {
 		if err := claimCard(ctx, h.bot, cardWithExp.card.ID, userID, claimCosts[i], cardWithExp.exp); err != nil {
@@ -288,16 +294,40 @@ func (h *ClaimHandler) HandleCommand(e *handler.CommandEvent) error {
 		nextClaimCost,
 	)
 
+	// Check if the first card is favorited
+	firstCardID := cardIDs[0]
+	userCard, err := h.bot.UserCardRepository.GetUserCard(ctx, userID, firstCardID)
+	isFavorited := false
+	if err == nil && userCard != nil {
+		isFavorited = userCard.Favorite
+	}
+
+	// Store card IDs in footer for navigation
+	cardIDsStr := ""
+	for i, id := range cardIDs {
+		if i > 0 {
+			cardIDsStr += ","
+		}
+		cardIDsStr += fmt.Sprintf("%d", id)
+	}
+
 	embed := discord.NewEmbedBuilder().
 		SetDescription(cardList.String()).
 		SetColor(utils.SuccessColor).
 		SetImage(getCardImageURL(selectedCardsWithEXP[0].card, h.bot)).
-		SetFooter(fmt.Sprintf("Card 1/%d • Claimed by %s", len(selectedCardsWithEXP), e.User().Username), "").
+		SetFooter(fmt.Sprintf("Card 1/%d • Claimed by %s • IDs:%s", len(selectedCardsWithEXP), e.User().Username, cardIDsStr), "").
 		AddField("", receiptText, false)
+
+	// Create favorite button with appropriate emoji
+	favoriteEmoji := "🤍"
+	if isFavorited {
+		favoriteEmoji = "❤️"
+	}
 
 	components := []discord.ContainerComponent{
 		discord.NewActionRow(
 			discord.NewSecondaryButton("◀ Previous", fmt.Sprintf("/claim/prev/%s/1", userID)),
+			discord.NewSecondaryButton(favoriteEmoji, fmt.Sprintf("/claim/favorite/%s/%d/1", userID, firstCardID)),
 			discord.NewSecondaryButton("Next ▶", fmt.Sprintf("/claim/next/%s/1", userID)),
 		),
 	}
@@ -328,14 +358,79 @@ func (h *ClaimHandler) HandleComponent(e *handler.ComponentEvent) error {
 		slog.String("user_id", e.User().ID.String()))
 
 	parts := strings.Split(customID, "/")
-	if len(parts) != 5 {
+	if len(parts) < 5 {
 		slog.Error("Invalid custom ID format",
 			slog.String("custom_id", customID),
 			slog.Int("parts_length", len(parts)))
 		return nil
 	}
 
+	action := parts[2]
 	claimerID := parts[3]
+	
+	// Handle favorite button
+	if action == "favorite" {
+		if len(parts) != 6 {
+			slog.Error("Invalid favorite custom ID format",
+				slog.String("custom_id", customID),
+				slog.Int("parts_length", len(parts)))
+			return nil
+		}
+		
+		cardID, err := strconv.ParseInt(parts[4], 10, 64)
+		if err != nil {
+			return nil
+		}
+		
+		// Only the claimer can favorite
+		if e.User().ID.String() != claimerID {
+			return e.CreateMessage(discord.MessageCreate{
+				Content: "Only the user who claimed these cards can favorite them.",
+				Flags:   discord.MessageFlagEphemeral,
+			})
+		}
+		
+		// Toggle favorite status
+		ctx := context.Background()
+		isFavorited, err := h.bot.UserCardRepository.ToggleFavorite(ctx, claimerID, cardID)
+		if err != nil {
+			slog.Error("Failed to toggle favorite", 
+				slog.String("error", err.Error()),
+				slog.String("user_id", claimerID),
+				slog.Int64("card_id", cardID))
+			return e.CreateMessage(discord.MessageCreate{
+				Content: "Failed to toggle favorite status.",
+				Flags:   discord.MessageFlagEphemeral,
+			})
+		}
+		
+		// Update the button emoji
+		msg := e.Message
+		if len(msg.Components) > 0 {
+			actionRow := msg.Components[0].(discord.ActionRowComponent)
+			buttons := actionRow.Components()
+			
+			// Update the middle button (favorite button)
+			if len(buttons) >= 3 {
+				favoriteEmoji := "🤍"
+				if isFavorited {
+					favoriteEmoji = "❤️"
+				}
+				buttons[1] = discord.NewSecondaryButton(favoriteEmoji, customID)
+				
+				components := []discord.ContainerComponent{
+					discord.NewActionRow(buttons...),
+				}
+				
+				return e.UpdateMessage(discord.MessageUpdate{
+					Components: &components,
+				})
+			}
+		}
+		
+		return nil
+	}
+
 	currentPage, err := strconv.Atoi(parts[4])
 	if err != nil {
 		slog.Error("Failed to parse page number",
@@ -359,6 +454,26 @@ func (h *ClaimHandler) HandleComponent(e *handler.ComponentEvent) error {
 	footer := msg.Embeds[0].Footer
 	if footer == nil {
 		return nil
+	}
+
+	// Extract card IDs from footer
+	// Format: "Card X/Y • Claimed by USERNAME • IDs:1,2,3"
+	footerParts := strings.Split(footer.Text, " • ")
+	cardIDsStr := ""
+	if len(footerParts) >= 3 && strings.HasPrefix(footerParts[2], "IDs:") {
+		cardIDsStr = strings.TrimPrefix(footerParts[2], "IDs:")
+	}
+	
+	// Parse card IDs
+	var cardIDs []int64
+	if cardIDsStr != "" {
+		idStrs := strings.Split(cardIDsStr, ",")
+		for _, idStr := range idStrs {
+			id, err := strconv.ParseInt(idStr, 10, 64)
+			if err == nil {
+				cardIDs = append(cardIDs, id)
+			}
+		}
 	}
 
 	// e.g. "Card X/Y • Claimed by ..."
@@ -391,12 +506,29 @@ func (h *ClaimHandler) HandleComponent(e *handler.ComponentEvent) error {
 
 	// Update the embed
 	embed := msg.Embeds[0]
-	embed.Footer.Text = fmt.Sprintf("Card %d/%d • Claimed by %s", newPage, totalPages, e.User().Username)
+	embed.Footer.Text = fmt.Sprintf("Card %d/%d • Claimed by %s • IDs:%s", newPage, totalPages, e.User().Username, cardIDsStr)
 	embed.Image.URL = cardURLs[newPage-1]
+
+	// Get the card ID for the current page and check if it's favorited
+	currentCardID := int64(0)
+	if newPage-1 < len(cardIDs) {
+		currentCardID = cardIDs[newPage-1]
+	}
+	
+	// Check if current card is favorited
+	ctx := context.Background()
+	favoriteEmoji := "🤍"
+	if currentCardID > 0 {
+		userCard, err := h.bot.UserCardRepository.GetUserCard(ctx, claimerID, currentCardID)
+		if err == nil && userCard != nil && userCard.Favorite {
+			favoriteEmoji = "❤️"
+		}
+	}
 
 	components := []discord.ContainerComponent{
 		discord.NewActionRow(
 			discord.NewSecondaryButton("◀ Previous", fmt.Sprintf("/claim/prev/%s/%d", claimerID, newPage-1)),
+			discord.NewSecondaryButton(favoriteEmoji, fmt.Sprintf("/claim/favorite/%s/%d/%d", claimerID, currentCardID, newPage)),
 			discord.NewSecondaryButton("Next ▶", fmt.Sprintf("/claim/next/%s/%d", claimerID, newPage-1)),
 		),
 	}

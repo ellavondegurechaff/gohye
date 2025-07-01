@@ -375,6 +375,7 @@ func main() {
 	h.Command("/claim", handlers.WrapWithLogging("claim", claimHandler.HandleCommand))
 	h.Component("/claim/next/", handlers.WrapComponentWithLogging("claim", claimHandler.HandleComponent))
 	h.Component("/claim/prev/", handlers.WrapComponentWithLogging("claim", claimHandler.HandleComponent))
+	h.Component("/claim/favorite/", handlers.WrapComponentWithLogging("claim", claimHandler.HandleComponent))
 
 	// Add this with the other component handlers
 	h.Component("/cards/", handlers.WrapComponentWithLogging("cards", cards.CardsComponentHandler(b)))

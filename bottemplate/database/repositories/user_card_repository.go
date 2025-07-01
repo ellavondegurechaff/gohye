@@ -27,6 +27,7 @@ type UserCardRepository interface {
 	CleanupZeroAmountCards(ctx context.Context) error
 	GetUserCardsByName(ctx context.Context, userID string, cardName string) ([]*models.UserCard, error)
 	GetTotalOwnersCount(ctx context.Context, cardID int64) (int64, error)
+	ToggleFavorite(ctx context.Context, userID string, cardID int64) (bool, error)
 }
 
 type userCardRepository struct {
@@ -233,4 +234,29 @@ func (r *userCardRepository) GetTotalOwnersCount(ctx context.Context, cardID int
 	}
 
 	return count, nil
+}
+
+func (r *userCardRepository) ToggleFavorite(ctx context.Context, userID string, cardID int64) (bool, error) {
+	// First get the current favorite status
+	userCard, err := r.GetUserCard(ctx, userID, cardID)
+	if err != nil {
+		return false, fmt.Errorf("failed to get user card: %w", err)
+	}
+
+	// Toggle the favorite status
+	newFavoriteStatus := !userCard.Favorite
+	
+	// Update the favorite field
+	_, err = r.db.NewUpdate().
+		Model((*models.UserCard)(nil)).
+		Set("favorite = ?", newFavoriteStatus).
+		Set("updated_at = ?", time.Now()).
+		Where("user_id = ? AND card_id = ?", userID, cardID).
+		Exec(ctx)
+	
+	if err != nil {
+		return false, fmt.Errorf("failed to toggle favorite: %w", err)
+	}
+
+	return newFavoriteStatus, nil
 }

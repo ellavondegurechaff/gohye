@@ -115,7 +115,10 @@ func (s *Service) CombineCards(ctx context.Context, mainCard, fodderCard *models
 		newExp = 0
 		// Recalculate required exp for the new level
 		result.RequiredExp = s.calculator.CalculateExpRequirement(result.NewLevel)
+		result.CurrentExp = 0 // Update result's current exp to 0 after level up
 		result.Bonuses = append(result.Bonuses, "🎉 Level up! Ready to proceed to next level!")
+	} else {
+		result.CurrentExp = newExp // Only update if no level up occurred
 	}
 
 	// Update main card

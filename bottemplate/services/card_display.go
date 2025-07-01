@@ -75,13 +75,13 @@ func (ucd *UserCardDisplay) IsLocked() bool {
 func (ucd *UserCardDisplay) GetExtraInfo() []string {
 	var extras []string
 
-	// Add EXP percentage only for non-promo, non-fragment cards below level 5
+	// Add EXP percentage only for non-promo, non-fragment, non-excluded cards below level 5
 	colInfo, exists := utils.GetCollectionInfo(ucd.Card.ColID)
-	if exists && !colInfo.IsPromo && !colInfo.IsFragments && ucd.UserCard.Level < 5 {
+	if exists && !colInfo.IsPromo && !colInfo.IsFragments && !colInfo.IsExcluded && ucd.UserCard.Level < 5 {
 		expPercent := calculateExpPercentage(ucd.UserCard.Exp, ucd.UserCard.Level)
 		extras = append(extras, fmt.Sprintf("`%d%%`", expPercent))
 	}
-	// For promo cards, fragments, and level 5 cards, no EXP is shown
+	// For promo cards, fragments, excluded collections, and level 5 cards, no EXP is shown
 
 	// Add custom mark if exists
 	if ucd.UserCard.Mark != "" {
@@ -164,13 +164,13 @@ func (ucdc *UserCardDisplayWithContext) GetExtraInfo() []string {
 			extras = append(extras, fmt.Sprintf("**%s**", ucdc.UserCard.Obtained.Format("Jan 2")))
 		}
 	default:
-		// Default behavior - show EXP percentage only for non-promo, non-fragment cards below level 5
+		// Default behavior - show EXP percentage only for non-promo, non-fragment, non-excluded cards below level 5
 		colInfo, exists := utils.GetCollectionInfo(ucdc.Card.ColID)
-		if exists && !colInfo.IsPromo && !colInfo.IsFragments && ucdc.UserCard.Level < 5 {
+		if exists && !colInfo.IsPromo && !colInfo.IsFragments && !colInfo.IsExcluded && ucdc.UserCard.Level < 5 {
 			expPercent := calculateExpPercentage(ucdc.UserCard.Exp, ucdc.UserCard.Level)
 			extras = append(extras, fmt.Sprintf("`%d%%`", expPercent))
 		}
-		// For promo cards, fragments, and level 5 cards, no EXP is shown
+		// For promo cards, fragments, excluded collections, and level 5 cards, no EXP is shown
 		
 		// Show amount for multiples in default view
 		if ucdc.UserCard.Amount > 1 {
@@ -251,10 +251,15 @@ func (cds *CardDisplayService) FormatCardDisplayItems(ctx context.Context, items
 		}
 
 		groupType := utils.GetGroupType(card.Tags)
+		
+		// Always use base card level for star display (Card.Level = star rating 1-5)
+		// UserCard.Level is progression level which is different from star rating
+		displayLevel := card.Level
+		
 		displayInfo := utils.GetCardDisplayInfo(
 			card.Name,
 			card.ColID,
-			card.Level,
+			displayLevel,
 			groupType,
 			cds.spacesService.GetSpacesConfig(),
 		)

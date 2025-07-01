@@ -48,11 +48,19 @@ func MissHandler(b *bottemplate.Bot) handler.CommandHandler {
 				return discord.Embed{}, fmt.Errorf("failed to format card display: %w", err)
 			}
 			
+			// Calculate total items from pagination data
+			itemsPerPage := 3 // Match the configured ItemsPerPage
+			totalItems := totalPages * itemsPerPage
+			if page == totalPages-1 {
+				// Last page might have fewer items
+				totalItems = (totalPages-1)*itemsPerPage + len(items)
+			}
+			
 			embed := discord.NewEmbedBuilder().
 				SetTitle("Missing Cards").
 				SetDescription(description).
 				SetColor(config.BackgroundColor).
-				SetFooter(fmt.Sprintf("Page %d/%d • Total Missing: %d", page+1, totalPages, len(items)), "")
+				SetFooter(fmt.Sprintf("Page %d/%d • Total Missing: %d", page+1, totalPages, totalItems), "")
 			
 			// Add search query to description if provided
 			if query != "" {
@@ -202,11 +210,19 @@ func (mf *MissFormatter) FormatItems(items []interface{}, page, totalPages int, 
 		return discord.Embed{}, fmt.Errorf("failed to format card display: %w", err)
 	}
 	
+	// Calculate total items from pagination data
+	itemsPerPage := 3 // Match the configured ItemsPerPage
+	totalItems := totalPages * itemsPerPage
+	if page == totalPages-1 {
+		// Last page might have fewer items
+		totalItems = (totalPages-1)*itemsPerPage + len(items)
+	}
+	
 	embed := discord.NewEmbedBuilder().
 		SetTitle("Missing Cards").
 		SetDescription(description).
 		SetColor(config.BackgroundColor).
-		SetFooter(fmt.Sprintf("Page %d/%d • Total Missing: %d", page+1, totalPages, len(items)), "")
+		SetFooter(fmt.Sprintf("Page %d/%d • Total Missing: %d", page+1, totalPages, totalItems), "")
 	
 	// Add search query to description if provided
 	if params.Query != "" {

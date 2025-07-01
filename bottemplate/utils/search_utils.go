@@ -272,9 +272,16 @@ func IsCardForgeEligible(card *models.Card, userCard *models.UserCard) bool {
 	// Check collection-based exclusions
 	if colInfo, exists := GetCollectionInfo(card.ColID); exists {
 		// Forge-excluded collections cannot be forged
-		if colInfo.IsForgeExcluded {
+		if colInfo.IsForgeExcluded || colInfo.IsFragments {
 			return false
 		}
+	}
+	
+	// Enhanced fragment detection: Check for cards with "fragment" in their name
+	// This catches individual fragment cards that might not be in a properly configured collection
+	cardNameLower := strings.ToLower(card.Name)
+	if strings.Contains(cardNameLower, "fragment") || strings.Contains(cardNameLower, "frag") {
+		return false
 	}
 	
 	// Favorite cards with only 1 copy cannot be forged (last copy protection)
@@ -447,8 +454,11 @@ func parseComparisonOperator(term string, filters *SearchFilters) bool {
 	// Handle sort operators (enhanced with legacy system operators)
 	switch substr {
 	case "level":
-		filters.SortBy = SortByLevel
+		// In the legacy system and based on user expectations, >level sorts by experience
+		// not by star rating. Use >star for star rating sorting.
+		filters.SortBy = SortByExp
 		filters.SortDesc = operator == '>'
+		filters.UserQuery = true // exp sorting requires user data
 		return true
 	case "star":
 		// >star means show higher stars first (descending), <star means show lower stars first (ascending)
@@ -622,6 +632,7 @@ func parseNegativeFilter(term string, filters *SearchFilters) bool {
 		} else {
 			filters.Favorites = true
 		}
+		filters.UserQuery = true // favorite filtering requires user data
 		return true
 	case "locked", "lock":
 		if isExclude {
@@ -676,9 +687,11 @@ func parseNegativeFilter(term string, filters *SearchFilters) bool {
 		// Check if it's a star/level filter (!3, -4, !star, -star)
 		if level, err := strconv.Atoi(substr); err == nil && level >= 1 && level <= 5 {
 			if isExclude {
+				// !3 means exclude 3-star cards
 				filters.AntiLevels = append(filters.AntiLevels, level) // Backward compatibility
 				filters.AntiStars = append(filters.AntiStars, level)   // New terminology
 			} else {
+				// -3 means show 3-star cards (based on CommandReference.js logic)
 				filters.Levels = append(filters.Levels, level) // Backward compatibility  
 				filters.Stars = append(filters.Stars, level)   // New terminology
 			}
@@ -901,13 +914,19 @@ func sortResults(results []SearchResult, sortBy string, desc bool) {
 	sort.Slice(results, func(i, j int) bool {
 		var less bool
 
-		// Primary sort by level (descending)
+		// Primary sort by search weight (descending) - most relevant matches first
+		if results[i].Weight != results[j].Weight {
+			less = results[i].Weight < results[j].Weight
+			return !less // Descending order for weights (higher weight = more relevant)
+		}
+
+		// Secondary sort by level (descending) for ties in relevance
 		if results[i].Card.Level != results[j].Card.Level {
 			less = results[i].Card.Level < results[j].Card.Level
 			return !less // Descending order for levels
 		}
 
-		// Secondary sort by name (ascending)
+		// Tertiary sort by name (ascending) for final ties
 		less = strings.ToLower(results[i].Card.Name) < strings.ToLower(results[j].Card.Name)
 
 		// If explicit sort criteria is provided, use that instead

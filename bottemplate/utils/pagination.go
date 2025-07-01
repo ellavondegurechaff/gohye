@@ -108,8 +108,19 @@ func (ph *PaginationHandler) HandlePagination(
 		newPage = (currentPage - 1 + totalPages) % totalPages
 	}
 
+	// Calculate slice boundaries for current page
+	startIdx := newPage * ph.Config.ItemsPerPage
+	endIdx := min(startIdx+ph.Config.ItemsPerPage, len(paginationData.Items))
+
+	if startIdx >= len(paginationData.Items) {
+		return EH.CreateEphemeralError(e, "Page not found")
+	}
+
+	// Slice items for current page only
+	pageItems := paginationData.Items[startIdx:endIdx]
+
 	// Create embed for new page
-	embed, err := ph.FormatItems(paginationData.Items, newPage, totalPages, userID, query)
+	embed, err := ph.FormatItems(pageItems, newPage, totalPages, userID, query)
 	if err != nil {
 		return EH.CreateEphemeralError(e, "Failed to format items")
 	}
@@ -172,7 +183,11 @@ func (ph *PaginationHandler) CreateInitialPaginationEmbed(
 
 	totalPages := int(math.Ceil(float64(len(items)) / float64(ph.Config.ItemsPerPage)))
 
-	embed, err := ph.FormatItems(items, 0, totalPages, userID, query)
+	// Slice items for first page only
+	endIdx := min(ph.Config.ItemsPerPage, len(items))
+	pageItems := items[0:endIdx]
+
+	embed, err := ph.FormatItems(pageItems, 0, totalPages, userID, query)
 	if err != nil {
 		return discord.Embed{}, nil, err
 	}
