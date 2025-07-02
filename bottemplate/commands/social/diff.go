@@ -114,12 +114,14 @@ func DiffHandler(b *bottemplate.Bot) handler.CommandHandler {
 
 		paginationHandler := utils.NewDiffPaginationHandler()
 		paginationHandler.FormatItems = func(items []interface{}, page, totalPages int, data *utils.DiffPaginationData) (discord.Embed, error) {
-			startIdx := page * utils.CardsPerPage
-			endIdx := min(startIdx+utils.CardsPerPage, len(items))
-			pageItems := make([]services.CardDisplayItem, endIdx-startIdx)
-			for i, item := range items[startIdx:endIdx] {
+			// Convert items to CardDisplayItem slice (items are already pre-sliced for the page)
+			pageItems := make([]services.CardDisplayItem, len(items))
+			for i, item := range items {
 				pageItems[i] = item.(services.CardDisplayItem)
 			}
+
+			// Calculate total items from data
+			totalItems := data.TotalItems
 
 			return cardDisplayService.CreateCardsEmbed(
 				ctx,
@@ -127,7 +129,7 @@ func DiffHandler(b *bottemplate.Bot) handler.CommandHandler {
 				pageItems,
 				page,
 				totalPages,
-				len(items),
+				totalItems,
 				data.Query,
 				config.BackgroundColor,
 			)

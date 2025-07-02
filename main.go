@@ -119,6 +119,7 @@ func main() {
 	b.CollectionRepository = repositories.NewCollectionRepository(b.DB.BunDB())
 	b.EconomyStatsRepository = repositories.NewEconomyStatsRepository(b.DB.BunDB())
 	b.WishlistRepository = repositories.NewWishlistRepository(b.DB.BunDB())
+	b.ItemRepository = repositories.NewItemRepository(b.DB.BunDB())
 
 	// Initialize collection cache for promo filtering
 	collections, err := b.CollectionRepository.GetAll(ctx)
@@ -280,6 +281,11 @@ func main() {
 	workHandler := economyCommands.NewWorkHandler(b)
 	h.Command("/work", handlers.WrapWithLogging("work", workHandler.HandleWork))
 	h.Component("/work/", handlers.WrapComponentWithLogging("work", workHandler.HandleComponent))
+
+	// Fuse Command
+	fuseHandler := economyCommands.NewFuseHandler(b)
+	h.Command("/fuse", handlers.WrapWithLogging("fuse", fuseHandler.Handle))
+	h.Component("/fuse/", handlers.WrapComponentWithLogging("fuse", fuseHandler.HandleComponent))
 
 	// Initialize modern effect system
 	effectManager := effects.NewManager(

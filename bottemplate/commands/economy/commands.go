@@ -10,4 +10,5 @@ var Commands = []discord.ApplicationCommandCreate{
 	Liquefy,
 	AuctionCommand,
 	PriceStats,
+	Fuse,
 }

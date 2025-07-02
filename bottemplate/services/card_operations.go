@@ -33,6 +33,11 @@ func (s *CardOperationsService) GetUserCardsWithDetails(ctx context.Context, use
 
 // GetUserCardsWithDetailsAndFilters fetches user cards with card details, applies filtering, and returns the parsed filters
 func (s *CardOperationsService) GetUserCardsWithDetailsAndFilters(ctx context.Context, userID string, query string) ([]*models.UserCard, []*models.Card, utils.SearchFilters, error) {
+	return s.GetUserCardsWithDetailsAndFiltersWithUser(ctx, userID, query, nil)
+}
+
+// GetUserCardsWithDetailsAndFiltersWithUser fetches user cards with card details, applies filtering, and returns the parsed filters, with user data for advanced filtering
+func (s *CardOperationsService) GetUserCardsWithDetailsAndFiltersWithUser(ctx context.Context, userID string, query string, user *models.User) ([]*models.UserCard, []*models.Card, utils.SearchFilters, error) {
 	// Get user's cards
 	userCards, err := s.userCardRepo.GetAllByUserID(ctx, userID)
 	if err != nil {
@@ -64,9 +69,16 @@ func (s *CardOperationsService) GetUserCardsWithDetailsAndFilters(ctx context.Co
 	
 	if len(query) > 0 {
 		filters = utils.ParseSearchQuery(query)
+		// Mark this as an inventory search to include album cards
+		filters.IsInventorySearch = true
 		
 		// Apply favorites filtering FIRST (on UserCards before search)
 		filteredUserCards := s.applyFavoritesFilter(userCards, filters)
+		
+		// Apply new card filtering if specified
+		if (filters.NewOnly || filters.ExcludeNew) && user != nil {
+			filteredUserCards = s.applyNewCardFilter(filteredUserCards, user, filters.NewOnly)
+		}
 		
 		// Build card mappings for the filtered user cards
 		filteredCardMap := make(map[int64]*models.UserCard)
@@ -387,4 +399,43 @@ func (s *CardOperationsService) applyFavoritesFilter(userCards []*models.UserCar
 	}
 	
 	return filteredCards
+}
+
+// applyNewCardFilter filters UserCards based on when they were obtained vs last daily
+func (s *CardOperationsService) applyNewCardFilter(userCards []*models.UserCard, user *models.User, newOnly bool) []*models.UserCard {
+	if user == nil {
+		return userCards
+	}
+	
+	lastDaily := user.LastDaily
+	
+	// Handle zero time case - if user has never claimed daily
+	if lastDaily.IsZero() {
+		if newOnly {
+			// All cards are "new" if no daily ever claimed
+			return userCards
+		} else {
+			// No cards are "old" if no daily ever claimed
+			return []*models.UserCard{}
+		}
+	}
+	
+	var filtered []*models.UserCard
+	for _, userCard := range userCards {
+		isNewCard := userCard.Obtained.After(lastDaily)
+		
+		if newOnly {
+			// Include only cards obtained after last daily
+			if isNewCard {
+				filtered = append(filtered, userCard)
+			}
+		} else {
+			// ExcludeNew: include only cards obtained before or on last daily
+			if !isNewCard {
+				filtered = append(filtered, userCard)
+			}
+		}
+	}
+	
+	return filtered
 }

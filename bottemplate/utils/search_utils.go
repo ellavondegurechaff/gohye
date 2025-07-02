@@ -114,6 +114,9 @@ type SearchFilters struct {
 	// Additional parameters for advanced queries
 	TargetUserID string // for diff queries
 	LastDaily    string // timestamp for "new" filter comparisons
+	
+	// Inventory search flag - when true, shows all cards user owns including excluded collections
+	IsInventorySearch bool
 }
 
 // SortOptions defines available sorting methods
@@ -147,7 +150,7 @@ var (
 	cacheMutex      sync.RWMutex
 	
 	// List of collection IDs that should be excluded from general card operations
-	excludedCollections = []string{"signed", "liveauction", "lottery", "ggalbums", "bgalbums", "birthdays", "removed", "special"}
+	excludedCollections = []string{} // No exclusions - all cards are searchable
 	
 	// List of collection IDs that should be excluded from forge operations
 	// Based on legacy system: fragments, album, liveauction, jackpot, birthdays, limited
@@ -1120,12 +1123,7 @@ func applyCardFilters(card *models.Card, filters SearchFilters) bool {
 		}
 	}
 
-	// Exclude cards from restricted collections (unless specifically requested)
-	if !filters.PromoOnly && !filters.ExcludePromo {
-		if colExists && (colInfo.IsPromo || colInfo.IsExcluded) {
-			return false
-		}
-	}
+	// No exclusions - all cards are searchable
 
 	return true
 }

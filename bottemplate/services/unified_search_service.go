@@ -322,11 +322,7 @@ func (s *UnifiedSearchService) applyBasicFilters(cards []*models.Card, filters u
 					excludeReason = fmt.Sprintf("promo_only_filter(colInfo_exists=%v)", exists)
 				}
 			} else {
-				// Exclude promo and restricted collections by default
-				if colInfo, exists := utils.GetCollectionInfo(card.ColID); exists && (colInfo.IsPromo || colInfo.IsExcluded) {
-					excluded = true
-					excludeReason = fmt.Sprintf("promo_excluded_filter(isPromo=%v,isExcluded=%v)", colInfo.IsPromo, colInfo.IsExcluded)
-				}
+				// No exclusions - all cards are searchable
 			}
 		}
 

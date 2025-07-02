@@ -39,19 +39,26 @@ func (h *InventoryHandler) handleList(event *handler.CommandEvent) error {
 	ctx := context.Background()
 	userID := event.User().ID.String()
 
+	// Get effects
 	items, err := h.effectManager.ListUserEffects(ctx, userID)
 	if err != nil {
 		return utils.EH.CreateErrorEmbed(event, fmt.Sprintf("Failed to fetch inventory: %v", err))
 	}
 
-	if len(items) == 0 {
+	// Get material items
+	userItems, err := h.bot.ItemRepository.GetUserItems(ctx, userID)
+	if err != nil {
+		return utils.EH.CreateErrorEmbed(event, fmt.Sprintf("Failed to fetch items: %v", err))
+	}
+
+	if len(items) == 0 && len(userItems) == 0 {
 		return event.CreateMessage(discord.MessageCreate{
 			Embeds: []discord.Embed{{
 				Title:       "📦 Your Inventory",
-				Description: "Your inventory is empty! Visit the `/shop` to purchase items.",
+				Description: "Your inventory is empty! Visit the `/shop` to purchase items or `/work` to earn materials.",
 				Color:       0x2b2d31,
 				Footer: &discord.EmbedFooter{
-					Text: "💡 Tip: Use /shop to browse available items",
+					Text: "💡 Tip: Use /shop to browse available items or /work to earn materials",
 				},
 			}},
 		})
@@ -61,8 +68,11 @@ func (h *InventoryHandler) handleList(event *handler.CommandEvent) error {
 	var currentItems []*models.EffectItem
 	var title string
 
-	// Default to recipes first (most common), then actives, then passives
-	if len(recipes) > 0 {
+	// Default to materials first if any exist
+	if len(userItems) > 0 {
+		// Show materials view
+		return h.showMaterialsView(event, userItems, len(items))
+	} else if len(recipes) > 0 {
 		currentItems = recipes
 		title = "📦 Your Inventory - Recipes"
 	} else if len(actives) > 0 {
@@ -110,6 +120,13 @@ func (h *InventoryHandler) handleList(event *handler.CommandEvent) error {
 func createInventoryCategories(selectedValue string) discord.ContainerComponent {
 	return discord.NewActionRow(
 		discord.NewStringSelectMenu("/inventory_category", "Select Category",
+			discord.StringSelectMenuOption{
+				Label:       "Materials",
+				Value:       "materials",
+				Description: "View your crafting materials",
+				Emoji:       &discord.ComponentEmoji{Name: "🎁"},
+				Default:     selectedValue == "materials",
+			},
 			discord.StringSelectMenuOption{
 				Label:       "Recipes",
 				Value:       "recipe",
@@ -280,6 +297,13 @@ func (h *InventoryHandler) handleCategorySelect(event *handler.ComponentEvent) e
 	var title string
 
 	switch selectedValue {
+	case "materials":
+		// Get material items
+		userItems, err := h.bot.ItemRepository.GetUserItems(ctx, userID)
+		if err != nil {
+			return utils.EH.CreateEphemeralError(event, fmt.Sprintf("Failed to fetch items: %v", err))
+		}
+		return h.updateMaterialsView(event, userItems, len(items))
 	case "recipe":
 		currentItems = recipes
 		title = "📦 Your Inventory - Recipes"
@@ -361,4 +385,58 @@ func groupItems(items []*models.EffectItem) (actives, recipes, passives []*model
 		}
 	}
 	return
+}
+
+func (h *InventoryHandler) showMaterialsView(event *handler.CommandEvent, userItems []*models.UserItem, totalEffects int) error {
+	embed, components := h.createMaterialsEmbed(userItems, totalEffects)
+	return event.CreateMessage(discord.MessageCreate{
+		Embeds:     []discord.Embed{embed},
+		Components: components,
+	})
+}
+
+func (h *InventoryHandler) updateMaterialsView(event *handler.ComponentEvent, userItems []*models.UserItem, totalEffects int) error {
+	embed, components := h.createMaterialsEmbed(userItems, totalEffects)
+	return event.UpdateMessage(discord.MessageUpdate{
+		Embeds:     &[]discord.Embed{embed},
+		Components: &components,
+	})
+}
+
+func (h *InventoryHandler) createMaterialsEmbed(userItems []*models.UserItem, totalEffects int) (discord.Embed, []discord.ContainerComponent) {
+	var description strings.Builder
+	description.WriteString("```ansi\n")
+	description.WriteString("\u001b[1;36m🎁 Crafting Materials\u001b[0m\n\n")
+	
+	hasItems := false
+	for _, userItem := range userItems {
+		if userItem.Item != nil && userItem.Quantity > 0 {
+			hasItems = true
+			description.WriteString(fmt.Sprintf("%s %s x%d\n", 
+				userItem.Item.Emoji, 
+				userItem.Item.Name, 
+				userItem.Quantity))
+		}
+	}
+	
+	if !hasItems {
+		description.WriteString("\u001b[1;33mNo materials yet!\u001b[0m\n")
+		description.WriteString("Earn materials by working with /work\n")
+	}
+	
+	description.WriteString("\n\u001b[1;32m💡 Tip:\u001b[0m Collect 1 of each material to /fuse them into an album card!")
+	description.WriteString("\n```")
+
+	embed := discord.NewEmbedBuilder().
+		SetTitle("📦 Your Inventory - Materials").
+		SetDescription(description.String()).
+		SetColor(config.InfoColor).
+		SetFooter(fmt.Sprintf("Total Items: %d materials, %d effects", len(userItems), totalEffects), "").
+		Build()
+
+	components := []discord.ContainerComponent{
+		createInventoryCategories("materials"),
+	}
+
+	return embed, components
 }

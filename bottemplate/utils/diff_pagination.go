@@ -122,8 +122,19 @@ func (dph *DiffPaginationHandler) HandleDiffPagination(
 		newPage = (currentPage - 1 + totalPages) % totalPages
 	}
 
+	// Calculate slice boundaries for current page
+	startIdx := newPage * dph.Config.ItemsPerPage
+	endIdx := min(startIdx+dph.Config.ItemsPerPage, len(paginationData.Items))
+	
+	if startIdx >= len(paginationData.Items) {
+		return EH.CreateEphemeralError(e, "Page not found")
+	}
+	
+	// Slice items for current page only
+	pageItems := paginationData.Items[startIdx:endIdx]
+	
 	// Create embed for new page
-	embed, err := dph.FormatItems(paginationData.Items, newPage, totalPages, paginationData)
+	embed, err := dph.FormatItems(pageItems, newPage, totalPages, paginationData)
 	if err != nil {
 		return EH.CreateEphemeralError(e, "Failed to format items")
 	}
@@ -180,7 +191,13 @@ func (dph *DiffPaginationHandler) CreateInitialDiffPaginationEmbed(
 
 	totalPages := int(math.Ceil(float64(len(data.Items)) / float64(dph.Config.ItemsPerPage)))
 
-	embed, err := dph.FormatItems(data.Items, 0, totalPages, data)
+	// Get items for first page only
+	pageItems := data.Items
+	if len(data.Items) > dph.Config.ItemsPerPage {
+		pageItems = data.Items[:dph.Config.ItemsPerPage]
+	}
+
+	embed, err := dph.FormatItems(pageItems, 0, totalPages, data)
 	if err != nil {
 		return discord.Embed{}, nil, err
 	}

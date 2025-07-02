@@ -1,0 +1,9 @@
+INFO  2025-07-02 21:27:38,559 serena.mcp:start_mcp_server:366 - Starting MCP server ...
+INFO  2025-07-02 21:27:38,589 serena.mcp:server_lifespan:207 - MCP server lifetime setup complete
+
+Aborted!
+Exception ignored in: <module 'threading' from '/usr/lib/python3.12/threading.py'>
+Traceback (most recent call last):
+  File "/usr/lib/python3.12/threading.py", line 1622, in _shutdown
+    lock.acquire()
+KeyboardInterrupt: 

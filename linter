@@ -1,5 +1,29 @@
 [{
-	"resource": "/c:/Users/Yuqi/Desktop/hyego/gohye/bottemplate/commands/cards/collection_progress.go",
+	"resource": "/C:/Users/Yuqi/Desktop/hyego/gohye/bottemplate/commands/economy/work.go",
+	"owner": "_generated_diagnostic_collection_name_#3",
+	"code": {
+		"value": "UnusedImport",
+		"target": {
+			"$mid": 1,
+			"path": "/golang.org/x/tools/internal/typesinternal",
+			"scheme": "https",
+			"authority": "pkg.go.dev",
+			"fragment": "UnusedImport"
+		}
+	},
+	"severity": 8,
+	"message": "\"strconv\" imported and not used",
+	"source": "compiler",
+	"startLineNumber": 7,
+	"startColumn": 2,
+	"endLineNumber": 7,
+	"endColumn": 11,
+	"tags": [
+		1
+	],
+	"modelVersionId": 2
+},{
+	"resource": "/C:/Users/Yuqi/Desktop/hyego/gohye/bottemplate/commands/economy/work.go",
 	"owner": "_generated_diagnostic_collection_name_#3",
 	"code": {
 		"value": "WrongResultCount",
@@ -12,70 +36,131 @@
 		}
 	},
 	"severity": 8,
-	"message": "too many return values\n\thave (*discord.Message, error)\n\twant (error)",
+	"message": "too many return values\n\thave (discord.ActionRowComponent, discord.ActionRowComponent)\n\twant (discord.ContainerComponent)",
 	"source": "compiler",
-	"startLineNumber": 126,
-	"startColumn": 12,
-	"endLineNumber": 126,
-	"endColumn": 94
+	"startLineNumber": 291,
+	"startColumn": 41,
+	"endLineNumber": 291,
+	"endColumn": 70,
+	"modelVersionId": 2
 },{
-	"resource": "/c:/Users/Yuqi/Desktop/hyego/gohye/bottemplate/commands/cards/collection_progress.go",
+	"resource": "/C:/Users/Yuqi/Desktop/hyego/gohye/bottemplate/commands/economy/work.go",
 	"owner": "_generated_diagnostic_collection_name_#3",
 	"code": {
-		"value": "WrongResultCount",
+		"value": "default",
+		"target": {
+			"$mid": 1,
+			"path": "/golang.org/x/tools/gopls/internal/analysis/fillreturns",
+			"scheme": "https",
+			"authority": "pkg.go.dev"
+		}
+	},
+	"severity": 4,
+	"message": "too many return values\n\thave (discord.ActionRowComponent, discord.ActionRowComponent)\n\twant (discord.ContainerComponent)",
+	"source": "fillreturns",
+	"startLineNumber": 291,
+	"startColumn": 41,
+	"endLineNumber": 291,
+	"endColumn": 52,
+	"modelVersionId": 2
+},{
+	"resource": "/C:/Users/Yuqi/Desktop/hyego/gohye/bottemplate/commands/economy/fuse.go",
+	"owner": "_generated_diagnostic_collection_name_#3",
+	"code": {
+		"value": "MissingLitField",
 		"target": {
 			"$mid": 1,
 			"path": "/golang.org/x/tools/internal/typesinternal",
 			"scheme": "https",
 			"authority": "pkg.go.dev",
-			"fragment": "WrongResultCount"
+			"fragment": "MissingLitField"
 		}
 	},
 	"severity": 8,
-	"message": "too many return values\n\thave (*discord.Message, error)\n\twant (error)",
+	"message": "unknown field Animated in struct literal of type models.UserCard",
 	"source": "compiler",
-	"startLineNumber": 148,
-	"startColumn": 12,
-	"endLineNumber": 148,
-	"endColumn": 94
+	"startLineNumber": 241,
+	"startColumn": 4,
+	"endLineNumber": 241,
+	"endColumn": 12
 },{
-	"resource": "/c:/Users/Yuqi/Desktop/hyego/gohye/bottemplate/commands/cards/collection_progress.go",
+	"resource": "/C:/Users/Yuqi/Desktop/hyego/gohye/bottemplate/commands/economy/fuse.go",
 	"owner": "_generated_diagnostic_collection_name_#3",
 	"code": {
-		"value": "WrongResultCount",
+		"value": "MissingLitField",
 		"target": {
 			"$mid": 1,
 			"path": "/golang.org/x/tools/internal/typesinternal",
 			"scheme": "https",
 			"authority": "pkg.go.dev",
-			"fragment": "WrongResultCount"
+			"fragment": "MissingLitField"
 		}
 	},
 	"severity": 8,
-	"message": "too many return values\n\thave (*discord.Message, error)\n\twant (error)",
+	"message": "unknown field ObtainedAt in struct literal of type models.UserCard",
 	"source": "compiler",
-	"startLineNumber": 152,
-	"startColumn": 11,
-	"endLineNumber": 160,
-	"endColumn": 6
+	"startLineNumber": 242,
+	"startColumn": 4,
+	"endLineNumber": 242,
+	"endColumn": 14
 },{
-	"resource": "/c:/Users/Yuqi/Desktop/hyego/gohye/bottemplate/commands/cards/collection_progress.go",
+	"resource": "/C:/Users/Yuqi/Desktop/hyego/gohye/bottemplate/commands/economy/fuse.go",
 	"owner": "_generated_diagnostic_collection_name_#3",
 	"code": {
-		"value": "IncompatibleAssign",
+		"value": "MissingFieldOrMethod",
 		"target": {
 			"$mid": 1,
 			"path": "/golang.org/x/tools/internal/typesinternal",
 			"scheme": "https",
 			"authority": "pkg.go.dev",
-			"fragment": "IncompatibleAssign"
+			"fragment": "MissingFieldOrMethod"
 		}
 	},
 	"severity": 8,
-	"message": "cannot use []discord.File{…} (value of type []discord.File) as []*discord.File value in struct literal",
+	"message": "card.URL undefined (type *models.Card has no field or method URL)",
 	"source": "compiler",
-	"startLineNumber": 154,
-	"startColumn": 12,
-	"endLineNumber": 159,
-	"endColumn": 6
+	"startLineNumber": 290,
+	"startColumn": 10,
+	"endLineNumber": 290,
+	"endColumn": 13
+},{
+	"resource": "/C:/Users/Yuqi/Desktop/hyego/gohye/bottemplate/commands/economy/fuse.go",
+	"owner": "_generated_diagnostic_collection_name_#3",
+	"code": {
+		"value": "MissingFieldOrMethod",
+		"target": {
+			"$mid": 1,
+			"path": "/golang.org/x/tools/internal/typesinternal",
+			"scheme": "https",
+			"authority": "pkg.go.dev",
+			"fragment": "MissingFieldOrMethod"
+		}
+	},
+	"severity": 8,
+	"message": "card.URL undefined (type *models.Card has no field or method URL)",
+	"source": "compiler",
+	"startLineNumber": 291,
+	"startColumn": 56,
+	"endLineNumber": 291,
+	"endColumn": 59
+},{
+	"resource": "/C:/Users/Yuqi/Desktop/hyego/gohye/bottemplate/commands/economy/fuse.go",
+	"owner": "_generated_diagnostic_collection_name_#3",
+	"code": {
+		"value": "WrongArgCount",
+		"target": {
+			"$mid": 1,
+			"path": "/golang.org/x/tools/internal/typesinternal",
+			"scheme": "https",
+			"authority": "pkg.go.dev",
+			"fragment": "WrongArgCount"
+		}
+	},
+	"severity": 8,
+	"message": "not enough arguments in call to h.bot.SpacesService.GetCardImageURL\n\thave (*models.Card)\n\twant (string, string, int, string)",
+	"source": "compiler",
+	"startLineNumber": 291,
+	"startColumn": 59,
+	"endLineNumber": 291,
+	"endColumn": 59
 }]

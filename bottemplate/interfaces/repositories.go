@@ -30,6 +30,9 @@ type CardOperationsServiceInterface interface {
 	// GetUserCardsWithDetails fetches user cards with card details and applies filtering
 	GetUserCardsWithDetails(ctx context.Context, userID string, query string) ([]*models.UserCard, []*models.Card, error)
 	
+	// GetUserCardsWithDetailsAndFiltersWithUser fetches user cards with card details, applies filtering with user context for advanced filters like -new
+	GetUserCardsWithDetailsAndFiltersWithUser(ctx context.Context, userID string, query string, user *models.User) ([]*models.UserCard, []*models.Card, utils.SearchFilters, error)
+	
 	// GetMissingCards returns cards the user doesn't own, with optional filtering
 	GetMissingCards(ctx context.Context, userID string, query string) ([]*models.Card, error)
 	

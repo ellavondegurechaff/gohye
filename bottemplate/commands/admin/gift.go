@@ -16,7 +16,7 @@ import (
 
 var Gift = discord.SlashCommandCreate{
 	Name:        "gift",
-	Description: "🎁 Give balance and/or cards to a user",
+	Description: "🎁 Give balance, cards, and/or items to a user",
 	Options: []discord.ApplicationCommandOption{
 		discord.ApplicationCommandOptionUser{
 			Name:        "user",
@@ -41,6 +41,18 @@ var Gift = discord.SlashCommandCreate{
 			MinValue:    &[]int{1}[0],
 			MaxValue:    &[]int{100}[0],
 		},
+		discord.ApplicationCommandOptionString{
+			Name:        "item_name",
+			Description: "Item to give (disc/microphone/song)",
+			Required:    false,
+		},
+		discord.ApplicationCommandOptionInt{
+			Name:        "item_quantity",
+			Description: "Quantity of the item to give (default: 1)",
+			Required:    false,
+			MinValue:    &[]int{1}[0],
+			MaxValue:    &[]int{999}[0],
+		},
 	},
 }
 
@@ -55,6 +67,8 @@ func GiftHandler(b *bottemplate.Bot) handler.CommandHandler {
 		var balance int64 = 0
 		var cardName string = ""
 		var cardAmount int64 = 1
+		var itemName string = ""
+		var itemQuantity int = 1
 		
 		if balanceOpt, ok := e.SlashCommandInteractionData().OptInt("balance"); ok {
 			balance = int64(balanceOpt)
@@ -68,10 +82,18 @@ func GiftHandler(b *bottemplate.Bot) handler.CommandHandler {
 			cardAmount = int64(cardAmountOpt)
 		}
 		
+		if itemNameOpt, ok := e.SlashCommandInteractionData().OptString("item_name"); ok {
+			itemName = strings.TrimSpace(strings.ToLower(itemNameOpt))
+		}
+		
+		if itemQuantityOpt, ok := e.SlashCommandInteractionData().OptInt("item_quantity"); ok {
+			itemQuantity = int(itemQuantityOpt)
+		}
+		
 		// Validate at least one gift is provided
-		if balance <= 0 && cardName == "" {
+		if balance <= 0 && cardName == "" && itemName == "" {
 			return e.CreateMessage(discord.MessageCreate{
-				Content: "❌ You must provide either balance or card_name (or both).",
+				Content: "❌ You must provide either balance, card_name, or item_name (or any combination).",
 			})
 		}
 		
@@ -91,6 +113,18 @@ func GiftHandler(b *bottemplate.Bot) handler.CommandHandler {
 			if err != nil {
 				return e.CreateMessage(discord.MessageCreate{
 					Content: fmt.Sprintf("❌ Card not found: %v", err),
+				})
+			}
+		}
+		
+		// Find item by name if item_name provided
+		var itemID string
+		var itemInfo *itemDisplayInfo
+		if itemName != "" {
+			itemID, itemInfo, err = findItemByName(itemName)
+			if err != nil {
+				return e.CreateMessage(discord.MessageCreate{
+					Content: fmt.Sprintf("❌ Item not found: %v", err),
 				})
 			}
 		}
@@ -130,6 +164,21 @@ func GiftHandler(b *bottemplate.Bot) handler.CommandHandler {
 				messages = append(messages, fmt.Sprintf("🎴 Added 1x %s (ID: %d)", displayName, card.ID))
 			} else {
 				messages = append(messages, fmt.Sprintf("🎴 Added %dx %s (ID: %d)", cardAmount, displayName, card.ID))
+			}
+		}
+		
+		// Add item if provided
+		if itemID != "" {
+			err = b.ItemRepository.AddUserItem(ctx, targetUserID, itemID, itemQuantity)
+			if err != nil {
+				return e.CreateMessage(discord.MessageCreate{
+					Content: fmt.Sprintf("❌ Failed to add item: %v", err),
+				})
+			}
+			if itemQuantity == 1 {
+				messages = append(messages, fmt.Sprintf("%s Added 1x %s", itemInfo.emoji, itemInfo.name))
+			} else {
+				messages = append(messages, fmt.Sprintf("%s Added %dx %s", itemInfo.emoji, itemQuantity, itemInfo.name))
 			}
 		}
 		
@@ -235,4 +284,53 @@ func findCardByName(ctx context.Context, b *bottemplate.Bot, query string) (*mod
 	card := cards[0]
 	fmt.Printf("[DEBUG] Gift findCardByName: FOUND card='%s' (ID=%d)\n", card.Name, card.ID)
 	return card, nil
+}
+
+// itemDisplayInfo holds display information for items
+type itemDisplayInfo struct {
+	name  string
+	emoji string
+}
+
+// findItemByName finds an item by name with fuzzy matching
+func findItemByName(query string) (string, *itemDisplayInfo, error) {
+	// Item mapping with various aliases
+	itemMap := map[string]struct {
+		id   string
+		info itemDisplayInfo
+	}{
+		// Broken Disc
+		"broken_disc":  {models.ItemBrokenDisc, itemDisplayInfo{"Broken Disc", "💿"}},
+		"broken disc":  {models.ItemBrokenDisc, itemDisplayInfo{"Broken Disc", "💿"}},
+		"disc":         {models.ItemBrokenDisc, itemDisplayInfo{"Broken Disc", "💿"}},
+		"cd":           {models.ItemBrokenDisc, itemDisplayInfo{"Broken Disc", "💿"}},
+		"brokendisc":   {models.ItemBrokenDisc, itemDisplayInfo{"Broken Disc", "💿"}},
+		
+		// Microphone
+		"microphone":   {models.ItemMicrophone, itemDisplayInfo{"Microphone", "🎤"}},
+		"mic":          {models.ItemMicrophone, itemDisplayInfo{"Microphone", "🎤"}},
+		"mike":         {models.ItemMicrophone, itemDisplayInfo{"Microphone", "🎤"}},
+		"micro":        {models.ItemMicrophone, itemDisplayInfo{"Microphone", "🎤"}},
+		
+		// Forgotten Song
+		"forgotten_song": {models.ItemForgottenSong, itemDisplayInfo{"Forgotten Song", "📜"}},
+		"forgotten song": {models.ItemForgottenSong, itemDisplayInfo{"Forgotten Song", "📜"}},
+		"song":           {models.ItemForgottenSong, itemDisplayInfo{"Forgotten Song", "📜"}},
+		"forgottensong":  {models.ItemForgottenSong, itemDisplayInfo{"Forgotten Song", "📜"}},
+		"scroll":         {models.ItemForgottenSong, itemDisplayInfo{"Forgotten Song", "📜"}},
+	}
+	
+	// Try exact match first
+	if item, ok := itemMap[query]; ok {
+		return item.id, &item.info, nil
+	}
+	
+	// Try partial matching
+	for key, item := range itemMap {
+		if strings.Contains(key, query) || strings.Contains(query, key) {
+			return item.id, &item.info, nil
+		}
+	}
+	
+	return "", nil, fmt.Errorf("item not found. Available items: disc/broken_disc, microphone/mic, song/forgotten_song")
 }

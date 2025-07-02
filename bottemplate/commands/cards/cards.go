@@ -85,7 +85,7 @@ func CardsHandler(b *bottemplate.Bot) handler.CommandHandler {
 		}
 		
 		// Use CardOperationsService to get user cards with details, filtering, and search context
-		displayCards, _, filters, err := cardOperationsService.GetUserCardsWithDetailsAndFilters(context.Background(), event.User().ID.String(), query)
+		displayCards, _, filters, err := cardOperationsService.GetUserCardsWithDetailsAndFiltersWithUser(context.Background(), event.User().ID.String(), query, user)
 		if err != nil {
 			return utils.EH.CreateErrorEmbed(event, "Failed to fetch cards")
 		}
@@ -169,7 +169,7 @@ func (cdf *CardsDataFetcher) FetchData(ctx context.Context, params utils.Paginat
 	}
 	
 	// Use CardOperationsService to get user cards with details and filtering
-	displayCards, _, err := cdf.cardOperationsService.GetUserCardsWithDetails(ctx, params.UserID, params.Query)
+	displayCards, _, _, err := cdf.cardOperationsService.GetUserCardsWithDetailsAndFiltersWithUser(ctx, params.UserID, params.Query, user)
 	if err != nil {
 		return nil, err
 	}

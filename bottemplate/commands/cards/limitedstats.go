@@ -79,14 +79,17 @@ func LimitedStatsHandler(b *bottemplate.Bot) handler.CommandHandler {
 				Prefix:       "limitedstats",
 			},
 			FormatItems: func(items []interface{}, page, totalPages int, userID, query string) (discord.Embed, error) {
-				startIdx := page * config.CardsPerPage
-				endIdx := startIdx + config.CardsPerPage
-				if endIdx > len(items) {
-					endIdx = len(items)
-				}
-				pageItems := make([]services.CardDisplayItem, endIdx-startIdx)
-				for i, item := range items[startIdx:endIdx] {
+				// Convert items to CardDisplayItem slice
+				pageItems := make([]services.CardDisplayItem, len(items))
+				for i, item := range items {
 					pageItems[i] = item.(services.CardDisplayItem)
+				}
+
+				// Calculate total items from page data
+				totalItems := totalPages * config.CardsPerPage
+				if page == totalPages-1 && len(items) < config.CardsPerPage {
+					// Last page might have fewer items
+					totalItems = (totalPages-1)*config.CardsPerPage + len(items)
 				}
 
 				return cardDisplayService.CreateCardsEmbed(
@@ -95,7 +98,7 @@ func LimitedStatsHandler(b *bottemplate.Bot) handler.CommandHandler {
 					pageItems,
 					page,
 					totalPages,
-					len(items),
+					totalItems,
 					query,
 					config.SuccessColor,
 				)

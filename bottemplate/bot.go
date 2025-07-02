@@ -60,6 +60,7 @@ type Bot struct {
 	BackgroundProcessManager *utils.BackgroundProcessManager
 	CollectionService        *services.CollectionService
 	CompletionChecker        *services.CompletionCheckerService
+	ItemRepository           repositories.ItemRepository
 }
 
 func (b *Bot) SetupBot(listeners ...bot.EventListener) error {

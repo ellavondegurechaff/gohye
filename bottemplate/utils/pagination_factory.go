@@ -144,8 +144,19 @@ func (pf *PaginationFactory) handleNavigation(ctx context.Context, e *handler.Co
 	newParams := params
 	newParams.Page = newPage
 
+	// Calculate page items
+	startIdx := newPage * pf.config.ItemsPerPage
+	endIdx := min(startIdx+pf.config.ItemsPerPage, len(items))
+	
+	if startIdx >= len(items) {
+		startIdx = 0
+		endIdx = min(pf.config.ItemsPerPage, len(items))
+	}
+	
+	pageItems := items[startIdx:endIdx]
+	
 	// Create embed for new page
-	embed, err := pf.config.Formatter.FormatItems(items, newPage, totalPages, newParams)
+	embed, err := pf.config.Formatter.FormatItems(pageItems, newPage, totalPages, newParams)
 	if err != nil {
 		return EH.CreateEphemeralError(e, "Failed to format items")
 	}
@@ -198,8 +209,14 @@ func (pf *PaginationFactory) CreateInitialPaginationEmbed(ctx context.Context, p
 
 	totalPages := int(math.Ceil(float64(len(items)) / float64(pf.config.ItemsPerPage)))
 
+	// Get items for first page only
+	pageItems := items
+	if len(items) > pf.config.ItemsPerPage {
+		pageItems = items[:pf.config.ItemsPerPage]
+	}
+
 	// Create embed for first page
-	embed, err := pf.config.Formatter.FormatItems(items, 0, totalPages, params)
+	embed, err := pf.config.Formatter.FormatItems(pageItems, 0, totalPages, params)
 	if err != nil {
 		return discord.Embed{}, nil, err
 	}

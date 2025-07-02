@@ -7,7 +7,7 @@ import "time"
 // UI and Display Constants
 const (
 	// Pagination
-	CardsPerPage     = 7
+	CardsPerPage     = 10
 	DefaultPageSize  = 10
 	MaxPageSize      = 25
 

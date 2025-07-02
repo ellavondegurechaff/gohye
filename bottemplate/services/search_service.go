@@ -766,10 +766,7 @@ func (ss *SearchService) applyCardFilters(cards []*models.Card, filters utils.Se
 			if filters.ExcludePromo && colInfo.IsPromo {
 				continue
 			}
-			// By default, exclude promo and restricted collections unless specifically requested
-			if !filters.PromoOnly && !filters.ExcludePromo && (colInfo.IsPromo || colInfo.IsExcluded) {
-				continue
-			}
+			// No exclusions - all cards are searchable
 		}
 		
 		filtered = append(filtered, card)

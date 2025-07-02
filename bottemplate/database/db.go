@@ -249,6 +249,8 @@ func (db *DB) InitializeSchema(ctx context.Context) error {
 		(*models.Auction)(nil),
 		(*models.AuctionBid)(nil),
 		(*models.CardMarketHistory)(nil),
+		(*models.Item)(nil),
+		(*models.UserItem)(nil),
 	}
 
 	// Create tables using Bun
@@ -292,12 +294,20 @@ func (db *DB) InitializeSchema(ctx context.Context) error {
 		"CREATE INDEX IF NOT EXISTS idx_user_effects_active ON user_effects(user_id, active);",
 		"CREATE INDEX IF NOT EXISTS idx_user_effects_expires ON user_effects(expires_at) WHERE expires_at IS NOT NULL;",
 		"CREATE INDEX IF NOT EXISTS idx_user_recipes_user_id ON user_recipes(user_id);",
+		// Item system indexes
+		"CREATE INDEX IF NOT EXISTS idx_user_items_user_id ON user_items(user_id);",
+		"CREATE INDEX IF NOT EXISTS idx_items_type ON items(type);",
 	}
 
 	for _, idx := range indexes {
 		if _, err := db.ExecWithLog(ctx, idx); err != nil {
 			return fmt.Errorf("failed to create index: %w", err)
 		}
+	}
+
+	// Initialize item data
+	if err := db.InitializeItemData(ctx); err != nil {
+		return fmt.Errorf("failed to initialize item data: %w", err)
 	}
 
 	return nil
@@ -433,5 +443,107 @@ func (db *DB) ensureUTF8Encoding(ctx context.Context) error {
 	}
 	
 	slog.Info("Client encoding set to UTF-8")
+	return nil
+}
+
+// InitializeItemData inserts the default items into the items table
+func (db *DB) InitializeItemData(ctx context.Context) error {
+	// Check if items already exist
+	var itemCount int
+	err := db.pool.QueryRow(ctx, "SELECT COUNT(*) FROM items WHERE id IN ('broken_disc', 'microphone', 'forgotten_song')").Scan(&itemCount)
+	if err == nil && itemCount >= 3 {
+		slog.Info("Item data already initialized, skipping")
+		return nil
+	}
+
+	// Check database encoding to determine if we should use emojis
+	var encoding string
+	useEmojis := true
+	err = db.pool.QueryRow(ctx, "SHOW server_encoding;").Scan(&encoding)
+	if err == nil && encoding != "UTF8" {
+		useEmojis = false
+		slog.Info("Database encoding is not UTF8, using text representations instead of emojis", "encoding", encoding)
+	}
+
+	// Insert items one by one to handle encoding issues
+	items := []struct {
+		ID          string
+		Name        string
+		Description string
+		Emoji       string
+		FallbackEmoji string
+		Type        string
+		Rarity      int
+		MaxStack    int
+	}{
+		{
+			ID:          "broken_disc",
+			Name:        "Broken Disc",
+			Description: "A scratched and broken album disc. Part of a greater whole.",
+			Emoji:       "💿",
+			FallbackEmoji: "CD",
+			Type:        "material",
+			Rarity:      3,
+			MaxStack:    999,
+		},
+		{
+			ID:          "microphone",
+			Name:        "Microphone",
+			Description: "A vintage microphone used by idols. Still has some magic in it.",
+			Emoji:       "🎤",
+			FallbackEmoji: "MIC",
+			Type:        "material",
+			Rarity:      3,
+			MaxStack:    999,
+		},
+		{
+			ID:          "forgotten_song",
+			Name:        "Forgotten Song",
+			Description: "Sheet music for a song lost to time. The notes still resonate.",
+			Emoji:       "📜",
+			FallbackEmoji: "SONG",
+			Type:        "material",
+			Rarity:      3,
+			MaxStack:    999,
+		},
+	}
+	
+	for _, item := range items {
+		// Use parameterized query to handle encoding properly
+		insertSQL := `
+			INSERT INTO items (id, name, description, emoji, type, rarity, max_stack, created_at, updated_at) 
+			VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+			ON CONFLICT (id) DO UPDATE SET updated_at = CURRENT_TIMESTAMP;
+		`
+		
+		// Use fallback emoji if database doesn't support UTF8
+		emoji := item.Emoji
+		if !useEmojis {
+			emoji = item.FallbackEmoji
+		}
+		
+		_, err := db.ExecWithLog(ctx, insertSQL, 
+			item.ID, item.Name, item.Description, emoji, 
+			item.Type, item.Rarity, item.MaxStack)
+		if err != nil {
+			// If emoji still fails, use fallback
+			if useEmojis {
+				slog.Warn("Failed to insert item with emoji, trying with fallback", 
+					slog.String("item", item.ID),
+					slog.String("error", err.Error()))
+				
+				_, err = db.ExecWithLog(ctx, insertSQL,
+					item.ID, item.Name, item.Description, item.FallbackEmoji,
+					item.Type, item.Rarity, item.MaxStack)
+				if err != nil {
+					return fmt.Errorf("failed to insert item %s: %w", item.ID, err)
+				}
+			} else {
+				return fmt.Errorf("failed to insert item %s: %w", item.ID, err)
+			}
+		}
+	}
+	
+	slog.Info("Initial item data initialized successfully")
 	return nil
 }
