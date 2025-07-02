@@ -147,7 +147,7 @@ var (
 	cacheMutex      sync.RWMutex
 	
 	// List of collection IDs that should be excluded from general card operations
-	excludedCollections = []string{"signed", "liveauction", "lottery", "ggalbums", "bgalbums", "birthdays", "removed"}
+	excludedCollections = []string{"signed", "liveauction", "lottery", "ggalbums", "bgalbums", "birthdays", "removed", "special"}
 	
 	// List of collection IDs that should be excluded from forge operations
 	// Based on legacy system: fragments, album, liveauction, jackpot, birthdays, limited

@@ -144,11 +144,11 @@ func (h *ClaimHandler) HandleCommand(e *handler.CommandEvent) error {
 		return utils.EH.CreateError(e, "Error", "Failed to fetch cards")
 	}
 
-	// Filter out promo, excluded, and limited collection cards
+	// Filter out promo, excluded, limited, and special collection cards
 	var cards []*models.Card
 	for _, card := range allCards {
-		// Check if card's collection is not promo, excluded, or limited
-		if colInfo, exists := utils.GetCollectionInfo(card.ColID); exists && !colInfo.IsPromo && !colInfo.IsExcluded && card.ColID != "limited" {
+		// Check if card's collection is not promo, excluded, limited, or special
+		if colInfo, exists := utils.GetCollectionInfo(card.ColID); exists && !colInfo.IsPromo && !colInfo.IsExcluded && card.ColID != "limited" && card.ColID != "special" {
 			cards = append(cards, card)
 		}
 	}

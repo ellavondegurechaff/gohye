@@ -30,10 +30,10 @@ func MissHandler(b *bottemplate.Bot) handler.CommandHandler {
 	cardDisplayService := services.NewCardDisplayService(b.CardRepository, b.SpacesService)
 	cardOperationsService := services.NewCardOperationsService(b.CardRepository, b.UserCardRepository)
 	
-	// Create pagination handler with minimal items per page to prevent Discord form body errors
+	// Create pagination handler with standard items per page
 	paginationHandler := &utils.PaginationHandler{
 		Config: utils.PaginationConfig{
-			ItemsPerPage: 3, // Further reduced to prevent form body errors
+			ItemsPerPage: config.CardsPerPage,
 			Prefix:       "miss",
 		},
 		FormatItems: func(items []interface{}, page, totalPages int, userID, query string) (discord.Embed, error) {
@@ -49,7 +49,7 @@ func MissHandler(b *bottemplate.Bot) handler.CommandHandler {
 			}
 			
 			// Calculate total items from pagination data
-			itemsPerPage := 3 // Match the configured ItemsPerPage
+			itemsPerPage := config.CardsPerPage
 			totalItems := totalPages * itemsPerPage
 			if page == totalPages-1 {
 				// Last page might have fewer items
@@ -145,9 +145,9 @@ func MissComponentHandler(b *bottemplate.Bot) handler.ComponentHandler {
 	// Create validator
 	validator := &MissValidator{}
 	
-	// Create factory configuration with minimal items per page to prevent Discord form body errors
+	// Create factory configuration with standard items per page
 	factoryConfig := utils.PaginationFactoryConfig{
-		ItemsPerPage: 3, // Further reduced to prevent form body errors
+		ItemsPerPage: config.CardsPerPage,
 		Prefix:       "miss",
 		Parser:       utils.NewRegularParser("miss"),
 		Fetcher:      fetcher,
@@ -211,7 +211,7 @@ func (mf *MissFormatter) FormatItems(items []interface{}, page, totalPages int, 
 	}
 	
 	// Calculate total items from pagination data
-	itemsPerPage := 3 // Match the configured ItemsPerPage
+	itemsPerPage := config.CardsPerPage
 	totalItems := totalPages * itemsPerPage
 	if page == totalPages-1 {
 		// Last page might have fewer items

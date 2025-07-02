@@ -442,28 +442,8 @@ func (r *cardRepository) Search(ctx context.Context, filters SearchFilters, offs
 
 	// Improve name search logic
 	if filters.Name != "" {
-		// Try exact match first (case insensitive)
-		exactQuery := query.WhereGroup(" OR ", func(q *bun.SelectQuery) *bun.SelectQuery {
-			return q.Where("LOWER(name) = LOWER(?)", filters.Name)
-		})
-
-		// Then try partial matches for each word
-		searchTerms := strings.Fields(strings.ToLower(filters.Name))
-		if len(searchTerms) > 1 {
-			// For multi-word searches, try matching all words in any order
-			exactQuery.WhereGroup(" OR ", func(q *bun.SelectQuery) *bun.SelectQuery {
-				for _, term := range searchTerms {
-					q = q.Where("LOWER(name) LIKE ?", "%"+term+"%")
-				}
-				return q
-			})
-		} else {
-			// For single-word searches, just do a simple LIKE
-			exactQuery.WhereGroup(" OR ", func(q *bun.SelectQuery) *bun.SelectQuery {
-				return q.Where("LOWER(name) LIKE LOWER(?)", "%"+filters.Name+"%")
-			})
-		}
-		query = exactQuery
+		// Use a simple LIKE query to avoid duplicates
+		query = query.Where("LOWER(name) LIKE LOWER(?)", "%"+filters.Name+"%")
 	}
 
 	// Apply filters to main query
