@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>User Profile Card</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: linear-gradient(135deg, #0a0a0a 0%, #1a0606 30%, #2d0a0a 60%, #0a0a0a 100%);
+            padding: 0;
+            margin: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+        
+        #profile-container {
+            width: 400px;
+            height: 240px;
+            background: linear-gradient(135deg, #0a0a0a 0%, #1a0606 20%, #2d0a0a 40%, #1a0606 60%, #0a0a0a 100%);
+            border-radius: 12px;
+            padding: 0;
+            box-shadow: 
+                0 10px 25px rgba(0, 0, 0, 0.6),
+                inset 0 1px 0 rgba(255, 51, 85, 0.1),
+                0 0 15px rgba(255, 51, 85, 0.1);
+            position: relative;
+            overflow: hidden;
+            border: 1px solid rgba(255, 51, 85, 0.3);
+            display: flex;
+        }
+        
+        .profile-section {
+            width: 60%;
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            z-index: 3;
+        }
+        
+        .background-section {
+            width: 40%;
+            position: relative;
+            overflow: hidden;
+            {{if .IsPremium}}
+            {{if .BackgroundImage}}
+            background: url('{{.BackgroundImage}}') center/cover no-repeat;
+            {{else}}
+            background: linear-gradient(45deg, #ff3355, #cc1122, #ff5577);
+            {{end}}
+            {{else}}
+            background: linear-gradient(45deg, rgba(255, 51, 85, 0.3), rgba(204, 17, 34, 0.2), rgba(255, 85, 119, 0.1));
+            {{end}}
+        }
+        
+        .background-section::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(90deg, rgba(10, 10, 10, 0.7) 0%, transparent 100%);
+            z-index: 1;
+        }
+        
+        .background-section::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs><pattern id="dots" patternUnits="userSpaceOnUse" width="20" height="20"><circle cx="10" cy="10" r="2" fill="rgba(255,51,85,0.1)"/></pattern></defs><rect width="100" height="100" fill="url(%23dots)"/></svg>');
+            z-index: 2;
+            opacity: 0.4;
+        }
+        
+        {{if .IsPremium}}
+        .premium-badge {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            background: linear-gradient(45deg, #ffd700, #ffed4e);
+            color: #000;
+            font-size: 10px;
+            font-weight: 900;
+            padding: 2px 6px;
+            border-radius: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            box-shadow: 0 2px 4px rgba(255, 215, 0, 0.3);
+            z-index: 4;
+        }
+        {{end}}
+        
+        .profile-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 8px;
+        }
+        
+        .profile-avatar {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #ff3355 0%, #cc1122 50%, #ff5577 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 22px;
+            font-weight: 900;
+            color: #ffffff;
+            text-shadow: 0 2px 4px rgba(0, 0, 0, 0.7);
+            box-shadow: 
+                0 0 15px rgba(255, 51, 85, 0.4),
+                inset 0 1px 0 rgba(255, 255, 255, 0.1);
+            border: 1.5px solid rgba(255, 51, 85, 0.6);
+            flex-shrink: 0;
+        }
+        
+        .profile-info {
+            flex: 1;
+            min-width: 0;
+        }
+        
+        .username {
+            font-size: 18px;
+            font-weight: 900;
+            background: linear-gradient(45deg, #ff3355, #cc1122, #ff5577);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            text-shadow: 0 0 15px rgba(255, 51, 85, 0.6);
+            margin-bottom: 2px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        
+        .member-since {
+            font-size: 9px;
+            color: #ffaaaa;
+            font-weight: 600;
+            opacity: 0.8;
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 6px;
+            margin-bottom: 8px;
+        }
+        
+        .stat-card {
+            background: linear-gradient(90deg, rgba(255, 51, 85, 0.08) 0%, rgba(178, 34, 34, 0.05) 100%);
+            backdrop-filter: blur(4px);
+            border: 1px solid rgba(255, 51, 85, 0.2);
+            border-radius: 6px;
+            padding: 6px 8px;
+            position: relative;
+            text-align: center;
+        }
+        
+        .stat-card::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            width: 2px;
+            background: linear-gradient(180deg, #ff3355, #cc1122);
+            border-radius: 0 1px 1px 0;
+        }
+        
+        .stat-value {
+            font-size: 14px;
+            font-weight: 900;
+            color: #ff3355;
+            text-shadow: 0 0 8px rgba(255, 51, 85, 0.5);
+            margin-bottom: 1px;
+        }
+        
+        .stat-label {
+            font-size: 8px;
+            color: #ffaaaa;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+        }
+        
+        .streak-bar {
+            background: linear-gradient(90deg, rgba(255, 51, 85, 0.12) 0%, rgba(178, 34, 34, 0.08) 100%);
+            backdrop-filter: blur(4px);
+            border: 1px solid rgba(255, 51, 85, 0.3);
+            border-radius: 6px;
+            padding: 6px 10px;
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+        }
+        
+        .streak-bar::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            width: 2px;
+            background: linear-gradient(180deg, #ff3355, #cc1122);
+            border-radius: 0 1px 1px 0;
+        }
+        
+        .streak-icon {
+            font-size: 14px;
+            filter: drop-shadow(0 0 6px rgba(255, 51, 85, 0.5));
+        }
+        
+        .streak-text {
+            font-size: 12px;
+            font-weight: 800;
+            color: #ff3355;
+            text-shadow: 0 0 8px rgba(255, 51, 85, 0.5);
+        }
+        
+        .streak-label {
+            font-size: 8px;
+            color: #ffaaaa;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+        }
+        
+    </style>
+</head>
+<body>
+    <div id="profile-container">
+        {{if .IsPremium}}
+        <div class="premium-badge">Premium</div>
+        {{end}}
+        
+        <div class="profile-section">
+            <div class="profile-header">
+                <div class="profile-avatar">
+                    {{.AvatarLetter}}
+                </div>
+                <div class="profile-info">
+                    <div class="username">{{.Username}}</div>
+                    <div class="member-since">{{.MemberSince}}</div>
+                </div>
+            </div>
+            
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-value">{{.CardCount}}</div>
+                    <div class="stat-label">Cards</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">{{.Rank}}</div>
+                    <div class="stat-label">Rank</div>
+                </div>
+            </div>
+            
+            <div class="streak-bar">
+                <div class="streak-icon">🔥</div>
+                <div class="streak-text">{{.DailyStreak}}</div>
+                <div class="streak-label">Streak</div>
+            </div>
+        </div>
+        
+        <div class="background-section"></div>
+    </div>
+</body>
+</html>

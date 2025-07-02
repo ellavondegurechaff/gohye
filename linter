@@ -1,0 +1,81 @@
+[{
+	"resource": "/c:/Users/Yuqi/Desktop/hyego/gohye/bottemplate/commands/cards/collection_progress.go",
+	"owner": "_generated_diagnostic_collection_name_#3",
+	"code": {
+		"value": "WrongResultCount",
+		"target": {
+			"$mid": 1,
+			"path": "/golang.org/x/tools/internal/typesinternal",
+			"scheme": "https",
+			"authority": "pkg.go.dev",
+			"fragment": "WrongResultCount"
+		}
+	},
+	"severity": 8,
+	"message": "too many return values\n\thave (*discord.Message, error)\n\twant (error)",
+	"source": "compiler",
+	"startLineNumber": 126,
+	"startColumn": 12,
+	"endLineNumber": 126,
+	"endColumn": 94
+},{
+	"resource": "/c:/Users/Yuqi/Desktop/hyego/gohye/bottemplate/commands/cards/collection_progress.go",
+	"owner": "_generated_diagnostic_collection_name_#3",
+	"code": {
+		"value": "WrongResultCount",
+		"target": {
+			"$mid": 1,
+			"path": "/golang.org/x/tools/internal/typesinternal",
+			"scheme": "https",
+			"authority": "pkg.go.dev",
+			"fragment": "WrongResultCount"
+		}
+	},
+	"severity": 8,
+	"message": "too many return values\n\thave (*discord.Message, error)\n\twant (error)",
+	"source": "compiler",
+	"startLineNumber": 148,
+	"startColumn": 12,
+	"endLineNumber": 148,
+	"endColumn": 94
+},{
+	"resource": "/c:/Users/Yuqi/Desktop/hyego/gohye/bottemplate/commands/cards/collection_progress.go",
+	"owner": "_generated_diagnostic_collection_name_#3",
+	"code": {
+		"value": "WrongResultCount",
+		"target": {
+			"$mid": 1,
+			"path": "/golang.org/x/tools/internal/typesinternal",
+			"scheme": "https",
+			"authority": "pkg.go.dev",
+			"fragment": "WrongResultCount"
+		}
+	},
+	"severity": 8,
+	"message": "too many return values\n\thave (*discord.Message, error)\n\twant (error)",
+	"source": "compiler",
+	"startLineNumber": 152,
+	"startColumn": 11,
+	"endLineNumber": 160,
+	"endColumn": 6
+},{
+	"resource": "/c:/Users/Yuqi/Desktop/hyego/gohye/bottemplate/commands/cards/collection_progress.go",
+	"owner": "_generated_diagnostic_collection_name_#3",
+	"code": {
+		"value": "IncompatibleAssign",
+		"target": {
+			"$mid": 1,
+			"path": "/golang.org/x/tools/internal/typesinternal",
+			"scheme": "https",
+			"authority": "pkg.go.dev",
+			"fragment": "IncompatibleAssign"
+		}
+	},
+	"severity": 8,
+	"message": "cannot use []discord.File{…} (value of type []discord.File) as []*discord.File value in struct literal",
+	"source": "compiler",
+	"startLineNumber": 154,
+	"startColumn": 12,
+	"endLineNumber": 159,
+	"endColumn": 6
+}]

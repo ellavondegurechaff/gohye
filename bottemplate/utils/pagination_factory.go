@@ -19,11 +19,13 @@ type ComponentIDParser interface {
 
 // PaginationParams contains all possible parameters for pagination
 type PaginationParams struct {
-	UserID       string
-	Page         int
-	Query        string
-	SubCommand   string
-	TargetUserID string
+	UserID         string
+	Page           int
+	Query          string
+	SubCommand     string
+	TargetUserID   string
+	SortByProgress bool
+	CompletedOnly  bool
 }
 
 // DataFetcher defines the interface for fetching paginated data
@@ -220,6 +222,7 @@ func NewRegularParser(prefix string) *RegularParser {
 }
 
 // Parse parses a regular component ID
+// Format: /{prefix}/{action}/{userID}/{page}/{query?}/{sortByProgress?}/{completedOnly?}
 func (rp *RegularParser) Parse(customID string) (PaginationParams, error) {
 	parts := strings.Split(customID, "/")
 	if len(parts) < 5 {
@@ -236,8 +239,18 @@ func (rp *RegularParser) Parse(customID string) (PaginationParams, error) {
 		Page:   page,
 	}
 
-	if len(parts) > 5 {
+	if len(parts) > 5 && parts[5] != "" {
 		params.Query = parts[5]
+	}
+
+	if len(parts) > 6 && parts[6] != "" {
+		sortByProgress, _ := strconv.ParseBool(parts[6])
+		params.SortByProgress = sortByProgress
+	}
+
+	if len(parts) > 7 && parts[7] != "" {
+		completedOnly, _ := strconv.ParseBool(parts[7])
+		params.CompletedOnly = completedOnly
 	}
 
 	return params, nil
@@ -245,11 +258,22 @@ func (rp *RegularParser) Parse(customID string) (PaginationParams, error) {
 
 // BuildComponentID builds a component ID for regular pagination
 func (rp *RegularParser) BuildComponentID(prefix, action string, params PaginationParams) string {
-	queryParam := ""
+	parts := []string{"", prefix, action, params.UserID, strconv.Itoa(params.Page)}
+	
+	// Add query if present
 	if params.Query != "" {
-		queryParam = "/" + params.Query
+		parts = append(parts, params.Query)
+	} else {
+		parts = append(parts, "")
 	}
-	return fmt.Sprintf("/%s/%s/%s/%d%s", prefix, action, params.UserID, params.Page, queryParam)
+	
+	// Add boolean flags if either is true
+	if params.SortByProgress || params.CompletedOnly {
+		parts = append(parts, strconv.FormatBool(params.SortByProgress))
+		parts = append(parts, strconv.FormatBool(params.CompletedOnly))
+	}
+	
+	return strings.Join(parts, "/")
 }
 
 // DiffParser implements ComponentIDParser for diff pagination format

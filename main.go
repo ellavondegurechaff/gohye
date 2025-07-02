@@ -370,6 +370,9 @@ func main() {
 	h.Component("/help_category", handlers.WrapComponentWithLogging("help", helpHandler.HandleComponent))
 	h.Component("/help_back", handlers.WrapComponentWithLogging("help", helpHandler.HandleComponent))
 
+	// Profile command
+	h.Command("/profile", handlers.WrapWithLogging("profile", system.ProfileHandler(b)))
+
 	// Claim commands
 	claimHandler := cards.NewClaimHandler(b)
 	h.Command("/claim", handlers.WrapWithLogging("claim", claimHandler.HandleCommand))

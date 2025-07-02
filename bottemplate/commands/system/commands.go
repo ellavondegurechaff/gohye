@@ -9,4 +9,5 @@ var Commands = []discord.ApplicationCommandCreate{
 	UseEffect,
 	CraftEffect,
 	Help,
+	Profile,
 }

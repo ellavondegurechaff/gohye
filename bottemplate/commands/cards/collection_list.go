@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sort"
 	"strings"
 	"time"
 
@@ -44,67 +45,32 @@ type CollectionProgressItem struct {
 }
 
 func CollectionListHandler(b *bottemplate.Bot) handler.CommandHandler {
-
-	paginationHandler := &utils.PaginationHandler{
-		Config: utils.PaginationConfig{
-			ItemsPerPage: 10,
-			Prefix:       "collection-list",
-		},
-		FormatItems: func(allItems []interface{}, page, totalPages int, userID, query string) (discord.Embed, error) {
-			// Calculate pagination indices - old handler passes ALL items
-			itemsPerPage := 10
-			startIdx := page * itemsPerPage
-			endIdx := min(startIdx+itemsPerPage, len(allItems))
-			
-			// Get items for this page only
-			pageItems := allItems[startIdx:endIdx]
-			
-			var fields []discord.EmbedField
-			
-			for _, item := range pageItems {
-				collectionItem := item.(CollectionProgressItem)
-				col := collectionItem.Collection
-				progress := collectionItem.Progress
-				
-				var progressText string
-				if progress.IsCompleted {
-					progressText = "✅ **100%** Complete"
-				} else {
-					progressText = fmt.Sprintf("📊 **%.1f%%** (%d/%d cards)", 
-						progress.Percentage, progress.OwnedCards, progress.TotalCards)
-				}
-				
-				var fragmentText string
-				if progress.IsFragment {
-					fragmentText = " 🧩"
-				}
-				
-				aliasText := ""
-				if len(col.Aliases) > 0 {
-					aliasText = fmt.Sprintf("\n`%s`", strings.Join(col.Aliases[:min(3, len(col.Aliases))], ", "))
-				}
-				
-				inlineTrue := true
-				fields = append(fields, discord.EmbedField{
-					Name:   fmt.Sprintf("%s%s", col.Name, fragmentText),
-					Value:  fmt.Sprintf("%s%s", progressText, aliasText),
-					Inline: &inlineTrue,
-				})
-			}
-
-			title := fmt.Sprintf("Collections - Page %d/%d", page+1, totalPages)
-			if query != "" {
-				title = fmt.Sprintf("Collections matching '%s' - Page %d/%d", query, page+1, totalPages)
-			}
-
-			return discord.Embed{
-				Title:       title,
-				Color:       config.BackgroundColor,
-				Fields:      fields,
-				Description: "🧩 = Fragment Collection (only 1-star cards count)",
-			}, nil
-		},
+	collectionService := services.NewCollectionService(b.CollectionRepository, b.CardRepository, b.UserCardRepository)
+	
+	// Create data fetcher
+	fetcher := &CollectionListDataFetcher{
+		bot:               b,
+		collectionService: collectionService,
 	}
+	
+	// Create formatter
+	formatter := &CollectionListFormatter{}
+	
+	// Create validator
+	validator := &CollectionListValidator{}
+	
+	// Create factory configuration
+	factoryConfig := utils.PaginationFactoryConfig{
+		ItemsPerPage: 10,
+		Prefix:       "collection-list",
+		Parser:       utils.NewRegularParser("collection-list"),
+		Fetcher:      fetcher,
+		Formatter:    formatter,
+		Validator:    validator,
+	}
+	
+	// Create factory
+	factory := utils.NewPaginationFactory(factoryConfig)
 
 	return func(event *handler.CommandEvent) error {
 		start := time.Now()
@@ -125,55 +91,35 @@ func CollectionListHandler(b *bottemplate.Bot) handler.CommandHandler {
 
 		ctx := context.Background()
 		search := strings.TrimSpace(event.SlashCommandInteractionData().String("search"))
+		completedOnly := event.SlashCommandInteractionData().Bool("completed")
+		sortByProgress := event.SlashCommandInteractionData().Bool("sort-by-progress")
 
-		// Simple collection listing - no user data needed for basic list
-		var collections []*models.Collection
-		var err error
-		
-		if search != "" {
-			collections, err = b.CollectionRepository.SearchCollections(ctx, search)
-		} else {
-			collections, err = b.CollectionRepository.GetAll(ctx)
+		// Create pagination parameters
+		params := utils.PaginationParams{
+			UserID:         userID,
+			Page:           0,
+			Query:          search,
+			SortByProgress: sortByProgress,
+			CompletedOnly:  completedOnly,
 		}
 		
+		// Create initial embed and components
+		embed, components, err := factory.CreateInitialPaginationEmbed(ctx, params)
 		if err != nil {
-			slog.Error("Failed to get collections",
+			if err.Error() == "no items found" {
+				return event.CreateMessage(discord.MessageCreate{
+					Embeds: []discord.Embed{{
+						Title:       "No Collections Found",
+						Description: "No collections match your search criteria.",
+						Color:       config.ErrorColor,
+					}},
+				})
+			}
+			slog.Error("Failed to create collection display",
 				slog.String("type", "cmd"),
 				slog.String("name", "collection-list"),
 				slog.String("user_id", userID),
 				slog.String("error", err.Error()))
-			return utils.EH.CreateErrorEmbed(event, "Failed to get collections")
-		}
-
-		if len(collections) == 0 {
-			embed := discord.Embed{
-				Title:       "No Collections Found",
-				Description: "No collections match your search criteria.",
-				Color:       config.ErrorColor,
-			}
-			return event.CreateMessage(discord.MessageCreate{Embeds: []discord.Embed{embed}})
-		}
-
-		// Create simple list items without progress calculation
-		var items []interface{}
-		for _, col := range collections {
-			items = append(items, CollectionProgressItem{
-				Collection: col,
-				Progress: &models.CollectionProgress{
-					UserID:       userID,
-					CollectionID: col.ID,
-					TotalCards:   0, // Will be populated if needed
-					OwnedCards:   0,
-					Percentage:   0,
-					IsCompleted:  false,
-					IsFragment:   col.Fragments,
-					LastUpdated:  time.Now(),
-				},
-			})
-		}
-
-		embed, components, err := paginationHandler.CreateInitialPaginationEmbed(items, userID, search)
-		if err != nil {
 			return utils.EH.CreateErrorEmbed(event, "Failed to create collection display")
 		}
 
@@ -261,17 +207,52 @@ func (f *CollectionListDataFetcher) FetchData(ctx context.Context, params utils.
 		return nil, err
 	}
 
-	var items []interface{}
+	// Use batch calculation for efficiency
+	progressMap, err := f.collectionService.CalculateProgressBatch(ctx, user.DiscordID, collections)
+	if err != nil {
+		return nil, err
+	}
+
+	var collectionItems []CollectionProgressItem
 	for _, col := range collections {
-		progress, err := f.collectionService.CalculateProgress(ctx, user.DiscordID, col.ID)
-		if err != nil {
+		progress, exists := progressMap[col.ID]
+		if !exists {
+			// Fallback to zero progress if calculation failed for this collection
+			progress = &models.CollectionProgress{
+				UserID:       params.UserID,
+				CollectionID: col.ID,
+				TotalCards:   0,
+				OwnedCards:   0,
+				Percentage:   0,
+				IsCompleted:  false,
+				IsFragment:   col.Fragments,
+				LastUpdated:  time.Now(),
+			}
+		}
+
+		// Filter completed collections if requested
+		if params.CompletedOnly && !progress.IsCompleted {
 			continue
 		}
 		
-		items = append(items, CollectionProgressItem{
+		collectionItems = append(collectionItems, CollectionProgressItem{
 			Collection: col,
 			Progress:   progress,
 		})
+	}
+
+	// Sort by progress if requested
+	if params.SortByProgress {
+		sort.Slice(collectionItems, func(i, j int) bool {
+			// Sort by completion percentage descending
+			return collectionItems[i].Progress.Percentage > collectionItems[j].Progress.Percentage
+		})
+	}
+
+	// Convert to interface slice
+	var items []interface{}
+	for _, item := range collectionItems {
+		items = append(items, item)
 	}
 
 	return items, nil
@@ -294,9 +275,18 @@ func (f *CollectionListFormatter) FormatItems(allItems []interface{}, page, tota
 	for _, item := range pageItems {
 		collectionItem := item.(CollectionProgressItem)
 		col := collectionItem.Collection
+		progress := collectionItem.Progress
+		
+		var progressText string
+		if progress.IsCompleted {
+			progressText = "✅ **100%** Complete"
+		} else {
+			progressText = fmt.Sprintf("📊 **%.1f%%** (%d/%d cards)", 
+				progress.Percentage, progress.OwnedCards, progress.TotalCards)
+		}
 		
 		var fragmentText string
-		if col.Fragments {
+		if progress.IsFragment {
 			fragmentText = " 🧩"
 		}
 		
@@ -305,12 +295,10 @@ func (f *CollectionListFormatter) FormatItems(allItems []interface{}, page, tota
 			aliasText = fmt.Sprintf("\n`%s`", strings.Join(col.Aliases[:min(3, len(col.Aliases))], ", "))
 		}
 		
-		collectionInfo := fmt.Sprintf("ID: `%s`%s", col.ID, aliasText)
-		
 		inlineTrue := true
 		fields = append(fields, discord.EmbedField{
 			Name:   fmt.Sprintf("%s%s", col.Name, fragmentText),
-			Value:  collectionInfo,
+			Value:  fmt.Sprintf("%s%s", progressText, aliasText),
 			Inline: &inlineTrue,
 		})
 	}

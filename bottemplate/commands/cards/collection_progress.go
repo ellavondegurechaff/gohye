@@ -1,6 +1,7 @@
 package cards
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"log/slog"
@@ -8,7 +9,6 @@ import (
 	"time"
 
 	"github.com/disgoorg/bot-template/bottemplate"
-	"github.com/disgoorg/bot-template/bottemplate/config"
 	"github.com/disgoorg/bot-template/bottemplate/services"
 	"github.com/disgoorg/bot-template/bottemplate/utils"
 	"github.com/disgoorg/disgo/discord"
@@ -17,17 +17,12 @@ import (
 
 var CollectionProgress = discord.SlashCommandCreate{
 	Name:        "collection-progress",
-	Description: "View collection completion leaderboard",
+	Description: "View collection completion leaderboard (generates image)",
 	Options: []discord.ApplicationCommandOption{
 		discord.ApplicationCommandOptionString{
 			Name:        "collection",
 			Description: "Collection name or alias",
 			Required:    true,
-		},
-		discord.ApplicationCommandOptionInt{
-			Name:        "limit",
-			Description: "Number of top users to show (default: 10, max: 25)",
-			Required:    false,
 		},
 	},
 }
@@ -35,6 +30,7 @@ var CollectionProgress = discord.SlashCommandCreate{
 
 func CollectionProgressHandler(b *bottemplate.Bot) handler.CommandHandler {
 	collectionService := services.NewCollectionService(b.CollectionRepository, b.CardRepository, b.UserCardRepository)
+	imageService := services.NewLeaderboardImageService()
 
 	return func(event *handler.CommandEvent) error {
 		start := time.Now()
@@ -60,16 +56,18 @@ func CollectionProgressHandler(b *bottemplate.Bot) handler.CommandHandler {
 			return utils.EH.CreateErrorEmbed(event, "Collection parameter is required")
 		}
 
-		limit := 10
-		if limitValue := event.SlashCommandInteractionData().Int("limit"); limitValue != 0 {
-			limit = int(limitValue)
-			if limit > 25 {
-				limit = 25
-			}
-			if limit < 1 {
-				limit = 1
-			}
+		// Always generate image, limit to top 5, defer response
+		limit := 5
+		if err := event.DeferCreateMessage(false); err != nil {
+			return utils.EH.CreateErrorEmbed(event, "Failed to defer message")
 		}
+		
+		slog.Info("Collection-progress parameters parsed",
+			slog.String("type", "cmd"),
+			slog.String("name", "collection-progress"),
+			slog.String("user_id", userID),
+			slog.String("collection_query", collectionQuery),
+			slog.Int("limit", limit))
 
 		collections, err := b.CollectionRepository.SearchCollections(ctx, collectionQuery)
 		if err != nil {
@@ -77,12 +75,10 @@ func CollectionProgressHandler(b *bottemplate.Bot) handler.CommandHandler {
 		}
 
 		if len(collections) == 0 {
-			embed := discord.Embed{
-				Title:       "Collection Not Found",
-				Description: fmt.Sprintf("No collection found matching '%s'", collectionQuery),
-				Color:       config.ErrorColor,
-			}
-			return event.CreateMessage(discord.MessageCreate{Embeds: []discord.Embed{embed}})
+			_, err := event.CreateFollowupMessage(discord.MessageCreate{
+				Content: fmt.Sprintf("❌ **Collection Not Found**\nNo collection found matching '%s'", collectionQuery),
+			})
+			return err
 		}
 
 		collection := collections[0]
@@ -100,45 +96,59 @@ func CollectionProgressHandler(b *bottemplate.Bot) handler.CommandHandler {
 		}
 
 		if len(progressResults) == 0 {
-			embed := discord.Embed{
-				Title:       fmt.Sprintf("%s - Collection Progress", collection.Name),
-				Description: "No users have any cards from this collection yet.",
-				Color:       config.BackgroundColor,
-			}
-			return event.CreateMessage(discord.MessageCreate{Embeds: []discord.Embed{embed}})
+			_, err := event.CreateFollowupMessage(discord.MessageCreate{
+				Content: fmt.Sprintf("📊 **%s - Collection Progress**\nNo users have any cards from this collection yet.", collection.Name),
+			})
+			return err
 		}
 
-		// Build leaderboard description
-		var description strings.Builder
-		description.WriteString(fmt.Sprintf("**Top %d users by completion:**\n\n", len(progressResults)))
-
-		for i, result := range progressResults {
-			rank := i + 1
-			var medal string
-			switch rank {
-			case 1:
-				medal = "🥇"
-			case 2:
-				medal = "🥈"
-			case 3:
-				medal = "🥉"
-			default:
-				medal = fmt.Sprintf("**%d.**", rank)
-			}
+		// Generate leaderboard image
+		slog.Info("Starting image generation",
+			slog.String("type", "cmd"),
+			slog.String("name", "collection-progress"),
+			slog.String("user_id", userID),
+			slog.String("collection_id", collection.ID),
+			slog.Int("results_count", len(progressResults)))
+		
+		imageBytes, err := imageService.GenerateLeaderboardImage(ctx, collection.Name, collection.ID, progressResults)
+		if err != nil {
+			slog.Error("Failed to generate leaderboard image",
+				slog.String("type", "cmd"),
+				slog.String("name", "collection-progress"),
+				slog.String("user_id", userID),
+				slog.String("collection_id", collection.ID),
+				slog.String("error", err.Error()))
 			
-			description.WriteString(fmt.Sprintf("%s **%s** - %d cards (%.1f%%)\n",
-				medal, result.Username, result.OwnedCards, result.Progress))
+			// Send error message
+			_, err := event.CreateFollowupMessage(discord.MessageCreate{
+				Content: fmt.Sprintf("❌ **Image Generation Failed**\nSorry, I couldn't generate the leaderboard image for %s. Please try again later.", collection.Name),
+			})
+			return err
 		}
-
-		embed := discord.Embed{
-			Title:       fmt.Sprintf("%s - Collection Progress Leaderboard", collection.Name),
-			Description: description.String(),
-			Color:       config.SuccessColor,
-			Footer: &discord.EmbedFooter{
-				Text: fmt.Sprintf("Showing top %d • Updated %s", 
-					len(progressResults), time.Now().Format("15:04 MST")),
+		
+		slog.Info("Image generated successfully, sending to Discord",
+			slog.String("type", "cmd"),
+			slog.String("name", "collection-progress"),
+			slog.String("user_id", userID),
+			slog.Int("image_size", len(imageBytes)))
+		
+		// Send image as attachment
+		_, err = event.CreateFollowupMessage(discord.MessageCreate{
+			Content: fmt.Sprintf("🏆 **%s - Collection Progress Leaderboard**", collection.Name),
+			Files: []*discord.File{
+				{
+					Name:   fmt.Sprintf("%s_leaderboard_%d.png", collection.ID, time.Now().Unix()),
+					Reader: bytes.NewReader(imageBytes),
+				},
 			},
+		})
+		if err != nil {
+			slog.Error("Failed to send image to Discord",
+				slog.String("type", "cmd"),
+				slog.String("name", "collection-progress"),
+				slog.String("user_id", userID),
+				slog.String("error", err.Error()))
 		}
-		return event.CreateMessage(discord.MessageCreate{Embeds: []discord.Embed{embed}})
+		return err
 	}
 }

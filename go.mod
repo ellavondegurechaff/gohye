@@ -5,6 +5,7 @@ go 1.23.0
 toolchain go1.24.2
 
 require (
+	github.com/chromedp/chromedp v0.11.2
 	github.com/disgoorg/disgo v0.18.7
 	github.com/disgoorg/paginator v0.0.0-20240407225836-102024af0cb8
 	github.com/disgoorg/snowflake/v2 v2.0.1
@@ -19,7 +20,14 @@ require (
 )
 
 require (
+	github.com/chromedp/cdproto v0.0.0-20241022234722-4d5d5faf59fb // indirect
+	github.com/chromedp/sysutil v1.1.0 // indirect
+	github.com/gobwas/httphead v0.1.0 // indirect
+	github.com/gobwas/pool v0.2.1 // indirect
+	github.com/gobwas/ws v1.4.0 // indirect
+	github.com/josharian/intern v1.0.0 // indirect
 	github.com/kylelemons/godebug v1.1.0 // indirect
+	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/stretchr/testify v1.10.0 // indirect
 )
 
