@@ -658,6 +658,15 @@ func (h *WorkHandler) HandleWorkAnswer(e *handler.ComponentEvent, correctIdx, ch
 		})
 	}
 
+	// Track quest progress
+	if h.bot.QuestTracker != nil {
+		go h.bot.QuestTracker.TrackWork(context.Background(), user.DiscordID)
+		// Track snowflakes earned
+		if rewards.Flakes > 0 {
+			go h.bot.QuestTracker.TrackSnowflakesEarned(context.Background(), user.DiscordID, rewards.Flakes, "")
+		}
+	}
+
 	// Process item drops
 	if len(rewards.ItemDrops) > 0 {
 		for _, itemID := range rewards.ItemDrops {

@@ -1,0 +1,23 @@
+DETAILS: starcount display for /levelup is wrong, a 3 star card gets displayed as 2 star card
+STEPS ON HOW TO REPRODUCE: /levelup a 3 star card
+
+ACTUAL RESULT: /levelup displays it as a 2 star card
+EXPECTED RESULT: /levelup should display it as a 3 star card in this case
+
+DETAILS: "Balanced Routine" quest doesnt track progress
+STEPS ON HOW TO REPRODUCE: /levelup any card and check /quests for weekly quests
+
+ACTUAL RESULT: after /levelup the progress stays at 0
+EXPECTED RESULT: after /levelup the progress should go up by 1
+
+DETAILS: "Level Addict" tracks general /levelup commands
+STEPS ON HOW TO REPRODUCE: /levelup any card and check /quests for monthly quests
+
+ACTUAL RESULT: any /levelup command gets tracked as progress
+EXPECTED RESULT: only maxing out a cards level should be tracked
+
+DETAILS: "Flake Farmer" doesnt track flake gain from quests
+STEPS ON HOW TO REPRODUCE: complete a quest, claim the rewards and check your /quests for progress
+
+ACTUAL RESULT: progress for "Flake Farmer" doesnt go up
+EXPECTED RESULT: progress should go up by the amount of flakes gained from claiming a quest

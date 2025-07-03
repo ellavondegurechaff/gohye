@@ -61,6 +61,14 @@ type Bot struct {
 	CollectionService        *services.CollectionService
 	CompletionChecker        *services.CompletionCheckerService
 	ItemRepository           repositories.ItemRepository
+	QuestRepository          repositories.QuestRepository
+	QuestService             *services.QuestService
+	QuestTracker             *services.QuestTracker
+}
+
+// GetQuestTracker returns the quest tracker instance
+func (b *Bot) GetQuestTracker() *services.QuestTracker {
+	return b.QuestTracker
 }
 
 func (b *Bot) SetupBot(listeners ...bot.EventListener) error {

@@ -2,6 +2,7 @@ package interfaces
 
 import (
 	"context"
+	"time"
 
 	"github.com/disgoorg/bot-template/bottemplate/database/models"
 	"github.com/disgoorg/bot-template/bottemplate/utils"
@@ -65,4 +66,23 @@ type CollectionServiceInterface interface {
 	
 	// GetRandomSampleCard returns a random card from the specified collection
 	GetRandomSampleCard(ctx context.Context, collectionID string) (*models.Card, error)
+}
+
+// QuestRepositoryInterface defines the interface for quest operations
+type QuestRepositoryInterface interface {
+	// Quest definitions
+	GetQuestDefinition(ctx context.Context, questID string) (*models.QuestDefinition, error)
+	GetQuestsByType(ctx context.Context, questType string) ([]*models.QuestDefinition, error)
+	GetRandomQuestsByTier(ctx context.Context, questType string, tier int, count int) ([]*models.QuestDefinition, error)
+	
+	// User progress
+	GetActiveQuests(ctx context.Context, userID string) ([]*models.UserQuestProgress, error)
+	GetQuestProgress(ctx context.Context, userID string, questID string) (*models.UserQuestProgress, error)
+	CreateQuestProgress(ctx context.Context, progress *models.UserQuestProgress) error
+	UpdateQuestProgress(ctx context.Context, progress *models.UserQuestProgress) error
+	GetUnclaimedQuests(ctx context.Context, userID string) ([]*models.UserQuestProgress, error)
+	
+	// Leaderboards
+	GetLeaderboard(ctx context.Context, periodType string, periodStart time.Time, limit int) ([]*models.QuestLeaderboard, error)
+	UpdateLeaderboard(ctx context.Context, entry *models.QuestLeaderboard) error
 }

@@ -1,0 +1,92 @@
+for the quest system Id keep it traditional and similar to the current one, just more polished and engaging.
+
+you get 3 daily quests, 3 weekly quests and 3 monthly quests. you will get 1 tier 1, 1 tier 2 and 1 tier 3 quest each.
+for a more engaging experience Id give them all names and change the system so the quests dont auto-complete themselves.
+
+With /quests you can scroll through your daily, weekly and monthly quests (3 pages each showing one category).
+If a quest is complete there will be a check-mark in front of it and the text will be green, uncompleteted quests will just have a normal color.
+
+if you want to get your rewards you can /questclaim to get your rewards.
+this command will display
+> You completed:
+> x daily quests
+> x weekly quests
+> x monthly quests
+> As a reward you gain x .
+Once a quest has been claimed, /quests will not show it anymore. /questclaim will only show the lines that are affected (for example if you only completed 1 daily quest, the weekly quests and monthly quests line wont pop up)
+
+For the quests themselves Id use 5 different ones per tier so we have a good amount of rotation.
+tier 1 daily:
+Workaholic - Use /work 3 times
+Gacha Beginner - /claim 5 cards
+Starter Auctioneer - Bid on 1 auction
+Levels on levels - /levelup any card 5 times
+Tap the Market - Auction 1 card
+rewards: 250 flakes, 20 vials, 25xp
+
+tier 2 daily:
+Pull Party - /claim 10 cards
+Fast Worker - Use /work 10 times
+Level Grinder - /levelup any card 15 times
+Market Moves - Bid on 3 auctions
+Rising Collector - /draw any card
+rewards: 400 flakes, 30 vials, 35xp
+
+tier 3 daily:
+Community Engager - Trade 1 card with another player
+Auction Hunter - Win 1 auction
+Flake Fan - Earn at least 1,500 flakes today 
+Full Routine - Complete 8 different commands today
+Combo Player - /claim 8 cards, /work 3 times, /levelup 10 times and auction 1 card
+rewards: 650 flakes, 50 vials, 50xp
+
+-----------
+
+tier 1 weekly:
+Week Starter - Use /work on 4 separate days
+Lucky Hands - /claim 30 cards
+Light Upgrades - Use /levelup to combine a card onto another one 3 times
+Lowkey Trader - Trade 3 cards with other players
+Collection Helper - /draw 4 different cards
+rewards: 800 flakes, 70 vials, 75xp
+
+tier 2 weekly:
+Middle Manager - Use /work 40 times total
+Regular Puller - /claim 50 cards
+Experienced Upgrader - /levelup any card 80 times
+Flipper	- Auction 5 cards
+Balanced Routine - /levelup any card on 6 different days this week
+rewards: 1200 flakes, 80 vials, 90xp
+
+tier 3 weekly:
+Weekly Champion	- Complete all 3 daily quests on 6 separate days
+Auction Veteran - Win 5 auctions
+Flake Farmer - Earn a total of 8,000 flakes this week
+Mega Leveler - /levelup any card to the max level
+Grind Hero - Use commands 150 times total this week
+rewards: 1500 flakes, 100 vials, 110xp
+
+-----------
+
+tier 1 monthly:
+Monthly Gacha Fan - /claim 150 cards
+Advanced Collector - /draw 15 different cards
+Consistent Worker - Use /work 300 times
+Light Auctioneer - Auction 15 cards
+rewards: 2000 flakes, 150 vials, 125xp
+
+tier 2 monthly:
+Claim Machine - /claim 250 cards
+Level Enthusiast - Use /levelup 200 times
+Weekly Finisher - Complete all 3 Weekly quests in 2 separate weeks
+Rising Trader - Earn 8,000 flakes from auctions
+Level Addict - /levelup 3 cards to the max level
+rewards: 3000 flakes, 200 vials, 175xp
+
+tier 3 monthly:
+Gacha God - /claim 300 cards
+Evolutionist - /ascend 4 times
+Ultimate Flipper - Earn 20,000 flakes through auctions
+All-Star Player	- Complete all Daily quests on 20 different days
+Monthly Conqueror - Complete all Weekly quests every week this month
+rewards: 5000 flakes, 250 vials, 200xp

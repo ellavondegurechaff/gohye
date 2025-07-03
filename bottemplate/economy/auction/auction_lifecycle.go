@@ -91,6 +91,12 @@ func (l *AuctionLifecycleManager) completeAuction(ctx context.Context, auctionID
 		return nil // Already completed or cancelled
 	}
 
+	// Fetch card details for notification
+	card, err := l.manager.cardRepo.GetByID(ctx, auction.CardID)
+	if err != nil {
+		return fmt.Errorf("failed to get card details: %w", err)
+	}
+
 	// Start transaction
 	tx, err := l.manager.repo.DB().BeginTx(ctx, nil)
 	if err != nil {
@@ -182,8 +188,8 @@ func (l *AuctionLifecycleManager) completeAuction(ctx context.Context, auctionID
 	l.manager.activeAuctions.Delete(auctionID)
 	l.manager.activeMu.Unlock()
 
-	// Send notifications
-	if err := l.manager.notifier.NotifyAuctionEnd(ctx, auction); err != nil {
+	// Send notifications with card details
+	if err := l.manager.notifier.NotifyAuctionEnd(ctx, auction, card); err != nil {
 		slog.Error("Failed to send auction end notification",
 			slog.String("auction_id", auction.AuctionID),
 			slog.String("error", err.Error()))
@@ -193,6 +199,16 @@ func (l *AuctionLifecycleManager) completeAuction(ctx context.Context, auctionID
 		slog.Int64("auction_id", auctionID),
 		slog.String("winner_id", auction.TopBidderID),
 		slog.Int64("final_price", auction.CurrentPrice))
+	
+	// Track quest progress for auction win if there was a winner
+	if auction.TopBidderID != "" && l.manager.questTrackerFunc != nil {
+		go l.manager.questTrackerFunc(auction.TopBidderID)
+	}
+	
+	// Track snowflakes earned from auction sale
+	if auction.TopBidderID != "" && l.manager.questSnowflakesTrackerFunc != nil {
+		go l.manager.questSnowflakesTrackerFunc(auction.SellerID, auction.CurrentPrice, "auction")
+	}
 
 	return nil
 }

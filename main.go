@@ -120,6 +120,7 @@ func main() {
 	b.EconomyStatsRepository = repositories.NewEconomyStatsRepository(b.DB.BunDB())
 	b.WishlistRepository = repositories.NewWishlistRepository(b.DB.BunDB())
 	b.ItemRepository = repositories.NewItemRepository(b.DB.BunDB())
+	b.QuestRepository = repositories.NewQuestRepository(b.DB.BunDB())
 
 	// Initialize collection cache for promo filtering
 	collections, err := b.CollectionRepository.GetAll(ctx)
@@ -148,6 +149,13 @@ func main() {
 		b.UserCardRepository,
 		b.CollectionRepository,
 	)
+
+	// Initialize Quest Service
+	b.QuestService = services.NewQuestService(
+		b.QuestRepository,
+		b.UserRepository,
+	)
+	b.QuestTracker = services.NewQuestTracker(b.QuestService)
 
 	// Then initialize Auction Manager with all required dependencies
 	// auctionRepo := repositories.NewAuctionRepository(b.DB.BunDB())
@@ -228,10 +236,79 @@ func main() {
 	b.PriceCalculator = priceCalc
 
 	b.ClaimManager = claim.NewManager(time.Second * 5)
-	
+
 	// Start claim cleanup process using background process manager
 	b.BackgroundProcessManager.StartProcess("claim-cleanup", "Cleans up expired claim sessions", func(ctx context.Context) {
 		b.ClaimManager.StartCleanupRoutine(ctx)
+	})
+
+	// Start quest rotation process
+	b.BackgroundProcessManager.StartProcess("quest-rotation", "Rotates expired quests and assigns new ones", func(ctx context.Context) {
+		ticker := time.NewTicker(1 * time.Hour)
+		defer ticker.Stop()
+
+		// Track last assignment times
+		lastDailyAssignment := time.Now().Truncate(24 * time.Hour)
+		lastWeeklyAssignment := getStartOfWeek(time.Now())
+		lastMonthlyAssignment := time.Date(time.Now().Year(), time.Now().Month(), 1, 0, 0, 0, 0, time.Now().Location())
+
+		for {
+			select {
+			case <-ticker.C:
+				now := time.Now()
+
+				// Check for daily reset (midnight)
+				currentDay := now.Truncate(24 * time.Hour)
+				if currentDay.After(lastDailyAssignment) {
+					slog.Info("Daily quest reset triggered")
+
+					// Delete expired daily quests
+					if err := b.QuestRepository.DeleteExpiredQuests(ctx); err != nil {
+						slog.Error("Failed to delete expired quests",
+							slog.Any("error", err))
+					}
+
+					// Assign new daily quests to all users
+					if err := assignDailyQuestsToAllUsers(ctx, b); err != nil {
+						slog.Error("Failed to assign daily quests",
+							slog.Any("error", err))
+					}
+
+					lastDailyAssignment = currentDay
+				}
+
+				// Check for weekly reset (Monday)
+				currentWeek := getStartOfWeek(now)
+				if currentWeek.After(lastWeeklyAssignment) {
+					slog.Info("Weekly quest reset triggered")
+
+					// Assign new weekly quests to all users
+					if err := assignWeeklyQuestsToAllUsers(ctx, b); err != nil {
+						slog.Error("Failed to assign weekly quests",
+							slog.Any("error", err))
+					}
+
+					lastWeeklyAssignment = currentWeek
+				}
+
+				// Check for monthly reset (1st of month)
+				currentMonth := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
+				if currentMonth.After(lastMonthlyAssignment) {
+					slog.Info("Monthly quest reset triggered")
+
+					// Assign new monthly quests to all users
+					if err := assignMonthlyQuestsToAllUsers(ctx, b); err != nil {
+						slog.Error("Failed to assign monthly quests",
+							slog.Any("error", err))
+					}
+
+					lastMonthlyAssignment = currentMonth
+				}
+
+			case <-ctx.Done():
+				return
+			}
+		}
 	})
 
 	h := handler.New()
@@ -379,6 +456,11 @@ func main() {
 	// Profile command
 	h.Command("/profile", handlers.WrapWithLogging("profile", system.ProfileHandler(b)))
 
+	// Quest commands
+	h.Command("/quests", handlers.WrapWithLogging("quests", system.QuestsHandler(b)))
+	h.Command("/questclaim", handlers.WrapWithLogging("questclaim", system.QuestClaimHandler(b)))
+	h.Component("/quest/", handlers.WrapComponentWithLogging("quest", system.QuestComponentHandler(b)))
+
 	// Claim commands
 	claimHandler := cards.NewClaimHandler(b)
 	h.Command("/claim", handlers.WrapWithLogging("claim", claimHandler.HandleCommand))
@@ -427,14 +509,24 @@ func main() {
 	// Store the auction manager in the bot instance
 	b.AuctionManager = auctionManager
 
+	// Set quest tracker for auction wins
+	if b.QuestTracker != nil {
+		auctionManager.SetQuestTracker(func(userID string) {
+			b.QuestTracker.TrackAuctionWin(context.Background(), userID)
+		})
+		auctionManager.SetQuestSnowflakesTracker(func(userID string, amount int64, source string) {
+			b.QuestTracker.TrackSnowflakesEarned(context.Background(), userID, amount, source)
+		})
+	}
+
 	// Initialize auction handler with the manager
-	auctionHandler := economyCommands.NewAuctionHandler(auctionManager, b.Client, b.CardRepository)
+	auctionHandler := economyCommands.NewAuctionHandler(b, auctionManager, b.Client, b.CardRepository)
 	auctionHandler.Register(h)
 
 	defer func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
-		
+
 		// Gracefully shutdown the bot and all background processes
 		if err := b.Shutdown(ctx); err != nil {
 			slog.Error("Error during bot shutdown", slog.Any("error", err))
@@ -471,13 +563,87 @@ func main() {
 	}
 
 	slog.Info("Bot is running. Press CTRL-C to exit.")
-	
+
 	// Setup signal handling for graceful shutdown
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-	
+
 	// Wait for shutdown signal
 	sig := <-sigChan
 	slog.Info("Received shutdown signal, initiating graceful shutdown...",
 		slog.String("signal", sig.String()))
+}
+
+// Helper functions for quest assignment
+
+func getStartOfWeek(t time.Time) time.Time {
+	// Get Monday as start of week
+	days := int(t.Weekday()) - 1
+	if days < 0 {
+		days = 6
+	}
+	return time.Date(t.Year(), t.Month(), t.Day()-days, 0, 0, 0, 0, t.Location())
+}
+
+func assignDailyQuestsToAllUsers(ctx context.Context, b *bottemplate.Bot) error {
+	// Get all users from database
+	users, err := b.UserRepository.GetUsers(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get users: %w", err)
+	}
+
+	slog.Info("Assigning daily quests to all users", slog.Int("user_count", len(users)))
+
+	for _, user := range users {
+		if err := b.QuestService.AssignDailyQuests(ctx, user.DiscordID); err != nil {
+			slog.Error("Failed to assign daily quests to user",
+				slog.String("user_id", user.DiscordID),
+				slog.Any("error", err))
+			// Continue with other users even if one fails
+		}
+	}
+
+	return nil
+}
+
+func assignWeeklyQuestsToAllUsers(ctx context.Context, b *bottemplate.Bot) error {
+	// Get all users from database
+	users, err := b.UserRepository.GetUsers(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get users: %w", err)
+	}
+
+	slog.Info("Assigning weekly quests to all users", slog.Int("user_count", len(users)))
+
+	for _, user := range users {
+		if err := b.QuestService.AssignWeeklyQuests(ctx, user.DiscordID); err != nil {
+			slog.Error("Failed to assign weekly quests to user",
+				slog.String("user_id", user.DiscordID),
+				slog.Any("error", err))
+			// Continue with other users even if one fails
+		}
+	}
+
+	return nil
+}
+
+func assignMonthlyQuestsToAllUsers(ctx context.Context, b *bottemplate.Bot) error {
+	// Get all users from database
+	users, err := b.UserRepository.GetUsers(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to get users: %w", err)
+	}
+
+	slog.Info("Assigning monthly quests to all users", slog.Int("user_count", len(users)))
+
+	for _, user := range users {
+		if err := b.QuestService.AssignMonthlyQuests(ctx, user.DiscordID); err != nil {
+			slog.Error("Failed to assign monthly quests to user",
+				slog.String("user_id", user.DiscordID),
+				slog.Any("error", err))
+			// Continue with other users even if one fails
+		}
+	}
+
+	return nil
 }

@@ -2,10 +2,12 @@ package auction
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"sync"
 	"time"
 
+	"github.com/disgoorg/bot-template/bottemplate/database/models"
 	economicUtils "github.com/disgoorg/bot-template/bottemplate/economy/utils"
 )
 
@@ -113,13 +115,29 @@ func (s *AuctionScheduler) cleanupExpiredAuctions(ctx context.Context) error {
 			continue
 		}
 
+		// Fetch card details for notification
+		card, err := s.manager.cardRepo.GetByID(auctionCtx, updatedAuction.CardID)
+		if err != nil {
+			slog.Error("Failed to get card details for auction notification",
+				slog.Int64("auction_id", auction.ID),
+				slog.Int64("card_id", updatedAuction.CardID),
+				slog.String("error", err.Error()))
+			// Continue anyway, we don't want to fail the auction completion just because we couldn't get card details
+			card = &models.Card{
+				ID:    updatedAuction.CardID,
+				Name:  fmt.Sprintf("Card #%d", updatedAuction.CardID),
+				ColID: "unknown",
+				Level: 1,
+			}
+		}
+
 		// Remove from active auctions map with proper locking
 		s.manager.activeMu.Lock()
 		s.manager.activeAuctions.Delete(auction.ID)
 		s.manager.activeMu.Unlock()
 
 		// Notify after successful completion with updated auction data
-		if err := s.manager.notifier.NotifyAuctionEnd(auctionCtx, updatedAuction); err != nil {
+		if err := s.manager.notifier.NotifyAuctionEnd(auctionCtx, updatedAuction, card); err != nil {
 			slog.Error("Failed to send auction end notification",
 				slog.String("auction_id", updatedAuction.AuctionID),
 				slog.String("error", err.Error()))

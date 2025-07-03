@@ -144,13 +144,33 @@ func (h *ClaimHandler) HandleCommand(e *handler.CommandEvent) error {
 		return utils.EH.CreateError(e, "Error", "Failed to fetch cards")
 	}
 
-	// Filter out promo, excluded, limited, and special collection cards
+	// List of collection IDs to exclude from normal claims
+	excludedCollections := map[string]bool{
+		"promos":      true,
+		"ggalbums":    true,
+		"bgalbums":    true,
+		"birthdays":   true,
+		"liveauction": true,
+		"mythical":    true,
+		"limited":     true,
+		"special":     true,
+		"lottery":     true,
+	}
+
+	// Filter out excluded collection cards
 	var cards []*models.Card
 	for _, card := range allCards {
-		// Check if card's collection is not promo, excluded, limited, or special
-		if colInfo, exists := utils.GetCollectionInfo(card.ColID); exists && !colInfo.IsPromo && !colInfo.IsExcluded && card.ColID != "limited" && card.ColID != "special" {
-			cards = append(cards, card)
+		// Skip if card is in excluded collections
+		if excludedCollections[card.ColID] {
+			continue
 		}
+		
+		// Also check collection info for promo flag
+		if colInfo, exists := utils.GetCollectionInfo(card.ColID); exists && colInfo.IsPromo {
+			continue
+		}
+		
+		cards = append(cards, card)
 	}
 
 	// Randomly pick cards (with effect modifications)
@@ -342,6 +362,11 @@ func (h *ClaimHandler) HandleCommand(e *handler.CommandEvent) error {
 		claimedCardIDs[i] = cardWithExp.card.ID
 	}
 	go h.bot.CompletionChecker.CheckCompletionForCards(context.Background(), userID, claimedCardIDs)
+
+	// Track quest progress
+	if h.bot.QuestTracker != nil {
+		go h.bot.QuestTracker.TrackCardClaim(context.Background(), userID, count)
+	}
 
 	return e.CreateMessage(discord.MessageCreate{
 		Embeds:     []discord.Embed{embed.Build()},

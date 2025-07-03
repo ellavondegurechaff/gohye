@@ -45,7 +45,7 @@ func (n *AuctionNotifier) NotifyOutbid(auctionID int64, outbidUserID string, new
 	n.logNotification(message)
 }
 
-func (n *AuctionNotifier) NotifyAuctionEnd(ctx context.Context, auction *models.Auction) error {
+func (n *AuctionNotifier) NotifyAuctionEnd(ctx context.Context, auction *models.Auction, card *models.Card) error {
 	n.mu.RLock()
 	if !n.initialized || n.client == nil {
 		n.mu.RUnlock()
@@ -55,18 +55,29 @@ func (n *AuctionNotifier) NotifyAuctionEnd(ctx context.Context, auction *models.
 	client := n.client
 	n.mu.RUnlock()
 
+	// Format card name for display
+	cardName := card.Name
+	if card.Level >= 1 && card.Level <= 5 {
+		// Add star rating to card name
+		stars := ""
+		for i := 0; i < card.Level; i++ {
+			stars += "★"
+		}
+		cardName = fmt.Sprintf("%s %s [%s]", stars, card.Name, card.ColID)
+	}
+
 	// Create DM for seller
 	sellerEmbed := discord.NewEmbedBuilder().
 		SetTitle("🏛️ Auction Completed").
 		SetColor(0x2b2d31)
 
 	if auction.TopBidderID != "" {
-		sellerEmbed.SetDescription(fmt.Sprintf("Your auction `%s` has ended with a final price of %d flakes!",
-			auction.AuctionID,
+		sellerEmbed.SetDescription(fmt.Sprintf("Your auction for **%s** has ended with a final price of %d flakes!",
+			cardName,
 			auction.CurrentPrice))
 	} else {
-		sellerEmbed.SetDescription(fmt.Sprintf("Your auction `%s` has ended with no bids. The card has been returned to your inventory.",
-			auction.AuctionID))
+		sellerEmbed.SetDescription(fmt.Sprintf("Your auction for **%s** has ended with no bids. The card has been returned to your inventory.",
+			cardName))
 	}
 
 	// Try to DM the seller
@@ -91,8 +102,8 @@ func (n *AuctionNotifier) NotifyAuctionEnd(ctx context.Context, auction *models.
 	if auction.TopBidderID != "" {
 		winnerEmbed := discord.NewEmbedBuilder().
 			SetTitle("🏛️ Auction Won!").
-			SetDescription(fmt.Sprintf("You won auction `%s` with a final price of %d flakes!",
-				auction.AuctionID,
+			SetDescription(fmt.Sprintf("You won the auction for **%s** with a final price of %d flakes!",
+				cardName,
 				auction.CurrentPrice)).
 			SetColor(0x2b2d31)
 

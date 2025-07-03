@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/disgoorg/bot-template/bottemplate"
 	"github.com/disgoorg/bot-template/bottemplate/config"
 	"github.com/disgoorg/bot-template/bottemplate/database/models"
 	"github.com/disgoorg/bot-template/bottemplate/database/repositories"
@@ -69,13 +70,15 @@ var AuctionCommand = discord.SlashCommandCreate{
 }
 
 type AuctionHandler struct {
+	bot      *bottemplate.Bot
 	manager  *auction.Manager
 	client   bot.Client
 	cardRepo repositories.CardRepository
 }
 
-func NewAuctionHandler(manager *auction.Manager, client bot.Client, cardRepo repositories.CardRepository) *AuctionHandler {
+func NewAuctionHandler(bot *bottemplate.Bot, manager *auction.Manager, client bot.Client, cardRepo repositories.CardRepository) *AuctionHandler {
 	return &AuctionHandler{
+		bot:      bot,
 		manager:  manager,
 		client:   client,
 		cardRepo: cardRepo,
@@ -205,6 +208,11 @@ func (h *AuctionHandler) HandleBid(event *handler.CommandEvent) error {
 			Content: fmt.Sprintf("Failed to place bid: %s", err),
 			Flags:   discord.MessageFlagEphemeral,
 		})
+	}
+
+	// Track quest progress for auction bid
+	if h.bot.QuestTracker != nil {
+		go h.bot.QuestTracker.TrackAuctionBid(context.Background(), event.User().ID.String())
 	}
 
 	return event.CreateMessage(discord.MessageCreate{

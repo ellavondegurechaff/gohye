@@ -1,166 +1,84 @@
 [{
-	"resource": "/C:/Users/Yuqi/Desktop/hyego/gohye/bottemplate/commands/economy/work.go",
-	"owner": "_generated_diagnostic_collection_name_#3",
+	"resource": "/C:/Users/Yuqi/Desktop/hyego/gohye/bottemplate/commands/system/quests.go",
+	"owner": "_generated_diagnostic_collection_name_#0",
 	"code": {
-		"value": "UnusedImport",
+		"value": "UndeclaredName",
 		"target": {
 			"$mid": 1,
 			"path": "/golang.org/x/tools/internal/typesinternal",
 			"scheme": "https",
 			"authority": "pkg.go.dev",
-			"fragment": "UnusedImport"
+			"fragment": "UndeclaredName"
 		}
 	},
 	"severity": 8,
-	"message": "\"strconv\" imported and not used",
+	"message": "undefined: services",
 	"source": "compiler",
-	"startLineNumber": 7,
-	"startColumn": 2,
-	"endLineNumber": 7,
-	"endColumn": 11,
-	"tags": [
-		1
+	"startLineNumber": 237,
+	"startColumn": 38,
+	"endLineNumber": 237,
+	"endColumn": 46
+},{
+	"resource": "/C:/Users/Yuqi/Desktop/hyego/gohye/bottemplate/commands/system/quests.go",
+	"owner": "_generated_diagnostic_collection_name_#0",
+	"code": {
+		"value": "DuplicateDecl",
+		"target": {
+			"$mid": 1,
+			"path": "/golang.org/x/tools/internal/typesinternal",
+			"scheme": "https",
+			"authority": "pkg.go.dev",
+			"fragment": "DuplicateDecl"
+		}
+	},
+	"severity": 8,
+	"message": "pluralize redeclared in this block",
+	"source": "compiler",
+	"startLineNumber": 279,
+	"startColumn": 6,
+	"endLineNumber": 279,
+	"endColumn": 15,
+	"relatedInformation": [
+		{
+			"startLineNumber": 162,
+			"startColumn": 6,
+			"endLineNumber": 162,
+			"endColumn": 15,
+			"message": "other declaration of pluralize",
+			"resource": "/C:/Users/Yuqi/Desktop/hyego/gohye/bottemplate/commands/system/questclaim.go"
+		}
+	]
+},{
+	"resource": "/C:/Users/Yuqi/Desktop/hyego/gohye/bottemplate/commands/system/questclaim.go",
+	"owner": "_generated_diagnostic_collection_name_#0",
+	"code": {
+		"value": "DuplicateDecl",
+		"target": {
+			"$mid": 1,
+			"path": "/golang.org/x/tools/internal/typesinternal",
+			"scheme": "https",
+			"authority": "pkg.go.dev",
+			"fragment": "DuplicateDecl"
+		}
+	},
+	"severity": 8,
+	"message": "pluralize redeclared in this block (see details)",
+	"source": "compiler",
+	"startLineNumber": 162,
+	"startColumn": 6,
+	"endLineNumber": 162,
+	"endColumn": 15,
+	"relatedInformation": [
+		{
+			"startLineNumber": 279,
+			"startColumn": 6,
+			"endLineNumber": 279,
+			"endColumn": 15,
+			"message": "",
+			"resource": "/C:/Users/Yuqi/Desktop/hyego/gohye/bottemplate/commands/system/quests.go"
+		}
 	],
 	"modelVersionId": 2
-},{
-	"resource": "/C:/Users/Yuqi/Desktop/hyego/gohye/bottemplate/commands/economy/work.go",
-	"owner": "_generated_diagnostic_collection_name_#3",
-	"code": {
-		"value": "WrongResultCount",
-		"target": {
-			"$mid": 1,
-			"path": "/golang.org/x/tools/internal/typesinternal",
-			"scheme": "https",
-			"authority": "pkg.go.dev",
-			"fragment": "WrongResultCount"
-		}
-	},
-	"severity": 8,
-	"message": "too many return values\n\thave (discord.ActionRowComponent, discord.ActionRowComponent)\n\twant (discord.ContainerComponent)",
-	"source": "compiler",
-	"startLineNumber": 291,
-	"startColumn": 41,
-	"endLineNumber": 291,
-	"endColumn": 70,
-	"modelVersionId": 2
-},{
-	"resource": "/C:/Users/Yuqi/Desktop/hyego/gohye/bottemplate/commands/economy/work.go",
-	"owner": "_generated_diagnostic_collection_name_#3",
-	"code": {
-		"value": "default",
-		"target": {
-			"$mid": 1,
-			"path": "/golang.org/x/tools/gopls/internal/analysis/fillreturns",
-			"scheme": "https",
-			"authority": "pkg.go.dev"
-		}
-	},
-	"severity": 4,
-	"message": "too many return values\n\thave (discord.ActionRowComponent, discord.ActionRowComponent)\n\twant (discord.ContainerComponent)",
-	"source": "fillreturns",
-	"startLineNumber": 291,
-	"startColumn": 41,
-	"endLineNumber": 291,
-	"endColumn": 52,
-	"modelVersionId": 2
-},{
-	"resource": "/C:/Users/Yuqi/Desktop/hyego/gohye/bottemplate/commands/economy/fuse.go",
-	"owner": "_generated_diagnostic_collection_name_#3",
-	"code": {
-		"value": "MissingLitField",
-		"target": {
-			"$mid": 1,
-			"path": "/golang.org/x/tools/internal/typesinternal",
-			"scheme": "https",
-			"authority": "pkg.go.dev",
-			"fragment": "MissingLitField"
-		}
-	},
-	"severity": 8,
-	"message": "unknown field Animated in struct literal of type models.UserCard",
-	"source": "compiler",
-	"startLineNumber": 241,
-	"startColumn": 4,
-	"endLineNumber": 241,
-	"endColumn": 12
-},{
-	"resource": "/C:/Users/Yuqi/Desktop/hyego/gohye/bottemplate/commands/economy/fuse.go",
-	"owner": "_generated_diagnostic_collection_name_#3",
-	"code": {
-		"value": "MissingLitField",
-		"target": {
-			"$mid": 1,
-			"path": "/golang.org/x/tools/internal/typesinternal",
-			"scheme": "https",
-			"authority": "pkg.go.dev",
-			"fragment": "MissingLitField"
-		}
-	},
-	"severity": 8,
-	"message": "unknown field ObtainedAt in struct literal of type models.UserCard",
-	"source": "compiler",
-	"startLineNumber": 242,
-	"startColumn": 4,
-	"endLineNumber": 242,
-	"endColumn": 14
-},{
-	"resource": "/C:/Users/Yuqi/Desktop/hyego/gohye/bottemplate/commands/economy/fuse.go",
-	"owner": "_generated_diagnostic_collection_name_#3",
-	"code": {
-		"value": "MissingFieldOrMethod",
-		"target": {
-			"$mid": 1,
-			"path": "/golang.org/x/tools/internal/typesinternal",
-			"scheme": "https",
-			"authority": "pkg.go.dev",
-			"fragment": "MissingFieldOrMethod"
-		}
-	},
-	"severity": 8,
-	"message": "card.URL undefined (type *models.Card has no field or method URL)",
-	"source": "compiler",
-	"startLineNumber": 290,
-	"startColumn": 10,
-	"endLineNumber": 290,
-	"endColumn": 13
-},{
-	"resource": "/C:/Users/Yuqi/Desktop/hyego/gohye/bottemplate/commands/economy/fuse.go",
-	"owner": "_generated_diagnostic_collection_name_#3",
-	"code": {
-		"value": "MissingFieldOrMethod",
-		"target": {
-			"$mid": 1,
-			"path": "/golang.org/x/tools/internal/typesinternal",
-			"scheme": "https",
-			"authority": "pkg.go.dev",
-			"fragment": "MissingFieldOrMethod"
-		}
-	},
-	"severity": 8,
-	"message": "card.URL undefined (type *models.Card has no field or method URL)",
-	"source": "compiler",
-	"startLineNumber": 291,
-	"startColumn": 56,
-	"endLineNumber": 291,
-	"endColumn": 59
-},{
-	"resource": "/C:/Users/Yuqi/Desktop/hyego/gohye/bottemplate/commands/economy/fuse.go",
-	"owner": "_generated_diagnostic_collection_name_#3",
-	"code": {
-		"value": "WrongArgCount",
-		"target": {
-			"$mid": 1,
-			"path": "/golang.org/x/tools/internal/typesinternal",
-			"scheme": "https",
-			"authority": "pkg.go.dev",
-			"fragment": "WrongArgCount"
-		}
-	},
-	"severity": 8,
-	"message": "not enough arguments in call to h.bot.SpacesService.GetCardImageURL\n\thave (*models.Card)\n\twant (string, string, int, string)",
-	"source": "compiler",
-	"startLineNumber": 291,
-	"startColumn": 59,
-	"endLineNumber": 291,
-	"endColumn": 59
 }]
+
+

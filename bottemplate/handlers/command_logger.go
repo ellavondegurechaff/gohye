@@ -1,11 +1,13 @@
 package handlers
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"time"
 
 	"github.com/disgoorg/bot-template/bottemplate/config"
+	"github.com/disgoorg/bot-template/bottemplate/services"
 	"github.com/disgoorg/disgo/handler"
 )
 
@@ -88,6 +90,32 @@ func WrapWithLogging(name string, h handler.CommandHandler) handler.CommandHandl
 			)
 			return fmt.Errorf("command timed out after 10 seconds")
 		}
+	}
+}
+
+// WrapWithLoggingAndQuests wraps a command handler with logging and quest tracking
+func WrapWithLoggingAndQuests(name string, h handler.CommandHandler, b interface{ GetQuestTracker() *services.QuestTracker }) handler.CommandHandler {
+	return func(e *handler.CommandEvent) error {
+		// First apply the logging wrapper
+		loggedHandler := WrapWithLogging(name, h)
+		
+		// Execute the command
+		err := loggedHandler(e)
+		
+		// Track command for quests if successful
+		if err == nil {
+			if tracker := b.GetQuestTracker(); tracker != nil {
+				// Run quest tracking in background to not slow down response
+				slog.Debug("Tracking command for quest progress",
+					slog.String("user_id", e.User().ID.String()),
+					slog.String("command", name))
+				go tracker.TrackCommand(context.Background(), e.User().ID.String(), name)
+			} else {
+				slog.Warn("Quest tracker is nil, cannot track command")
+			}
+		}
+		
+		return err
 	}
 }
 

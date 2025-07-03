@@ -96,6 +96,11 @@ func DailyHandler(b *bottemplate.Bot) handler.CommandHandler {
 			return utils.EH.CreateErrorEmbed(e, "Failed to claim daily reward. Please try again later.")
 		}
 
+		// Track quest progress for snowflakes earned
+		if b.QuestTracker != nil {
+			go b.QuestTracker.TrackSnowflakesEarned(ctx, user.DiscordID, reward, "")
+		}
+		
 		// Build description with effect feedback
 		description := fmt.Sprintf("You have claimed your daily reward of **%d** credits!", reward)
 		

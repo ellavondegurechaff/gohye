@@ -41,46 +41,7 @@ type DB struct {
 	bunDB *bun.DB
 }
 
-type QueryLogger struct {
-	Operation string
-	Query     string
-	Args      []interface{}
-	StartTime time.Time
-}
 
-func newQueryLogger(operation, query string, args ...interface{}) *QueryLogger {
-	return &QueryLogger{
-		Operation: operation,
-		Query:     query,
-		Args:      args,
-		StartTime: time.Now(),
-	}
-}
-
-func (l *QueryLogger) log(err error, rowsAffected int64) {
-	duration := time.Since(l.StartTime)
-
-	if err != nil {
-		slog.Error("Query failed",
-			slog.String("type", "db"),
-			slog.String("operation", l.Operation),
-			slog.String("query", l.Query),
-			slog.Any("args", l.Args),
-			slog.Duration("took", duration),
-			slog.Any("error", err),
-		)
-		return
-	}
-
-	slog.Info("Query executed",
-		slog.String("type", "db"),
-		slog.String("operation", l.Operation),
-		slog.String("query", l.Query),
-		slog.Any("args", l.Args),
-		slog.Duration("took", duration),
-		slog.Int64("affected_rows", rowsAffected),
-	)
-}
 
 func New(ctx context.Context, cfg DBConfig) (*DB, error) {
 	// Add retry logic for initial connection
@@ -88,7 +49,7 @@ func New(ctx context.Context, cfg DBConfig) (*DB, error) {
 	var err error
 
 	for i := 0; i < defaultMaxRetries; i++ {
-		conn, err = net.DialTimeout("tcp", fmt.Sprintf("%s:%d", cfg.Host, cfg.Port), defaultConnTimeout)
+		conn, err = net.DialTimeout("tcp", net.JoinHostPort(cfg.Host, fmt.Sprintf("%d", cfg.Port)), defaultConnTimeout)
 		if err == nil {
 			break
 		}
@@ -251,6 +212,11 @@ func (db *DB) InitializeSchema(ctx context.Context) error {
 		(*models.CardMarketHistory)(nil),
 		(*models.Item)(nil),
 		(*models.UserItem)(nil),
+		// Quest system tables
+		(*models.QuestChain)(nil),
+		(*models.QuestDefinition)(nil),
+		(*models.UserQuestProgress)(nil),
+		(*models.QuestLeaderboard)(nil),
 	}
 
 	// Create tables using Bun
@@ -297,6 +263,15 @@ func (db *DB) InitializeSchema(ctx context.Context) error {
 		// Item system indexes
 		"CREATE INDEX IF NOT EXISTS idx_user_items_user_id ON user_items(user_id);",
 		"CREATE INDEX IF NOT EXISTS idx_items_type ON items(type);",
+		// Quest system indexes
+		"CREATE INDEX IF NOT EXISTS idx_quest_definitions_type_tier ON quest_definitions(type, tier);",
+		"CREATE INDEX IF NOT EXISTS idx_quest_definitions_quest_id ON quest_definitions(quest_id);",
+		"CREATE INDEX IF NOT EXISTS idx_user_quest_progress_user_id ON user_quest_progress(user_id);",
+		"CREATE INDEX IF NOT EXISTS idx_user_quest_progress_user_quest ON user_quest_progress(user_id, quest_id);",
+		"CREATE INDEX IF NOT EXISTS idx_user_quest_progress_completed ON user_quest_progress(user_id, completed) WHERE completed = true;",
+		"CREATE INDEX IF NOT EXISTS idx_user_quest_progress_expires ON user_quest_progress(expires_at);",
+		"CREATE INDEX IF NOT EXISTS idx_quest_leaderboards_period ON quest_leaderboards(period_type, period_start);",
+		"CREATE INDEX IF NOT EXISTS idx_quest_leaderboards_user ON quest_leaderboards(user_id, period_type, period_start);",
 	}
 
 	for _, idx := range indexes {
@@ -308,6 +283,11 @@ func (db *DB) InitializeSchema(ctx context.Context) error {
 	// Initialize item data
 	if err := db.InitializeItemData(ctx); err != nil {
 		return fmt.Errorf("failed to initialize item data: %w", err)
+	}
+
+	// Initialize quest data
+	if err := db.InitializeQuestData(ctx); err != nil {
+		return fmt.Errorf("failed to initialize quest data: %w", err)
 	}
 
 	return nil
@@ -342,6 +322,37 @@ func (db *DB) MigrateSchema(ctx context.Context) error {
 		if _, err := db.ExecWithLog(ctx, sql); err != nil {
 			return fmt.Errorf("failed to add user_effects column: %w", err)
 		}
+	}
+
+	// Add metadata column to user_quest_progress table if it doesn't exist
+	questMetadataSQL := `
+		ALTER TABLE user_quest_progress 
+		ADD COLUMN IF NOT EXISTS metadata JSONB;
+	`
+	
+	if _, err := db.ExecWithLog(ctx, questMetadataSQL); err != nil {
+		return fmt.Errorf("failed to add metadata column to user_quest_progress: %w", err)
+	}
+
+	// Add unique constraint to quest_leaderboards for upsert operations
+	questLeaderboardConstraintSQL := `
+		DO $$ 
+		BEGIN
+			IF NOT EXISTS (
+				SELECT 1 FROM pg_constraint 
+				WHERE conname = 'quest_leaderboards_unique_user_period'
+			) THEN
+				ALTER TABLE quest_leaderboards 
+				ADD CONSTRAINT quest_leaderboards_unique_user_period 
+				UNIQUE (period_type, period_start, user_id);
+			END IF;
+		END $$;
+	`
+	
+	if _, err := db.ExecWithLog(ctx, questLeaderboardConstraintSQL); err != nil {
+		// Log but don't fail - constraint might already exist with different name
+		slog.Warn("Failed to add unique constraint to quest_leaderboards (may already exist)",
+			slog.Any("error", err))
 	}
 
 	// Fix JSONB fields in users table that might be stored as strings

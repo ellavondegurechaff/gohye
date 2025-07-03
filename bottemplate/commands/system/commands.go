@@ -10,4 +10,6 @@ var Commands = []discord.ApplicationCommandCreate{
 	CraftEffect,
 	Help,
 	Profile,
+	QuestsCommand,
+	QuestClaimCommand,
 }

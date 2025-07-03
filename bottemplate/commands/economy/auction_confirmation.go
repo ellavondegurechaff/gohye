@@ -60,6 +60,11 @@ func (h *AuctionHandler) HandleConfirmation(event *handler.ComponentEvent) error
 		cardName = card.Name
 	}
 
+	// Track quest progress for auction creation
+	if h.bot.QuestTracker != nil {
+		go h.bot.QuestTracker.TrackAuctionCreate(context.Background(), event.User().ID.String())
+	}
+
 	// Success message
 	return event.UpdateMessage(discord.MessageUpdate{
 		Embeds: &[]discord.Embed{

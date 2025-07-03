@@ -99,6 +99,18 @@ func (c *LevelUpCommand) Handle(event *handler.CommandEvent) error {
 	// Check for collection completion after successful level up
 	go c.bot.CompletionChecker.CheckCompletionForCards(context.Background(), event.User().ID.String(), []int64{userCard.CardID})
 
+	// Track quest progress
+	if c.bot.QuestTracker != nil {
+		// Check if card reached level 5 (max level)
+		reachedMaxLevel := result.NewLevel == 5 && userCard.Level < 5
+		metadata := map[string]interface{}{
+			"is_max_level": reachedMaxLevel,
+			"new_level":    result.NewLevel,
+			"old_level":    userCard.Level,
+		}
+		go c.bot.QuestTracker.TrackCardLevelUpWithMetadata(context.Background(), event.User().ID.String(), 1, metadata)
+	}
+
 	// Get card details for name display
 	cardDetails, err := c.cardRepo.GetByID(ctx, userCard.CardID)
 	if err != nil {
@@ -118,7 +130,7 @@ func (c *LevelUpCommand) Handle(event *handler.CommandEvent) error {
 	cardInfo := utils.GetCardDisplayInfo(
 		cardDetails.Name,
 		cardDetails.ColID,
-		result.NewLevel,
+		userCard.Level,
 		utils.GetGroupType(cardDetails.Tags),
 		utils.SpacesConfig{
 			Bucket:   c.bot.SpacesService.GetBucket(),
@@ -154,8 +166,8 @@ func (c *LevelUpCommand) Handle(event *handler.CommandEvent) error {
 			"```",
 			cardInfo.FormattedName,
 			cardInfo.FormattedCollection,
-			result.NewLevel,
-			utils.GetPromoRarityDisplay(cardDetails.ColID, result.NewLevel),
+			userCard.Level,
+			utils.GetPromoRarityDisplay(cardDetails.ColID, userCard.Level),
 			expBar,
 			expPercentage,
 			result.ExpGained,
@@ -208,6 +220,20 @@ func (c *LevelUpCommand) handleCombine(event *handler.CommandEvent, mainCard *mo
 
 	// Check for collection completion after successful card combination
 	go c.bot.CompletionChecker.CheckCompletionForCards(context.Background(), event.User().ID.String(), []int64{mainCard.CardID})
+
+	// Track quest progress for combine
+	if c.bot.QuestTracker != nil {
+		// Check if card reached level 5 (max level) after combination
+		oldLevel := mainCard.Level - (result.NewLevel - mainCard.Level)  // Calculate old level before combine
+		reachedMaxLevel := result.NewLevel == 5 && oldLevel < 5
+		metadata := map[string]interface{}{
+			"is_max_level": reachedMaxLevel,
+			"new_level":    result.NewLevel,
+			"old_level":    oldLevel,
+			"action":       "combine",
+		}
+		go c.bot.QuestTracker.TrackCardLevelUpWithMetadata(context.Background(), event.User().ID.String(), 1, metadata)
+	}
 
 	// Get card details for display
 	cardCombineDetails, err := c.cardRepo.GetByID(ctx, mainCard.CardID)

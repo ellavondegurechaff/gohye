@@ -39,6 +39,10 @@ type Manager struct {
 	lifecycleManager  *AuctionLifecycleManager
 	scheduler         *AuctionScheduler
 	helpers           *AuctionHelpers
+	
+	// Quest tracking
+	questTrackerFunc func(userID string)
+	questSnowflakesTrackerFunc func(userID string, amount int64, source string)
 }
 
 func NewManager(repo repositories.AuctionRepository, userCardRepo repositories.UserCardRepository, cardRepo repositories.CardRepository, client bot.Client) *Manager {
@@ -324,6 +328,16 @@ func (m *Manager) GetAllActiveAuctions(ctx context.Context) ([]*models.Auction, 
 	}
 
 	return activeAuctions, nil
+}
+
+// SetQuestTracker sets the quest tracking function for auction wins
+func (m *Manager) SetQuestTracker(trackerFunc func(userID string)) {
+	m.questTrackerFunc = trackerFunc
+}
+
+// SetQuestSnowflakesTracker sets the quest tracking function for snowflakes earned
+func (m *Manager) SetQuestSnowflakesTracker(trackerFunc func(userID string, amount int64, source string)) {
+	m.questSnowflakesTrackerFunc = trackerFunc
 }
 
 // Shutdown gracefully stops all auction manager processes
