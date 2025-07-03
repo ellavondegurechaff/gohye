@@ -1,0 +1,120 @@
+the new effect system doesnt rely on one single tier of an effect. You can upgrade your passive effects to make them stronger and manage them based on your own focus. 
+Since lemons are gone now you wont have to buy additional slots, you can equip all passive effects without buying extra slots.
+The new system doesnt use "passive effects" and "active effects" anymore, it refers to them as "effects" and "items".
+in the shop you have 2 different categories for them ("effects" and "items")
+
+with /effects you can see all the effects you currently have equipped as well as their tier and your progress on the requirement to upgrade.
+with /effect info "effect:" you can see what the selected effect does and what upgrading their tier will do.
+with /effect upgrade "effect:" you can upgrade the selected effect to its next tier.
+
+In order to upgrade an effect you need to fulfill certain requirements based on the effect. The requirement will have something to do with what the effect does. After certain thresholds you can use /effect upgrade to increase the tier of your effect. Each effect has 5 different tiers.
+
+effects:
+Effect Name - Details - Price
+
+Cake Day - get extra flakes per daily for every claim you did - 15,000 flakes
+get extra 10 / 25 / 45 / 70 / 100 flakes per claim
+upgrade threshold: claim 250 / 500 / 1000 / 1500 cards
+
+Holy Grail - get extra vials per liquify - 15,000 flakes
+get extra 5 / 10 / 20 / 40 / 70 vials per liquify
+upgrade threshold: liquify 70 / 150 / 250 / 500 cards
+
+Wolf Of Hyejoo - gain cashback from winning auctions - 25,000 flakes
+2% / 4% / 6% / 8% / 10% cashback from winning auctions
+upgrade threshold: spend 30,000 / 75,000 / 150,000 / 350,000 on auctions
+
+Lamb Of Hyejoo - gain extra flakes from selling cards on auction - 25,000 flakes
+2% / 4% / 6% / 8% / 10% extra flakes from selling cards on auction
+upgrade threshold: gain 30,000 / 75,000 / 150,000 / 350,000 from auctions
+
+Cherry Blossom - reduce forge and ascend cost - 15,000 flakes
+20% / 30% / 40% / 50% cheaper forge and ascend cost
+upgrade treshold: forge 20 / forge 50 / ascend 5 / ascend 10 times
+
+Ruler Jeanne - reduce daily cooldown - 20,000
+19,5h / 19h / 18,5h / 18h / 17h /daily cooldown
+upgrade threshold: daily 20 / 40 / 65 / 85 times
+
+Youth Youth By Young - gain extra rewards from work - 15,000 flakes
+10% / 20% / 30% / 40% / 50% extra rewards from work
+upgrade threshold: work 150 / 300 / 500 / 750 times
+
+Kiss Later - gain extra xp from levelup - 15,000 flakes
+5% / 10% / 15% / 20% / 30% extra xp from levelup
+upgrade threshold: levelup a card 150 / 300 / 450 / 600 / 850 times
+
+-------
+
+Items can be viewed in your inventory under the category "items", it shows the item name as well as if the item is ready to be used or if it is on cooldown. It also shows how many uses you have left.
+You can not purchase items directly. When buying an item, you receive a recipe for it. In order to gain the item you have to collect all cards listed in the recipe.
+Use /item use "item:" "extra_argument:" to consume one use of the item.
+
+items:
+Item Name - Details - Price
+
+Space Unity - Gives random unique card from a non-promo collection of choice, excludes 4 and 5 star cards - 12,000 flakes
+recipe: 2x 2 star card, 2x 3 star card
+cooldown: 40h per use
+uses: 8
+
+Judgement Day - Can be used as any other item - 16,000 flakes
+recipe: 2x 2 star card, 3x 3 star card
+cooldown: 48h per use
+uses: 14
+
+Walpurgis Night - grants an extra draw - 10,000 flakes
+recipe: 1x 1 star card, 1x 2 star card, 2x 3 star card
+cooldown: 24h per use
+uses: 20
+
+Claim Recall - claim cost get reset by 4 claims - 10,000 flakes
+recipe: 3x 1 star card, 2x 2 star card
+cooldown: 15h per use
+uses: 20
+
+------
+
+additional idea for wider usage of vials:
+extra shop page for card boosters
+
+You can use vials to purchase card booster packs that contain 5 cards
+there are 3 different booster packs in the shop, they reset every 24 hours
+every user can buy 1 of each, then the booster slot is empty for them
+
+Booster packs:
+Booster Name - Details - Price
+
+Promo Booster - chance to contain a promo card - 500 vials
+normal col 1 star card: 35%
+normal col 2 star card: 35%
+normal col 3 star card: 10%
+normal col 4 star card: 2,5%
+lottery 1-4 star card: 10%
+random promo card: 7,5%
+(only 1 promo card per booster possible)
+
+Lottery Booster - chance to contain lottery cards - 250 vials
+random 1 star lottery card: 15%
+random 2 star lottery card: 20%
+random 3 star lottery card: 10%
+random 4 star lottery card: 5%
+normal col 1 star card: 20%
+normal col 2 star card: 20%
+normal col 3 star card: 10%
+
+Special Booster - chance to contain a special card - 750 vials 
+normal col 1 star card: 40%
+normal col 2 star card: 35%
+normal col 3 star card: 17,5%
+normal col 4 star card: 6%
+random special card: 1,5%
+
+Album Booster - chance to contain a random album card - 750 vials
+normal col 1 star card: 40%
+normal col 2 star card: 35%
+normal col 3 star card: 15%
+normal col 4 star card: 5%
+random special card: 5%
+
+
