@@ -64,6 +64,11 @@ func NewManager(
 	return manager
 }
 
+// GetRepository returns the effect repository
+func (m *Manager) GetRepository() repositories.EffectRepository {
+	return m.repo
+}
+
 // RegisterEffect registers an effect handler with the manager
 func (m *Manager) RegisterEffect(handler EffectHandler) error {
 	return m.registry.RegisterEffect(handler)
@@ -246,7 +251,7 @@ func (m *Manager) UseActiveEffect(ctx context.Context, userID string, effectID s
 	// Effect was used successfully - decrease uses and handle lifecycle
 	userEffect.Uses--
 	userEffect.UpdatedAt = time.Now()
-	
+
 	// If no uses left, deactivate the effect
 	if userEffect.Uses <= 0 {
 		userEffect.Active = false
@@ -308,7 +313,7 @@ func (m *Manager) ActivatePassiveEffect(ctx context.Context, userID string, effe
 	// Set activation timestamp and expiration
 	now := time.Now()
 	expiry := now.Add(time.Duration(staticEffect.Duration*24) * time.Hour) // Duration is in days for passive effects
-	
+
 	userEffect.Active = true
 	userEffect.ExpiresAt = &expiry
 	userEffect.Notified = false
@@ -515,14 +520,14 @@ func (m *Manager) createUserEffect(ctx context.Context, userID string, effectID 
 
 	// Create new effect entry
 	userEffect := &models.UserEffect{
-		UserID:      userID,
-		EffectID:    effectID,
-		IsRecipe:    false,
-		Active:      !staticEffect.Passive,
-		Uses:        0,
-		Notified:    true,
-		CreatedAt:   time.Now(),
-		UpdatedAt:   time.Now(),
+		UserID:    userID,
+		EffectID:  effectID,
+		IsRecipe:  false,
+		Active:    !staticEffect.Passive,
+		Uses:      0,
+		Notified:  true,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
 	}
 
 	if staticEffect.Passive {
@@ -677,4 +682,122 @@ func (m *Manager) GetUserRecipeStatus(ctx context.Context, userID string, effect
 	}
 
 	return cards, nil
+}
+
+// Tier Management methods
+
+// GetEffectTierValue returns the current tier value for an effect
+func (m *Manager) GetEffectTierValue(ctx context.Context, userID string, effectID string) (int, error) {
+	// Get user effect
+	userEffect, err := m.repo.GetUserEffect(ctx, userID, effectID)
+	if err != nil {
+		return 0, err
+	}
+
+	// Get effect definition
+	effectData := GetEffectItemByID(effectID)
+	if effectData == nil || effectData.TierData == nil {
+		// Effect doesn't have tier system
+		return 0, nil
+	}
+
+	// Return value for current tier
+	tierIndex := userEffect.Tier - 1
+	if tierIndex >= 0 && tierIndex < len(effectData.TierData.Values) {
+		return effectData.TierData.Values[tierIndex], nil
+	}
+
+	return 0, fmt.Errorf("invalid tier index")
+}
+
+// UpdateEffectProgress updates progress for a tiered effect
+func (m *Manager) UpdateEffectProgress(ctx context.Context, userID string, effectID string, increment int) error {
+	// Get effect definition to check if it has tiers
+	effectData := GetEffectItemByID(effectID)
+	if effectData == nil || effectData.TierData == nil {
+		// Effect doesn't have tier system, skip
+		return nil
+	}
+
+	// Update progress in database
+	err := m.repo.UpdateEffectProgress(ctx, userID, effectID, increment)
+	if err != nil {
+		return fmt.Errorf("failed to update effect progress: %w", err)
+	}
+
+	// Emit progress event
+	m.emitEvent(EffectEvent{
+		Type:      "progress_updated",
+		UserID:    userID,
+		EffectID:  effectID,
+		Timestamp: time.Now(),
+		Data: map[string]interface{}{
+			"increment": increment,
+		},
+	})
+
+	return nil
+}
+
+// CheckEffectUpgrade checks if an effect is ready for tier upgrade
+func (m *Manager) CheckEffectUpgrade(ctx context.Context, userID string, effectID string) (bool, int, int, error) {
+	// Get user effect
+	userEffect, err := m.repo.GetUserEffect(ctx, userID, effectID)
+	if err != nil {
+		return false, 0, 0, err
+	}
+
+	// Get effect definition
+	effectData := GetEffectItemByID(effectID)
+	if effectData == nil || effectData.TierData == nil {
+		return false, 0, 0, fmt.Errorf("effect does not support tiers")
+	}
+
+	// Check if at max tier
+	if userEffect.Tier >= 5 {
+		return false, userEffect.Progress, 0, nil
+	}
+
+	// Get threshold for next tier
+	thresholdIndex := userEffect.Tier - 1
+	if thresholdIndex >= 0 && thresholdIndex < len(effectData.TierData.Thresholds) {
+		threshold := effectData.TierData.Thresholds[thresholdIndex]
+		return userEffect.Progress >= threshold, userEffect.Progress, threshold, nil
+	}
+
+	return false, 0, 0, fmt.Errorf("invalid tier configuration")
+}
+
+// UpgradeEffectTier upgrades an effect to the next tier
+func (m *Manager) UpgradeEffectTier(ctx context.Context, userID string, effectID string) error {
+	// Check if upgrade is possible
+	canUpgrade, _, _, err := m.CheckEffectUpgrade(ctx, userID, effectID)
+	if err != nil {
+		return err
+	}
+
+	if !canUpgrade {
+		return fmt.Errorf("effect is not ready for upgrade")
+	}
+
+	// Perform upgrade
+	err = m.repo.UpgradeEffectTier(ctx, userID, effectID)
+	if err != nil {
+		return fmt.Errorf("failed to upgrade effect tier: %w", err)
+	}
+
+	// Emit upgrade event
+	m.emitEvent(EffectEvent{
+		Type:      "tier_upgraded",
+		UserID:    userID,
+		EffectID:  effectID,
+		Timestamp: time.Now(),
+	})
+
+	return nil
+}
+
+// GetUserEffectsSorted returns user effects sorted by tier
+func (m *Manager) GetUserEffectsSorted(ctx context.Context, userID string) ([]*models.UserEffect, error) {
+	return m.repo.GetUserEffectsByTier(ctx, userID)
 }

@@ -77,10 +77,10 @@ func (h *InventoryHandler) handleList(event *handler.CommandEvent) error {
 		title = "📦 Your Inventory - Recipes"
 	} else if len(actives) > 0 {
 		currentItems = actives
-		title = "📦 Your Inventory - Active Effects"
+		title = "📦 Your Inventory - Items"
 	} else {
 		currentItems = passives
-		title = "📦 Your Inventory - Passive Effects"
+		title = "📦 Your Inventory - Effects"
 	}
 
 	if len(currentItems) == 0 {
@@ -98,7 +98,7 @@ func (h *InventoryHandler) handleList(event *handler.CommandEvent) error {
 			selectedCategory = "passive"
 		}
 	}
-	
+
 	components := []discord.ContainerComponent{
 		createInventoryCategories(selectedCategory),
 		createInventoryItems(currentItems, selectedCategory),
@@ -135,16 +135,16 @@ func createInventoryCategories(selectedValue string) discord.ContainerComponent 
 				Default:     selectedValue == "recipe",
 			},
 			discord.StringSelectMenuOption{
-				Label:       "Active Effects",
+				Label:       "Items",
 				Value:       "active",
-				Description: "View your active effect items",
+				Description: "View your consumable items",
 				Emoji:       &discord.ComponentEmoji{Name: "⚔️"},
 				Default:     selectedValue == "active",
 			},
 			discord.StringSelectMenuOption{
-				Label:       "Passive Effects",
+				Label:       "Effects",
 				Value:       "passive",
-				Description: "View your passive effect items",
+				Description: "View your permanent effects",
 				Emoji:       &discord.ComponentEmoji{Name: "🛡️"},
 				Default:     selectedValue == "passive",
 			},
@@ -309,10 +309,10 @@ func (h *InventoryHandler) handleCategorySelect(event *handler.ComponentEvent) e
 		title = "📦 Your Inventory - Recipes"
 	case "active":
 		currentItems = actives
-		title = "📦 Your Inventory - Active Effects"
+		title = "📦 Your Inventory - Items"
 	case "passive":
 		currentItems = passives
-		title = "📦 Your Inventory - Passive Effects"
+		title = "📦 Your Inventory - Effects"
 	}
 
 	if len(currentItems) == 0 {
@@ -407,23 +407,23 @@ func (h *InventoryHandler) createMaterialsEmbed(userItems []*models.UserItem, to
 	var description strings.Builder
 	description.WriteString("```ansi\n")
 	description.WriteString("\u001b[1;36m🎁 Crafting Materials\u001b[0m\n\n")
-	
+
 	hasItems := false
 	for _, userItem := range userItems {
 		if userItem.Item != nil && userItem.Quantity > 0 {
 			hasItems = true
-			description.WriteString(fmt.Sprintf("%s %s x%d\n", 
-				userItem.Item.Emoji, 
-				userItem.Item.Name, 
+			description.WriteString(fmt.Sprintf("%s %s x%d\n",
+				userItem.Item.Emoji,
+				userItem.Item.Name,
 				userItem.Quantity))
 		}
 	}
-	
+
 	if !hasItems {
 		description.WriteString("\u001b[1;33mNo materials yet!\u001b[0m\n")
 		description.WriteString("Earn materials by working with /work\n")
 	}
-	
+
 	description.WriteString("\n\u001b[1;32m💡 Tip:\u001b[0m Collect 1 of each material to /fuse them into an album card!")
 	description.WriteString("\n```")
 

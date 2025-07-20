@@ -40,6 +40,11 @@ type EffectRepository interface {
 	// Card methods
 	GetCard(ctx context.Context, cardID int64) (*models.Card, error)
 
+	// Tier progression methods
+	UpdateEffectProgress(ctx context.Context, userID string, effectID string, increment int) error
+	UpgradeEffectTier(ctx context.Context, userID string, effectID string) error
+	GetUserEffectsByTier(ctx context.Context, userID string) ([]*models.UserEffect, error)
+
 	// Cooldown methods
 	GetEffectCooldown(ctx context.Context, userID string, effectID string) (*time.Time, error)
 	SetEffectCooldown(ctx context.Context, userID string, effectID string, cooldownEnd time.Time) error
@@ -74,7 +79,7 @@ func (r *effectRepository) CreateEffectItem(ctx context.Context, item *models.Ef
 	_, err := r.ExecWithTimeout(ctx, "create", "effect_item", func(ctx context.Context) (sql.Result, error) {
 		return r.GetDB().NewInsert().Model(item).Exec(ctx)
 	})
-	
+
 	return err
 }
 
@@ -83,7 +88,7 @@ func (r *effectRepository) GetEffectItem(ctx context.Context, id string) (*model
 	err := r.SelectOneWithTimeout(ctx, "get", "effect_item", id, func(ctx context.Context) error {
 		return r.GetDB().NewSelect().Model(item).Where("id = ?", id).Scan(ctx)
 	})
-	
+
 	if err != nil {
 		return nil, err
 	}
@@ -114,7 +119,7 @@ func (r *effectRepository) AddUserEffect(ctx context.Context, effect *models.Use
 	_, err := r.ExecWithTimeout(ctx, "add", "user_effect", func(ctx context.Context) (sql.Result, error) {
 		return r.GetDB().NewInsert().Model(effect).Exec(ctx)
 	})
-	
+
 	return err
 }
 
@@ -126,7 +131,7 @@ func (r *effectRepository) GetUserEffect(ctx context.Context, userID string, eff
 			Where("user_id = ? AND effect_id = ?", userID, effectID).
 			Scan(ctx)
 	})
-	
+
 	if err != nil {
 		return nil, err
 	}
@@ -152,7 +157,7 @@ func (r *effectRepository) UpdateUserEffect(ctx context.Context, effect *models.
 	_, err := r.ExecWithTimeout(ctx, "update", "user_effect", func(ctx context.Context) (sql.Result, error) {
 		return r.GetDB().NewUpdate().Model(effect).WherePK().Exec(ctx)
 	})
-	
+
 	return err
 }
 
@@ -165,7 +170,7 @@ func (r *effectRepository) DeactivateExpiredEffects(ctx context.Context) error {
 			Where("active = true AND expires_at <= ?", time.Now()).
 			Exec(ctx)
 	})
-	
+
 	return err
 }
 
@@ -281,24 +286,24 @@ func (r *effectRepository) GetInventory(ctx context.Context, userID string) ([]*
 func (r *effectRepository) GetRandomCardForRecipe(ctx context.Context, userID string, stars int64) (*models.Card, error) {
 	var card models.Card
 
-	slog.Debug("Executing GetRandomCardForRecipe", 
-		slog.String("user_id", userID), 
+	slog.Debug("Executing GetRandomCardForRecipe",
+		slog.String("user_id", userID),
 		slog.Int64("stars", stars))
 
 	// Collections to exclude from recipe requirements (event/special cards)
 	// Based on legacy JavaScript logic + additional exclusions requested
 	excludedCollections := []string{
 		// Legacy JavaScript exclusions (from item.js:530-536)
-		"lottery",       // Lottery cards (legacy)
-		"jackpot",       // Jackpot cards (legacy) 
-		"fragments",     // Fragment cards (legacy)
-		"albums",        // Album cards (legacy - "album" in JS)
-		
+		"lottery",   // Lottery cards (legacy)
+		"jackpot",   // Jackpot cards (legacy)
+		"fragments", // Fragment cards (legacy)
+		"albums",    // Album cards (legacy - "album" in JS)
+
 		// Additional exclusions requested by user
-		"signed",        // Signed cards
-		"liveauction",   // Live auction cards  
-		"birthdays",     // Birthday cards
-		"limited",       // Limited cards
+		"signed",      // Signed cards
+		"liveauction", // Live auction cards
+		"birthdays",   // Birthday cards
+		"limited",     // Limited cards
 	}
 
 	query := r.db.NewSelect().
@@ -316,15 +321,15 @@ func (r *effectRepository) GetRandomCardForRecipe(ctx context.Context, userID st
 
 	query = query.OrderExpr("RANDOM()").Limit(1)
 
-	slog.Debug("Query parameters", 
-		slog.Int64("level", stars), 
-		slog.String("user_id", userID), 
+	slog.Debug("Query parameters",
+		slog.Int64("level", stars),
+		slog.String("user_id", userID),
 		slog.Any("excluded", excludedCollections))
 
 	err := r.SelectOneWithTimeout(ctx, "get_random_card", "card", fmt.Sprintf("%s:%d", userID, stars), func(ctx context.Context) error {
 		return query.Scan(ctx, &card)
 	})
-	
+
 	if err != nil {
 		if IsNotFound(err) {
 			slog.Debug("No uncollected non-event cards found", slog.Int64("stars", stars))
@@ -333,10 +338,10 @@ func (r *effectRepository) GetRandomCardForRecipe(ctx context.Context, userID st
 		return nil, err
 	}
 
-	slog.Debug("Found card", 
-		slog.Int64("id", card.ID), 
-		slog.String("name", card.Name), 
-		slog.Int64("level", int64(card.Level)), 
+	slog.Debug("Found card",
+		slog.Int64("id", card.ID),
+		slog.String("name", card.Name),
+		slog.Int64("level", int64(card.Level)),
 		slog.String("collection", card.ColID))
 	return &card, nil
 }
@@ -467,6 +472,66 @@ func (r *effectRepository) SetEffectCooldown(ctx context.Context, userID string,
 	return nil
 }
 
+// Tier Progress methods
+func (r *effectRepository) UpdateEffectProgress(ctx context.Context, userID string, effectID string, increment int) error {
+	// Get current effect
+	effect, err := r.GetUserEffect(ctx, userID, effectID)
+	if err != nil {
+		return fmt.Errorf("failed to get user effect: %w", err)
+	}
+
+	// Update progress
+	effect.Progress += increment
+	effect.UpdatedAt = time.Now()
+
+	_, err = r.ExecWithTimeout(ctx, "update_progress", "user_effect", func(ctx context.Context) (sql.Result, error) {
+		return r.GetDB().NewUpdate().
+			Model(effect).
+			Column("progress", "updated_at").
+			Where("id = ?", effect.ID).
+			Exec(ctx)
+	})
+
+	return err
+}
+
+func (r *effectRepository) UpgradeEffectTier(ctx context.Context, userID string, effectID string) error {
+	// Get current effect
+	effect, err := r.GetUserEffect(ctx, userID, effectID)
+	if err != nil {
+		return fmt.Errorf("failed to get user effect: %w", err)
+	}
+
+	// Increment tier and reset progress
+	effect.Tier++
+	effect.Progress = 0
+	effect.UpdatedAt = time.Now()
+
+	_, err = r.ExecWithTimeout(ctx, "upgrade_tier", "user_effect", func(ctx context.Context) (sql.Result, error) {
+		return r.GetDB().NewUpdate().
+			Model(effect).
+			Column("tier", "progress", "updated_at").
+			Where("id = ?", effect.ID).
+			Exec(ctx)
+	})
+
+	return err
+}
+
+func (r *effectRepository) GetUserEffectsByTier(ctx context.Context, userID string) ([]*models.UserEffect, error) {
+	var effects []*models.UserEffect
+	err := r.SelectWithTimeout(ctx, "get_by_tier", "user_effects", func(ctx context.Context) error {
+		return r.GetDB().NewSelect().
+			Model(&effects).
+			Where("user_id = ?", userID).
+			Where("is_recipe = false").
+			Where("active = true").
+			Order("tier DESC", "effect_id ASC").
+			Scan(ctx)
+	})
+	return effects, err
+}
+
 // DeleteUserRecipe deletes a user's recipe after crafting
 func (r *effectRepository) DeleteUserRecipe(ctx context.Context, userID string, itemID string) error {
 	_, err := r.ExecWithTimeout(ctx, "delete_recipe", "user_recipe", func(ctx context.Context) (sql.Result, error) {
@@ -475,6 +540,6 @@ func (r *effectRepository) DeleteUserRecipe(ctx context.Context, userID string, 
 			Where("user_id = ? AND item_id = ?", userID, itemID).
 			Exec(ctx)
 	})
-	
+
 	return err
 }

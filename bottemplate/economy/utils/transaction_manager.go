@@ -83,8 +83,8 @@ type CardOperationOptions struct {
 
 // BalanceOperationOptions configures balance operations
 type BalanceOperationOptions struct {
-	UserID string
-	Amount int64
+	UserID         string
+	Amount         int64
 	MinimumBalance int64 // Validation threshold
 }
 

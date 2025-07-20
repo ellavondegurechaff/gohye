@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	cacheSize           = 10000                // Limit cache size
+	cacheSize             = 10000            // Limit cache size
 	InitialPricingTimeout = 5 * time.Minute  // Longer timeout for initial pricing
 	BatchQueryTimeout     = 30 * time.Second // Timeout for batch queries
 )

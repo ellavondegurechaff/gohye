@@ -38,7 +38,7 @@ func QuestClaimHandler(b *bottemplate.Bot) handler.CommandHandler {
 			slog.Error("Failed to claim quest rewards",
 				slog.String("user_id", userID),
 				slog.Any("error", err))
-			
+
 			// Provide more specific error message
 			errorMsg := "Failed to claim rewards. Please try again."
 			if strings.Contains(err.Error(), "no completed quests") {
@@ -46,7 +46,7 @@ func QuestClaimHandler(b *bottemplate.Bot) handler.CommandHandler {
 			} else if strings.Contains(err.Error(), "database") || strings.Contains(err.Error(), "SQLSTATE") {
 				errorMsg = "A database error occurred. Please try again in a moment."
 			}
-			
+
 			return utils.EH.CreateErrorEmbed(e, errorMsg)
 		}
 
@@ -97,7 +97,7 @@ func createClaimEmbed(result *services.QuestRewardResult, username string) disco
 
 	// Add total rewards
 	description += "**🎁 Total Rewards:**\n"
-	
+
 	rewards := []string{}
 	if result.TotalSnowflakes > 0 {
 		rewards = append(rewards, fmt.Sprintf("❄️ **%d** snowflakes", result.TotalSnowflakes))

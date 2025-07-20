@@ -33,12 +33,12 @@ func CollectionInfoHandler(b *bottemplate.Bot) handler.CommandHandler {
 	return func(event *handler.CommandEvent) error {
 		start := time.Now()
 		userID := event.User().ID.String()
-		
+
 		slog.Info("Collection-info command started",
 			slog.String("type", "cmd"),
 			slog.String("name", "collection-info"),
 			slog.String("user_id", userID))
-		
+
 		defer func() {
 			slog.Info("Collection-info command completed",
 				slog.String("type", "cmd"),
@@ -48,12 +48,12 @@ func CollectionInfoHandler(b *bottemplate.Bot) handler.CommandHandler {
 		}()
 
 		ctx := context.Background()
-		
+
 		slog.Debug("Attempting to get user by Discord ID",
 			slog.String("type", "cmd"),
 			slog.String("name", "collection-info"),
 			slog.String("user_id", userID))
-		
+
 		user, err := b.UserRepository.GetByDiscordID(ctx, userID)
 		if err != nil {
 			slog.Error("Failed to get user data",
@@ -63,7 +63,7 @@ func CollectionInfoHandler(b *bottemplate.Bot) handler.CommandHandler {
 				slog.String("error", err.Error()))
 			return utils.EH.CreateErrorEmbed(event, "Failed to get user data")
 		}
-		
+
 		slog.Debug("Successfully retrieved user data",
 			slog.String("type", "cmd"),
 			slog.String("name", "collection-info"),
@@ -95,7 +95,7 @@ func CollectionInfoHandler(b *bottemplate.Bot) handler.CommandHandler {
 				slog.String("error", err.Error()))
 			return utils.EH.CreateErrorEmbed(event, "Failed to search collections")
 		}
-		
+
 		slog.Debug("Collection search completed",
 			slog.String("type", "cmd"),
 			slog.String("name", "collection-info"),
@@ -131,7 +131,7 @@ func CollectionInfoHandler(b *bottemplate.Bot) handler.CommandHandler {
 				slog.String("error", err.Error()))
 			return utils.EH.CreateErrorEmbed(event, "Failed to calculate collection progress")
 		}
-		
+
 		slog.Debug("Collection progress calculated",
 			slog.String("type", "cmd"),
 			slog.String("name", "collection-info"),
@@ -159,7 +159,7 @@ func CollectionInfoHandler(b *bottemplate.Bot) handler.CommandHandler {
 
 		var fields []discord.EmbedField
 
-		progressText := fmt.Sprintf("%.1f%% (%d/%d cards)", 
+		progressText := fmt.Sprintf("%.1f%% (%d/%d cards)",
 			progress.Percentage, progress.OwnedCards, progress.TotalCards)
 		if progress.IsCompleted {
 			progressText = "✅ **100%** Complete!"
@@ -197,7 +197,6 @@ func CollectionInfoHandler(b *bottemplate.Bot) handler.CommandHandler {
 				Inline: &[]bool{false}[0],
 			})
 		}
-
 
 		if sampleCard != nil {
 			fields = append(fields, discord.EmbedField{

@@ -46,19 +46,19 @@ type CollectionProgressItem struct {
 
 func CollectionListHandler(b *bottemplate.Bot) handler.CommandHandler {
 	collectionService := services.NewCollectionService(b.CollectionRepository, b.CardRepository, b.UserCardRepository)
-	
+
 	// Create data fetcher
 	fetcher := &CollectionListDataFetcher{
 		bot:               b,
 		collectionService: collectionService,
 	}
-	
+
 	// Create formatter
 	formatter := &CollectionListFormatter{}
-	
+
 	// Create validator
 	validator := &CollectionListValidator{}
-	
+
 	// Create factory configuration
 	factoryConfig := utils.PaginationFactoryConfig{
 		ItemsPerPage: 10,
@@ -68,19 +68,19 @@ func CollectionListHandler(b *bottemplate.Bot) handler.CommandHandler {
 		Formatter:    formatter,
 		Validator:    validator,
 	}
-	
+
 	// Create factory
 	factory := utils.NewPaginationFactory(factoryConfig)
 
 	return func(event *handler.CommandEvent) error {
 		start := time.Now()
 		userID := event.User().ID.String()
-		
+
 		slog.Info("Collection-list command started",
 			slog.String("type", "cmd"),
 			slog.String("name", "collection-list"),
 			slog.String("user_id", userID))
-		
+
 		defer func() {
 			slog.Info("Collection-list command completed",
 				slog.String("type", "cmd"),
@@ -102,7 +102,7 @@ func CollectionListHandler(b *bottemplate.Bot) handler.CommandHandler {
 			SortByProgress: sortByProgress,
 			CompletedOnly:  completedOnly,
 		}
-		
+
 		// Create initial embed and components
 		embed, components, err := factory.CreateInitialPaginationEmbed(ctx, params)
 		if err != nil {
@@ -140,19 +140,19 @@ func min(a, b int) int {
 // CollectionListComponentHandler handles pagination for collection list
 func CollectionListComponentHandler(b *bottemplate.Bot) handler.ComponentHandler {
 	collectionService := services.NewCollectionService(b.CollectionRepository, b.CardRepository, b.UserCardRepository)
-	
+
 	// Create data fetcher
 	fetcher := &CollectionListDataFetcher{
 		bot:               b,
 		collectionService: collectionService,
 	}
-	
+
 	// Create formatter
 	formatter := &CollectionListFormatter{}
-	
+
 	// Create validator
 	validator := &CollectionListValidator{}
-	
+
 	// Create factory configuration
 	factoryConfig := utils.PaginationFactoryConfig{
 		ItemsPerPage: 10,
@@ -162,7 +162,7 @@ func CollectionListComponentHandler(b *bottemplate.Bot) handler.ComponentHandler
 		Formatter:    formatter,
 		Validator:    validator,
 	}
-	
+
 	// Create factory and return handler
 	factory := utils.NewPaginationFactory(factoryConfig)
 	return factory.CreateHandler()
@@ -190,7 +190,7 @@ func (f *CollectionListDataFetcher) FetchData(ctx context.Context, params utils.
 			slog.String("error", err.Error()))
 		return nil, err
 	}
-	
+
 	slog.Debug("Successfully retrieved user data in pagination fetcher",
 		slog.String("type", "cmd"),
 		slog.String("name", "collection-list"),
@@ -234,7 +234,7 @@ func (f *CollectionListDataFetcher) FetchData(ctx context.Context, params utils.
 		if params.CompletedOnly && !progress.IsCompleted {
 			continue
 		}
-		
+
 		collectionItems = append(collectionItems, CollectionProgressItem{
 			Collection: col,
 			Progress:   progress,
@@ -266,35 +266,35 @@ func (f *CollectionListFormatter) FormatItems(allItems []interface{}, page, tota
 	itemsPerPage := 10
 	startIdx := page * itemsPerPage
 	endIdx := min(startIdx+itemsPerPage, len(allItems))
-	
+
 	// Get items for this page only
 	pageItems := allItems[startIdx:endIdx]
-	
+
 	var fields []discord.EmbedField
-	
+
 	for _, item := range pageItems {
 		collectionItem := item.(CollectionProgressItem)
 		col := collectionItem.Collection
 		progress := collectionItem.Progress
-		
+
 		var progressText string
 		if progress.IsCompleted {
 			progressText = "✅ **100%** Complete"
 		} else {
-			progressText = fmt.Sprintf("📊 **%.1f%%** (%d/%d cards)", 
+			progressText = fmt.Sprintf("📊 **%.1f%%** (%d/%d cards)",
 				progress.Percentage, progress.OwnedCards, progress.TotalCards)
 		}
-		
+
 		var fragmentText string
 		if progress.IsFragment {
 			fragmentText = " 🧩"
 		}
-		
+
 		aliasText := ""
 		if len(col.Aliases) > 0 {
 			aliasText = fmt.Sprintf("\n`%s`", strings.Join(col.Aliases[:min(3, len(col.Aliases))], ", "))
 		}
-		
+
 		inlineTrue := true
 		fields = append(fields, discord.EmbedField{
 			Name:   fmt.Sprintf("%s%s", col.Name, fragmentText),

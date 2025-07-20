@@ -147,14 +147,14 @@ func (pf *PaginationFactory) handleNavigation(ctx context.Context, e *handler.Co
 	// Calculate page items
 	startIdx := newPage * pf.config.ItemsPerPage
 	endIdx := min(startIdx+pf.config.ItemsPerPage, len(items))
-	
+
 	if startIdx >= len(items) {
 		startIdx = 0
 		endIdx = min(pf.config.ItemsPerPage, len(items))
 	}
-	
+
 	pageItems := items[startIdx:endIdx]
-	
+
 	// Create embed for new page
 	embed, err := pf.config.Formatter.FormatItems(pageItems, newPage, totalPages, newParams)
 	if err != nil {
@@ -276,20 +276,20 @@ func (rp *RegularParser) Parse(customID string) (PaginationParams, error) {
 // BuildComponentID builds a component ID for regular pagination
 func (rp *RegularParser) BuildComponentID(prefix, action string, params PaginationParams) string {
 	parts := []string{"", prefix, action, params.UserID, strconv.Itoa(params.Page)}
-	
+
 	// Add query if present
 	if params.Query != "" {
 		parts = append(parts, params.Query)
 	} else {
 		parts = append(parts, "")
 	}
-	
+
 	// Add boolean flags if either is true
 	if params.SortByProgress || params.CompletedOnly {
 		parts = append(parts, strconv.FormatBool(params.SortByProgress))
 		parts = append(parts, strconv.FormatBool(params.CompletedOnly))
 	}
-	
+
 	return strings.Join(parts, "/")
 }
 

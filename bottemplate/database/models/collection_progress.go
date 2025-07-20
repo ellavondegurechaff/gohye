@@ -29,14 +29,14 @@ type CollectionProgress struct {
 type CollectionReset struct {
 	bun.BaseModel `bun:"table:collection_resets,alias:cr"`
 
-	ID             int64             `bun:"id,pk,autoincrement"`
-	UserID         string            `bun:"user_id,notnull"`
-	CollectionID   string            `bun:"collection_id,notnull"`
-	ResetCount     int               `bun:"reset_count,notnull,default:1"`
-	CloutEarned    int               `bun:"clout_earned,notnull"`
-	FlakesEarned   int64             `bun:"flakes_earned,notnull"`
-	CardsConsumed  map[string]int    `bun:"cards_consumed,type:jsonb"`
-	ResetAt        time.Time         `bun:"reset_at,notnull,default:current_timestamp"`
+	ID            int64          `bun:"id,pk,autoincrement"`
+	UserID        string         `bun:"user_id,notnull"`
+	CollectionID  string         `bun:"collection_id,notnull"`
+	ResetCount    int            `bun:"reset_count,notnull,default:1"`
+	CloutEarned   int            `bun:"clout_earned,notnull"`
+	FlakesEarned  int64          `bun:"flakes_earned,notnull"`
+	CardsConsumed map[string]int `bun:"cards_consumed,type:jsonb"`
+	ResetAt       time.Time      `bun:"reset_at,notnull,default:current_timestamp"`
 
 	// Relations
 	User       *User       `bun:"rel:belongs-to,join:user_id=discord_id"`
@@ -44,18 +44,18 @@ type CollectionReset struct {
 }
 
 type ResetRequirements struct {
-	OneStars   int     `json:"1"`
-	TwoStars   int     `json:"2"`
-	ThreeStars int     `json:"3"`
-	FourStars  int     `json:"4"`
-	Total      int     `json:"total"`
+	OneStars   int `json:"1"`
+	TwoStars   int `json:"2"`
+	ThreeStars int `json:"3"`
+	FourStars  int `json:"4"`
+	Total      int `json:"total"`
 }
 
 // CollectionProgressResult represents the result of a collection leaderboard query
 // Used for aggregated progress data without persistence
 type CollectionProgressResult struct {
-	DiscordID   string  `bun:"discord_id"`
-	Username    string  `bun:"username"`
-	OwnedCards  int     `bun:"owned_cards"`
-	Progress    float64 `bun:"progress"`
+	DiscordID  string  `bun:"discord_id"`
+	Username   string  `bun:"username"`
+	OwnedCards int     `bun:"owned_cards"`
+	Progress   float64 `bun:"progress"`
 }

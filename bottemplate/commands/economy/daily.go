@@ -35,7 +35,7 @@ func DailyHandler(b *bottemplate.Bot) handler.CommandHandler {
 		// Get dynamic daily cooldown (affected by rulerjeanne effect)
 		cooldownHours := b.EffectIntegrator.GetDailyCooldown(ctx, e.User().ID.String())
 		cooldownDuration := time.Duration(cooldownHours) * time.Hour
-		
+
 		// Check cooldown
 		if time.Since(user.LastDaily) < cooldownDuration {
 			remaining := time.Until(user.LastDaily.Add(cooldownDuration)).Round(time.Second)
@@ -44,7 +44,7 @@ func DailyHandler(b *bottemplate.Bot) handler.CommandHandler {
 
 		// Calculate reward (consider streaks, bonuses, etc.)
 		baseReward := int64(1000) // Basic reward
-		
+
 		// Apply passive effects with feedback
 		effectResult := b.EffectIntegrator.ApplyDailyEffectsWithFeedback(ctx, e.User().ID.String(), int(baseReward))
 		reward := int64(effectResult.GetValue().(int))
@@ -96,14 +96,14 @@ func DailyHandler(b *bottemplate.Bot) handler.CommandHandler {
 			return utils.EH.CreateErrorEmbed(e, "Failed to claim daily reward. Please try again later.")
 		}
 
-		// Track quest progress for snowflakes earned
-		if b.QuestTracker != nil {
-			go b.QuestTracker.TrackSnowflakesEarned(ctx, user.DiscordID, reward, "")
+		// Track effect progress for Ruler Jeanne
+		if b.EffectManager != nil {
+			go b.EffectManager.UpdateEffectProgress(ctx, user.DiscordID, "rulerjeanne", 1)
 		}
-		
+
 		// Build description with effect feedback
 		description := fmt.Sprintf("You have claimed your daily reward of **%d** credits!", reward)
-		
+
 		// Add effect feedback if any effects were applied
 		if effectResult.HasEffects() {
 			effectMessages := effectResult.FormatEffectMessages()

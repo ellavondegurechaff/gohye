@@ -186,7 +186,7 @@ func (h *ResponseHandler) HandleSuccess(event interface{}, message string) error
 func (h *ResponseHandler) CreateClassifiedError(event *handler.CommandEvent, errorType ErrorType, message string) error {
 	prefix := getErrorPrefix(errorType)
 	color := getErrorColor(errorType)
-	
+
 	return event.CreateMessage(discord.MessageCreate{
 		Embeds: []discord.Embed{{
 			Description: prefix + " " + message,
@@ -234,7 +234,7 @@ func (h *ResponseHandler) CreateClassifiedComponentError(event *handler.Componen
 // AutoClassifyError attempts to automatically classify errors based on message content
 func (h *ResponseHandler) AutoClassifyError(event interface{}, message string) error {
 	errorType := h.classifyErrorByMessage(message)
-	
+
 	switch e := event.(type) {
 	case *handler.CommandEvent:
 		return h.CreateClassifiedError(e, errorType, message)
@@ -248,48 +248,48 @@ func (h *ResponseHandler) AutoClassifyError(event interface{}, message string) e
 // classifyErrorByMessage attempts to classify error type based on message content
 func (h *ResponseHandler) classifyErrorByMessage(message string) ErrorType {
 	lowerMsg := strings.ToLower(message)
-	
+
 	// Check for not found patterns
-	if strings.Contains(lowerMsg, "not found") || 
-	   strings.Contains(lowerMsg, "no cards found") ||
-	   strings.Contains(lowerMsg, "no results") ||
-	   strings.Contains(lowerMsg, "doesn't exist") {
+	if strings.Contains(lowerMsg, "not found") ||
+		strings.Contains(lowerMsg, "no cards found") ||
+		strings.Contains(lowerMsg, "no results") ||
+		strings.Contains(lowerMsg, "doesn't exist") {
 		return NotFoundError
 	}
-	
+
 	// Check for user input patterns
 	if strings.Contains(lowerMsg, "invalid") ||
-	   strings.Contains(lowerMsg, "must be") ||
-	   strings.Contains(lowerMsg, "required") ||
-	   strings.Contains(lowerMsg, "please provide") {
+		strings.Contains(lowerMsg, "must be") ||
+		strings.Contains(lowerMsg, "required") ||
+		strings.Contains(lowerMsg, "please provide") {
 		return UserError
 	}
-	
+
 	// Check for business logic patterns
 	if strings.Contains(lowerMsg, "cooldown") ||
-	   strings.Contains(lowerMsg, "wait") ||
-	   strings.Contains(lowerMsg, "insufficient") ||
-	   strings.Contains(lowerMsg, "limit") ||
-	   strings.Contains(lowerMsg, "already") {
+		strings.Contains(lowerMsg, "wait") ||
+		strings.Contains(lowerMsg, "insufficient") ||
+		strings.Contains(lowerMsg, "limit") ||
+		strings.Contains(lowerMsg, "already") {
 		return BusinessLogicError
 	}
-	
+
 	// Check for permission patterns
 	if strings.Contains(lowerMsg, "permission") ||
-	   strings.Contains(lowerMsg, "unauthorized") ||
-	   strings.Contains(lowerMsg, "access denied") {
+		strings.Contains(lowerMsg, "unauthorized") ||
+		strings.Contains(lowerMsg, "access denied") {
 		return PermissionError
 	}
-	
+
 	// Check for system error patterns
 	if strings.Contains(lowerMsg, "failed to") ||
-	   strings.Contains(lowerMsg, "database") ||
-	   strings.Contains(lowerMsg, "connection") ||
-	   strings.Contains(lowerMsg, "timeout") ||
-	   strings.Contains(lowerMsg, "internal error") {
+		strings.Contains(lowerMsg, "database") ||
+		strings.Contains(lowerMsg, "connection") ||
+		strings.Contains(lowerMsg, "timeout") ||
+		strings.Contains(lowerMsg, "internal error") {
 		return SystemError
 	}
-	
+
 	// Default to system error for unknown patterns
 	return SystemError
 }

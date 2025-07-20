@@ -25,7 +25,7 @@ func NewTransactionManager(db bun.IDB) *TransactionManager {
 func (tm *TransactionManager) UpdateUserBalance(ctx context.Context, tx bun.Tx, userID string, amount int64) error {
 	var operation string
 	var value int64
-	
+
 	if amount >= 0 {
 		operation = "balance = balance + ?"
 		value = amount
@@ -88,7 +88,7 @@ func (tm *TransactionManager) UpdateCardAmount(ctx context.Context, tx bun.Tx, u
 
 	var operation string
 	var value int64
-	
+
 	if amount >= 0 {
 		operation = "amount = amount + ?"
 		value = amount

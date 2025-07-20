@@ -27,7 +27,7 @@ var Cards = discord.SlashCommandCreate{
 func CardsHandler(b *bottemplate.Bot) handler.CommandHandler {
 	cardDisplayService := services.NewCardDisplayService(b.CardRepository, b.SpacesService)
 	cardOperationsService := services.NewCardOperationsService(b.CardRepository, b.UserCardRepository)
-	
+
 	paginationHandler := &utils.PaginationHandler{
 		Config: utils.PaginationConfig{
 			ItemsPerPage: config.CardsPerPage,
@@ -63,7 +63,7 @@ func CardsHandler(b *bottemplate.Bot) handler.CommandHandler {
 			for i, item := range items {
 				displayItems[i] = item.(services.CardDisplayItem)
 			}
-			
+
 			copyText, err := cardDisplayService.FormatCopyText(context.Background(), displayItems, "My Collection")
 			if err != nil {
 				return "Error formatting copy text"
@@ -77,13 +77,13 @@ func CardsHandler(b *bottemplate.Bot) handler.CommandHandler {
 
 	return func(event *handler.CommandEvent) error {
 		query := strings.TrimSpace(event.SlashCommandInteractionData().String("query"))
-		
+
 		// Get user data for new card detection
 		user, err := b.UserRepository.GetByDiscordID(context.Background(), event.User().ID.String())
 		if err != nil {
 			return utils.EH.CreateErrorEmbed(event, "Failed to fetch user data")
 		}
-		
+
 		// Use CardOperationsService to get user cards with details, filtering, and search context
 		displayCards, _, filters, err := cardOperationsService.GetUserCardsWithDetailsAndFiltersWithUser(context.Background(), event.User().ID.String(), query, user)
 		if err != nil {
@@ -118,27 +118,26 @@ func CardsHandler(b *bottemplate.Bot) handler.CommandHandler {
 	}
 }
 
-
 // CardsComponentHandler handles pagination for cards using the new unified factory
 func CardsComponentHandler(b *bottemplate.Bot) handler.ComponentHandler {
 	cardDisplayService := services.NewCardDisplayService(b.CardRepository, b.SpacesService)
 	cardOperationsService := services.NewCardOperationsService(b.CardRepository, b.UserCardRepository)
-	
+
 	// Create data fetcher
 	fetcher := &CardsDataFetcher{
 		bot:                   b,
 		cardDisplayService:    cardDisplayService,
 		cardOperationsService: cardOperationsService,
 	}
-	
+
 	// Create formatter
 	formatter := &CardsFormatter{
 		cardDisplayService: cardDisplayService,
 	}
-	
+
 	// Create validator
 	validator := &CardsValidator{}
-	
+
 	// Create factory configuration
 	factoryConfig := utils.PaginationFactoryConfig{
 		ItemsPerPage: config.CardsPerPage,
@@ -148,7 +147,7 @@ func CardsComponentHandler(b *bottemplate.Bot) handler.ComponentHandler {
 		Formatter:    formatter,
 		Validator:    validator,
 	}
-	
+
 	// Create factory and return handler
 	factory := utils.NewPaginationFactory(factoryConfig)
 	return factory.CreateHandler()
@@ -167,7 +166,7 @@ func (cdf *CardsDataFetcher) FetchData(ctx context.Context, params utils.Paginat
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Use CardOperationsService to get user cards with details and filtering
 	displayCards, _, _, err := cdf.cardOperationsService.GetUserCardsWithDetailsAndFiltersWithUser(ctx, params.UserID, params.Query, user)
 	if err != nil {
@@ -225,7 +224,7 @@ func (cf *CardsFormatter) FormatCopy(items []interface{}, params utils.Paginatio
 	for i, item := range items {
 		displayItems[i] = item.(services.CardDisplayItem)
 	}
-	
+
 	copyText, err := cf.cardDisplayService.FormatCopyText(context.Background(), displayItems, "My Collection")
 	if err != nil {
 		return "Error formatting copy text"
@@ -239,5 +238,3 @@ type CardsValidator struct{}
 func (cv *CardsValidator) ValidateUser(eventUserID string, params utils.PaginationParams) bool {
 	return eventUserID == params.UserID
 }
-
-

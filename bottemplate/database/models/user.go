@@ -42,13 +42,13 @@ type User struct {
 	UserStats   CoreStats   `bun:"user_stats,type:jsonb"`
 
 	// Arrays stored as JSONB
-	Cards         []string                `bun:"cards,type:jsonb"`
-	Inventory     []InventoryItemModel    `bun:"inventory,type:jsonb"`
-	CompletedCols FlexibleCompletedCols   `bun:"completed_cols,type:jsonb"`
-	CloutedCols   FlexibleCloutedCols     `bun:"clouted_cols,type:jsonb"`
-	Achievements  []string                `bun:"achievements,type:jsonb"`
-	Effects       []string                `bun:"effects,type:jsonb"`
-	Wishlist      []string                `bun:"wishlist,type:jsonb"`
+	Cards         []string              `bun:"cards,type:jsonb"`
+	Inventory     []InventoryItemModel  `bun:"inventory,type:jsonb"`
+	CompletedCols FlexibleCompletedCols `bun:"completed_cols,type:jsonb"`
+	CloutedCols   FlexibleCloutedCols   `bun:"clouted_cols,type:jsonb"`
+	Achievements  []string              `bun:"achievements,type:jsonb"`
+	Effects       []string              `bun:"effects,type:jsonb"`
+	Wishlist      []string              `bun:"wishlist,type:jsonb"`
 
 	// Timestamps
 	LastDaily    time.Time `bun:"last_daily,notnull"`

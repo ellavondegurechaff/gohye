@@ -41,8 +41,6 @@ type DB struct {
 	bunDB *bun.DB
 }
 
-
-
 func New(ctx context.Context, cfg DBConfig) (*DB, error) {
 	// Add retry logic for initial connection
 	var conn net.Conn
@@ -300,7 +298,7 @@ func (db *DB) MigrateSchema(ctx context.Context) error {
 		ALTER TABLE collections 
 		ADD COLUMN IF NOT EXISTS fragments BOOLEAN NOT NULL DEFAULT false;
 	`
-	
+
 	if _, err := db.ExecWithLog(ctx, fragmentsColumnSQL); err != nil {
 		return fmt.Errorf("failed to add fragments column: %w", err)
 	}
@@ -316,8 +314,10 @@ func (db *DB) MigrateSchema(ctx context.Context) error {
 		`ALTER TABLE user_effects ADD COLUMN IF NOT EXISTS notified BOOLEAN NOT NULL DEFAULT true;`,
 		`ALTER TABLE user_effects ADD COLUMN IF NOT EXISTS created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP;`,
 		`ALTER TABLE user_effects ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP;`,
+		`ALTER TABLE user_effects ADD COLUMN IF NOT EXISTS tier INTEGER NOT NULL DEFAULT 1;`,
+		`ALTER TABLE user_effects ADD COLUMN IF NOT EXISTS progress INTEGER NOT NULL DEFAULT 0;`,
 	}
-	
+
 	for _, sql := range userEffectsColumnsSQL {
 		if _, err := db.ExecWithLog(ctx, sql); err != nil {
 			return fmt.Errorf("failed to add user_effects column: %w", err)
@@ -329,7 +329,7 @@ func (db *DB) MigrateSchema(ctx context.Context) error {
 		ALTER TABLE user_quest_progress 
 		ADD COLUMN IF NOT EXISTS metadata JSONB;
 	`
-	
+
 	if _, err := db.ExecWithLog(ctx, questMetadataSQL); err != nil {
 		return fmt.Errorf("failed to add metadata column to user_quest_progress: %w", err)
 	}
@@ -348,7 +348,7 @@ func (db *DB) MigrateSchema(ctx context.Context) error {
 			END IF;
 		END $$;
 	`
-	
+
 	if _, err := db.ExecWithLog(ctx, questLeaderboardConstraintSQL); err != nil {
 		// Log but don't fail - constraint might already exist with different name
 		slog.Warn("Failed to add unique constraint to quest_leaderboards (may already exist)",
@@ -383,12 +383,12 @@ func (db *DB) MigrateUserJSONBFields(ctx context.Context) error {
 		END
 		WHERE completed_cols IS NOT NULL;
 	`
-	
+
 	if _, err := db.ExecWithLog(ctx, migrateCompletedColsSQL); err != nil {
 		return fmt.Errorf("failed to migrate completed_cols field: %w", err)
 	}
 
-	// Fix clouted_cols field: convert string arrays to proper JSONB objects  
+	// Fix clouted_cols field: convert string arrays to proper JSONB objects
 	migrateCloutedColsSQL := `
 		UPDATE users 
 		SET clouted_cols = CASE 
@@ -406,7 +406,7 @@ func (db *DB) MigrateUserJSONBFields(ctx context.Context) error {
 		END
 		WHERE clouted_cols IS NOT NULL;
 	`
-	
+
 	if _, err := db.ExecWithLog(ctx, migrateCloutedColsSQL); err != nil {
 		return fmt.Errorf("failed to migrate clouted_cols field: %w", err)
 	}
@@ -437,22 +437,22 @@ func (db *DB) ensureUTF8Encoding(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("failed to check database encoding: %w", err)
 	}
-	
+
 	slog.Info("Database encoding", "encoding", encoding)
-	
+
 	// If not UTF-8, log a warning but continue (changing encoding requires superuser)
 	if encoding != "UTF8" {
-		slog.Warn("Database is not using UTF-8 encoding, this may cause character encoding issues", 
-			"current_encoding", encoding, 
+		slog.Warn("Database is not using UTF-8 encoding, this may cause character encoding issues",
+			"current_encoding", encoding,
 			"recommended", "UTF8")
 	}
-	
+
 	// Set client encoding to UTF-8 for this session
 	_, err = db.pool.Exec(ctx, "SET client_encoding TO 'UTF8';")
 	if err != nil {
 		return fmt.Errorf("failed to set client encoding to UTF-8: %w", err)
 	}
-	
+
 	slog.Info("Client encoding set to UTF-8")
 	return nil
 }
@@ -478,47 +478,47 @@ func (db *DB) InitializeItemData(ctx context.Context) error {
 
 	// Insert items one by one to handle encoding issues
 	items := []struct {
-		ID          string
-		Name        string
-		Description string
-		Emoji       string
+		ID            string
+		Name          string
+		Description   string
+		Emoji         string
 		FallbackEmoji string
-		Type        string
-		Rarity      int
-		MaxStack    int
+		Type          string
+		Rarity        int
+		MaxStack      int
 	}{
 		{
-			ID:          "broken_disc",
-			Name:        "Broken Disc",
-			Description: "A scratched and broken album disc. Part of a greater whole.",
-			Emoji:       "💿",
+			ID:            "broken_disc",
+			Name:          "Broken Disc",
+			Description:   "A scratched and broken album disc. Part of a greater whole.",
+			Emoji:         "💿",
 			FallbackEmoji: "CD",
-			Type:        "material",
-			Rarity:      3,
-			MaxStack:    999,
+			Type:          "material",
+			Rarity:        3,
+			MaxStack:      999,
 		},
 		{
-			ID:          "microphone",
-			Name:        "Microphone",
-			Description: "A vintage microphone used by idols. Still has some magic in it.",
-			Emoji:       "🎤",
+			ID:            "microphone",
+			Name:          "Microphone",
+			Description:   "A vintage microphone used by idols. Still has some magic in it.",
+			Emoji:         "🎤",
 			FallbackEmoji: "MIC",
-			Type:        "material",
-			Rarity:      3,
-			MaxStack:    999,
+			Type:          "material",
+			Rarity:        3,
+			MaxStack:      999,
 		},
 		{
-			ID:          "forgotten_song",
-			Name:        "Forgotten Song",
-			Description: "Sheet music for a song lost to time. The notes still resonate.",
-			Emoji:       "📜",
+			ID:            "forgotten_song",
+			Name:          "Forgotten Song",
+			Description:   "Sheet music for a song lost to time. The notes still resonate.",
+			Emoji:         "📜",
 			FallbackEmoji: "SONG",
-			Type:        "material",
-			Rarity:      3,
-			MaxStack:    999,
+			Type:          "material",
+			Rarity:        3,
+			MaxStack:      999,
 		},
 	}
-	
+
 	for _, item := range items {
 		// Use parameterized query to handle encoding properly
 		insertSQL := `
@@ -526,23 +526,23 @@ func (db *DB) InitializeItemData(ctx context.Context) error {
 			VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 			ON CONFLICT (id) DO UPDATE SET updated_at = CURRENT_TIMESTAMP;
 		`
-		
+
 		// Use fallback emoji if database doesn't support UTF8
 		emoji := item.Emoji
 		if !useEmojis {
 			emoji = item.FallbackEmoji
 		}
-		
-		_, err := db.ExecWithLog(ctx, insertSQL, 
-			item.ID, item.Name, item.Description, emoji, 
+
+		_, err := db.ExecWithLog(ctx, insertSQL,
+			item.ID, item.Name, item.Description, emoji,
 			item.Type, item.Rarity, item.MaxStack)
 		if err != nil {
 			// If emoji still fails, use fallback
 			if useEmojis {
-				slog.Warn("Failed to insert item with emoji, trying with fallback", 
+				slog.Warn("Failed to insert item with emoji, trying with fallback",
 					slog.String("item", item.ID),
 					slog.String("error", err.Error()))
-				
+
 				_, err = db.ExecWithLog(ctx, insertSQL,
 					item.ID, item.Name, item.Description, item.FallbackEmoji,
 					item.Type, item.Rarity, item.MaxStack)
@@ -554,7 +554,7 @@ func (db *DB) InitializeItemData(ctx context.Context) error {
 			}
 		}
 	}
-	
+
 	slog.Info("Initial item data initialized successfully")
 	return nil
 }

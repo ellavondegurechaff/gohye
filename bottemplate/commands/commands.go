@@ -1,12 +1,12 @@
 package commands
 
 import (
-	"github.com/disgoorg/disgo/discord"
 	"github.com/disgoorg/bot-template/bottemplate/commands/admin"
 	"github.com/disgoorg/bot-template/bottemplate/commands/cards"
 	"github.com/disgoorg/bot-template/bottemplate/commands/economy"
 	"github.com/disgoorg/bot-template/bottemplate/commands/social"
 	"github.com/disgoorg/bot-template/bottemplate/commands/system"
+	"github.com/disgoorg/disgo/discord"
 )
 
 var Commands = []discord.ApplicationCommandCreate{}

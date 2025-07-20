@@ -21,7 +21,7 @@ func (qt *QuestTracker) TrackCommand(ctx context.Context, userID string, command
 	slog.Debug("TrackCommand called",
 		slog.String("user_id", userID),
 		slog.String("command", commandName))
-		
+
 	if qt.questService == nil {
 		slog.Error("Quest service is nil in TrackCommand")
 		return
@@ -223,7 +223,7 @@ func (qt *QuestTracker) TrackSnowflakesEarned(ctx context.Context, userID string
 	metadata := map[string]interface{}{
 		"snowflakes_earned": amount,
 	}
-	
+
 	// Add source if provided
 	if source != "" {
 		metadata["source"] = source

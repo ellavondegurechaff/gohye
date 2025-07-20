@@ -276,35 +276,35 @@ type MongoUserInventory struct {
 
 // MigrationStats tracks migration progress and issues
 type MigrationStats struct {
-	Tables map[string]*TableStats `json:"tables"`
-	StartTime time.Time `json:"start_time"`
-	EndTime time.Time `json:"end_time"`
-	TotalErrors int `json:"total_errors"`
-	TotalSkipped int `json:"total_skipped"`
-	TotalProcessed int `json:"total_processed"`
+	Tables         map[string]*TableStats `json:"tables"`
+	StartTime      time.Time              `json:"start_time"`
+	EndTime        time.Time              `json:"end_time"`
+	TotalErrors    int                    `json:"total_errors"`
+	TotalSkipped   int                    `json:"total_skipped"`
+	TotalProcessed int                    `json:"total_processed"`
 }
 
 // TableStats tracks stats for individual tables
 type TableStats struct {
-	TableName string `json:"table_name"`
-	Processed int `json:"processed"`
-	Successful int `json:"successful"`
-	Skipped int `json:"skipped"`
-	Errors int `json:"errors"`
+	TableName      string          `json:"table_name"`
+	Processed      int             `json:"processed"`
+	Successful     int             `json:"successful"`
+	Skipped        int             `json:"skipped"`
+	Errors         int             `json:"errors"`
 	SkippedRecords []SkippedRecord `json:"skipped_records"`
-	ErrorRecords []ErrorRecord `json:"error_records"`
+	ErrorRecords   []ErrorRecord   `json:"error_records"`
 }
 
 // SkippedRecord tracks why a record was skipped
 type SkippedRecord struct {
-	Reason string `json:"reason"`
-	Data string `json:"data"` // JSON representation of the record
+	Reason    string    `json:"reason"`
+	Data      string    `json:"data"` // JSON representation of the record
 	Timestamp time.Time `json:"timestamp"`
 }
 
 // ErrorRecord tracks migration errors
 type ErrorRecord struct {
-	Error string `json:"error"`
-	Data string `json:"data"` // JSON representation of the record
+	Error     string    `json:"error"`
+	Data      string    `json:"data"` // JSON representation of the record
 	Timestamp time.Time `json:"timestamp"`
 }

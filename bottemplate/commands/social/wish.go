@@ -123,11 +123,11 @@ func handleWishOne(ctx context.Context, b *bottemplate.Bot, e *handler.CommandEv
 		return fmt.Errorf("failed to search for cards")
 	}
 
-	// Use the search functionality from CardOperationsService  
+	// Use the search functionality from CardOperationsService
 	filters := utils.ParseSearchQuery(query)
 	filters.SortBy = utils.SortByLevel
 	filters.SortDesc = true
-	
+
 	searchResults := cardOperationsService.SearchCardsInCollection(ctx, cards, filters)
 	if len(searchResults) == 0 {
 		return fmt.Errorf("no cards found matching '%s'", query)
@@ -187,7 +187,7 @@ func handleWishMany(ctx context.Context, b *bottemplate.Bot, e *handler.CommandE
 	filters := utils.ParseSearchQuery(query)
 	filters.SortBy = utils.SortByLevel
 	filters.SortDesc = true
-	
+
 	searchResults := cardOperationsService.SearchCardsInCollection(ctx, cards, filters)
 	if len(searchResults) == 0 {
 		return fmt.Errorf("no cards found matching '%s'", query)
@@ -265,7 +265,7 @@ func handleWishRemove(ctx context.Context, b *bottemplate.Bot, e *handler.Comman
 	filters := utils.ParseSearchQuery(query)
 	filters.SortBy = utils.SortByLevel
 	filters.SortDesc = true
-	
+
 	searchResults := cardOperationsService.SearchCardsInCollection(ctx, wishedCards, filters)
 	if len(searchResults) == 0 {
 		return fmt.Errorf("no matching cards found in your wishlist for '%s'", query)

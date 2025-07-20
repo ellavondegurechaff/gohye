@@ -88,11 +88,11 @@ func (h *ShopHandler) handleList(event *handler.CommandEvent) error {
 
 	actives, _, passives := groupItems(items)
 	currentItems := actives
-	title := "Shop - Active Effects"
+	title := "Shop - Items"
 
 	if len(currentItems) == 0 {
 		currentItems = passives
-		title = "Shop - Passive Effects"
+		title = "Shop - Effects"
 	}
 
 	// Check if we still have no items
@@ -120,10 +120,6 @@ func (h *ShopHandler) handleList(event *handler.CommandEvent) error {
 		Components: components,
 	})
 }
-
-
-
-
 
 func (h *ShopHandler) handleBuy(event *handler.ComponentEvent) error {
 	customID := event.Data.CustomID()
@@ -170,7 +166,6 @@ func (h *ShopHandler) handleBuy(event *handler.ComponentEvent) error {
 	})
 }
 
-
 func getCurrencyEmoji(currency string) string {
 	switch currency {
 	case models.CurrencyTomato:
@@ -182,6 +177,52 @@ func getCurrencyEmoji(currency string) string {
 	}
 }
 
+func (h *ShopHandler) formatItemDescription(item *models.EffectItem) string {
+	// Get effect data to check for tier information
+	effectData := effects.GetEffectItemByID(item.ID)
+	if effectData != nil && effectData.TierData != nil {
+		// This is a tiered effect, show tier progression
+		tierInfo := "\n\n📊 **Tier Progression:**\n"
+		for i, value := range effectData.TierData.Values {
+			tier := i + 1
+			stars := ""
+			for j := 0; j < tier; j++ {
+				stars += "⭐"
+			}
+
+			tierInfo += fmt.Sprintf("Tier %d %s: %s\n", tier, stars, h.formatEffectValue(item.ID, value))
+		}
+
+		return item.Description + tierInfo
+	}
+
+	// Regular item without tiers
+	return item.Description
+}
+
+func (h *ShopHandler) formatEffectValue(effectID string, value int) string {
+	switch effectID {
+	case "cakeday":
+		return fmt.Sprintf("+%d flakes/claim", value)
+	case "holygrail":
+		return fmt.Sprintf("+%d vials/liquify", value)
+	case "wolfofhyejoo":
+		return fmt.Sprintf("%d%% cashback", value)
+	case "lambofhyejoo":
+		return fmt.Sprintf("%d%% bonus", value)
+	case "cherrybloss":
+		return fmt.Sprintf("%d%% cheaper", value)
+	case "rulerjeanne":
+		hours := float64(value) / 100.0
+		return fmt.Sprintf("%.1fh cooldown", hours)
+	case "youthyouthbyyoung":
+		return fmt.Sprintf("+%d%% bonus", value)
+	case "kisslater":
+		return fmt.Sprintf("+%d%% XP", value)
+	default:
+		return fmt.Sprintf("+%d", value)
+	}
+}
 
 func (h *ShopHandler) HandleComponent(event *handler.ComponentEvent) error {
 	customID := event.Data.CustomID()
@@ -236,10 +277,10 @@ func (h *ShopHandler) handleCategorySelect(event *handler.ComponentEvent) error 
 	switch selectedValue {
 	case "active":
 		currentItems = actives
-		title = "Shop - Active Effects"
+		title = "Shop - Items"
 	case "passive":
 		currentItems = passives
-		title = "Shop - Passive Effects"
+		title = "Shop - Effects"
 	}
 
 	if len(currentItems) == 0 {
@@ -272,16 +313,16 @@ func createShopComponents(selectedValue string) []discord.ContainerComponent {
 		discord.NewActionRow(
 			discord.NewStringSelectMenu("/shop_category", "Select Category",
 				discord.StringSelectMenuOption{
-					Label:       "Active Effects",
+					Label:       "Items",
 					Value:       "active",
-					Description: "View active effect items",
+					Description: "View consumable items",
 					Emoji:       &discord.ComponentEmoji{Name: "⚔️"},
 					Default:     selectedValue == "active",
 				},
 				discord.StringSelectMenuOption{
-					Label:       "Passive Effects",
+					Label:       "Effects",
 					Value:       "passive",
-					Description: "View passive effect items",
+					Description: "View permanent effects",
 					Emoji:       &discord.ComponentEmoji{Name: "🛡️"},
 					Default:     selectedValue == "passive",
 				},
@@ -336,7 +377,7 @@ func (h *ShopHandler) handleItemSelect(event *handler.ComponentEvent) error {
 		for _, stars := range item.Recipe {
 			starCounts[stars]++
 		}
-		
+
 		// Build recipe text showing actual requirements
 		var recipeParts []string
 		for stars := int64(1); stars <= 5; stars++ {
@@ -345,7 +386,7 @@ func (h *ShopHandler) handleItemSelect(event *handler.ComponentEvent) error {
 				recipeParts = append(recipeParts, fmt.Sprintf("%dx %s", count, starDisplay))
 			}
 		}
-		
+
 		if len(recipeParts) > 0 {
 			recipeText = fmt.Sprintf("* Required Recipe: %s cards", strings.Join(recipeParts, " + "))
 		}
@@ -354,8 +395,8 @@ func (h *ShopHandler) handleItemSelect(event *handler.ComponentEvent) error {
 	embed := discord.NewEmbedBuilder().
 		SetTitle(fmt.Sprintf("%s %s", getTypeEmoji(item.Type), item.Name)).
 		SetColor(getColorByType(item.Type)).
-		SetDescription(fmt.Sprintf("```md\n## Item Details\n* Description: %s\n* Price: %d %s\n* Duration: %d hours\n%s\n```\n\n> 💡 **Crafting Info**: This item requires specific cards to craft. Check your inventory to see if you have the required cards.",
-			item.Description,
+		SetDescription(fmt.Sprintf("%s\n\n**Price:** %d %s\n**Duration:** %d hours\n%s",
+			h.formatItemDescription(item),
 			item.Price,
 			getCurrencyEmoji(item.Currency),
 			item.Duration,

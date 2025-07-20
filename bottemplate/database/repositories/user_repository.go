@@ -192,12 +192,12 @@ func (r *userRepository) GetUserCount(ctx context.Context) (int64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("failed to count users: %w", err)
 	}
-	
+
 	slog.Info("Retrieved user count",
 		slog.String("type", "db"),
 		slog.String("operation", "GetUserCount"),
 		slog.Int64("count", int64(count)))
-		
+
 	return int64(count), nil
 }
 
@@ -209,16 +209,16 @@ func (r *userRepository) UpdateLastCard(ctx context.Context, discordID string, c
 		Set("updated_at = ?", time.Now()).
 		Where("discord_id = ?", discordID).
 		Exec(ctx)
-	
+
 	if err != nil {
 		return fmt.Errorf("failed to update last card: %w", err)
 	}
-	
+
 	slog.Debug("Successfully updated user's last card",
 		slog.String("type", "db"),
 		slog.String("operation", "UpdateLastCard"),
 		slog.String("discord_id", discordID),
 		slog.Int64("card_id", cardID))
-	
+
 	return nil
 }

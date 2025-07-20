@@ -25,12 +25,12 @@ func ProfileHandler(b *bottemplate.Bot) handler.CommandHandler {
 	return func(event *handler.CommandEvent) error {
 		start := time.Now()
 		userID := event.User().ID.String()
-		
+
 		slog.Info("Profile command started",
 			slog.String("type", "cmd"),
 			slog.String("name", "profile"),
 			slog.String("user_id", userID))
-		
+
 		defer func() {
 			slog.Info("Profile command completed",
 				slog.String("type", "cmd"),

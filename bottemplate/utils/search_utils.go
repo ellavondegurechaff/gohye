@@ -35,23 +35,23 @@ const (
 
 // AmountFilter represents amount-based filtering criteria
 type AmountFilter struct {
-	Min   int64  // >amount
-	Max   int64  // <amount
-	Exact int64  // =amount
+	Min   int64 // >amount
+	Max   int64 // <amount
+	Exact int64 // =amount
 }
 
 // StarFilter represents star rating-based filtering criteria (card property)
 type StarFilter struct {
-	Min   int  // >star
-	Max   int  // <star
-	Exact int  // =star
+	Min   int // >star
+	Max   int // <star
+	Exact int // =star
 }
 
 // ExpFilter represents experience-based filtering criteria (user property)
 type ExpFilter struct {
-	Min   int64  // >exp
-	Max   int64  // <exp
-	Exact int64  // =exp
+	Min   int64 // >exp
+	Max   int64 // <exp
+	Exact int64 // =exp
 }
 
 // SearchFilters represents all possible search criteria
@@ -70,7 +70,7 @@ type SearchFilters struct {
 	UserID      string
 	BoyGroups   bool
 	GirlGroups  bool
-	
+
 	// Enhanced filtering inspired by legacy JS system
 	AntiCollections []string     // !collection - collections to exclude
 	AntiLevels      []int        // !level - levels to exclude (deprecated: use AntiStars)
@@ -79,42 +79,42 @@ type SearchFilters struct {
 	AmountFilter    AmountFilter // >amount, <amount, =amount
 	StarFilter      StarFilter   // >star, <star, =star (card star rating 1-5)
 	ExpFilter       ExpFilter    // >exp, <exp, =exp (user experience points)
-	
+
 	// Improved terminology for clarity (preferred over Levels/AntiLevels)
-	Stars           []int        // Exact star rating matches (1, 2, 3, 4, 5)
-	AntiStars       []int        // Star rating exclusions (-1, -2, etc.)
-	
+	Stars     []int // Exact star rating matches (1, 2, 3, 4, 5)
+	AntiStars []int // Star rating exclusions (-1, -2, etc.)
+
 	// Enhanced user-specific filters
-	ExcludeFavorites bool  // !fav - exclude favorites
-	LockedOnly       bool  // -locked - locked cards only
-	ExcludeLocked    bool  // !locked - exclude locked cards
-	SingleOnly       bool  // !multi - single cards only
-	ExcludePromo     bool  // !promo - exclude promo collections
-	ExcludeAnimated  bool  // !gif - exclude animated cards
-	
+	ExcludeFavorites bool // !fav - exclude favorites
+	LockedOnly       bool // -locked - locked cards only
+	ExcludeLocked    bool // !locked - exclude locked cards
+	SingleOnly       bool // !multi - single cards only
+	ExcludePromo     bool // !promo - exclude promo collections
+	ExcludeAnimated  bool // !gif - exclude animated cards
+
 	// Special filters
 	LastCard bool // . - last card filter
-	
+
 	// Legacy-inspired advanced filters
-	NewOnly      bool   // -new - cards obtained since last daily
-	ExcludeNew   bool   // !new - exclude new cards
-	RatedOnly    bool   // -rated - only rated cards
-	ExcludeRated bool   // !rated - exclude rated cards
-	WishOnly     bool   // -wish - only wishlist cards
-	ExcludeWish  bool   // !wish - exclude wishlist cards
-	Diff         int    // -diff, !diff - difference mode (0=none, 1=diff, 2=miss)
-	
+	NewOnly      bool // -new - cards obtained since last daily
+	ExcludeNew   bool // !new - exclude new cards
+	RatedOnly    bool // -rated - only rated cards
+	ExcludeRated bool // !rated - exclude rated cards
+	WishOnly     bool // -wish - only wishlist cards
+	ExcludeWish  bool // !wish - exclude wishlist cards
+	Diff         int  // -diff, !diff - difference mode (0=none, 1=diff, 2=miss)
+
 	// Query type flags (from legacy system)
 	UserQuery bool // indicates this query requires user-specific data
 	EvalQuery bool // indicates this query requires evaluation/rating data
-	
+
 	// Multi-level sorting support (legacy firstBy().thenBy() equivalent)
 	SortChain []SortCriteria // Chain of sort criteria
-	
+
 	// Additional parameters for advanced queries
 	TargetUserID string // for diff queries
 	LastDaily    string // timestamp for "new" filter comparisons
-	
+
 	// Inventory search flag - when true, shows all cards user owns including excluded collections
 	IsInventorySearch bool
 }
@@ -148,10 +148,10 @@ type CollectionInfo struct {
 var (
 	collectionCache sync.Map
 	cacheMutex      sync.RWMutex
-	
+
 	// List of collection IDs that should be excluded from general card operations
 	excludedCollections = []string{} // No exclusions - all cards are searchable
-	
+
 	// List of collection IDs that should be excluded from forge operations
 	// Based on legacy system: fragments, album, liveauction, jackpot, birthdays, limited
 	forgeExcludedCollections = []string{"fragments", "album", "liveauction", "jackpot", "birthdays", "limited"}
@@ -161,7 +161,7 @@ var (
 func InitializeCollectionInfo(collections []*models.Collection) {
 	cacheMutex.Lock()
 	defer cacheMutex.Unlock()
-	
+
 	for _, collection := range collections {
 		// Check if collection is in excluded list
 		isExcluded := false
@@ -171,7 +171,7 @@ func InitializeCollectionInfo(collections []*models.Collection) {
 				break
 			}
 		}
-		
+
 		// Check if collection is forge-excluded
 		isForgeExcluded := false
 		for _, forgeExcludedID := range forgeExcludedCollections {
@@ -180,7 +180,7 @@ func InitializeCollectionInfo(collections []*models.Collection) {
 				break
 			}
 		}
-		
+
 		collectionCache.Store(collection.ID, CollectionInfo{
 			IsPromo:         collection.Promo,
 			IsExcluded:      isExcluded,
@@ -194,13 +194,13 @@ func InitializeCollectionInfo(collections []*models.Collection) {
 func RefreshCollectionCache(collections []*models.Collection) {
 	cacheMutex.Lock()
 	defer cacheMutex.Unlock()
-	
+
 	// Clear existing cache
 	collectionCache.Range(func(key, value interface{}) bool {
 		collectionCache.Delete(key)
 		return true
 	})
-	
+
 	// Reload with new data
 	for _, collection := range collections {
 		// Check if collection is in excluded list
@@ -211,7 +211,7 @@ func RefreshCollectionCache(collections []*models.Collection) {
 				break
 			}
 		}
-		
+
 		// Check if collection is forge-excluded
 		isForgeExcluded := false
 		for _, forgeExcludedID := range forgeExcludedCollections {
@@ -220,7 +220,7 @@ func RefreshCollectionCache(collections []*models.Collection) {
 				break
 			}
 		}
-		
+
 		collectionCache.Store(collection.ID, CollectionInfo{
 			IsPromo:         collection.Promo,
 			IsExcluded:      isExcluded,
@@ -234,7 +234,7 @@ func RefreshCollectionCache(collections []*models.Collection) {
 func GetCollectionCacheSize() int {
 	cacheMutex.RLock()
 	defer cacheMutex.RUnlock()
-	
+
 	count := 0
 	collectionCache.Range(func(key, value interface{}) bool {
 		count++
@@ -247,7 +247,7 @@ func GetCollectionCacheSize() int {
 func GetCollectionInfo(colID string) (CollectionInfo, bool) {
 	cacheMutex.RLock()
 	defer cacheMutex.RUnlock()
-	
+
 	if info, ok := collectionCache.Load(colID); ok {
 		return info.(CollectionInfo), true
 	}
@@ -261,17 +261,17 @@ func IsCardForgeEligible(card *models.Card, userCard *models.UserCard) bool {
 	if card.Level >= 5 {
 		return false
 	}
-	
+
 	// Locked cards cannot be forged
 	if userCard != nil && userCard.Locked {
 		return false
 	}
-	
+
 	// Cards with amount <= 0 cannot be forged
 	if userCard != nil && userCard.Amount <= 0 {
 		return false
 	}
-	
+
 	// Check collection-based exclusions
 	if colInfo, exists := GetCollectionInfo(card.ColID); exists {
 		// Forge-excluded collections cannot be forged
@@ -279,19 +279,19 @@ func IsCardForgeEligible(card *models.Card, userCard *models.UserCard) bool {
 			return false
 		}
 	}
-	
+
 	// Enhanced fragment detection: Check for cards with "fragment" in their name
 	// This catches individual fragment cards that might not be in a properly configured collection
 	cardNameLower := strings.ToLower(card.Name)
 	if strings.Contains(cardNameLower, "fragment") || strings.Contains(cardNameLower, "frag") {
 		return false
 	}
-	
+
 	// Favorite cards with only 1 copy cannot be forged (last copy protection)
 	if userCard != nil && userCard.Favorite && userCard.Amount == 1 {
 		return false
 	}
-	
+
 	return true
 }
 
@@ -302,17 +302,17 @@ func IsCardLiquefyEligible(card *models.Card, userCard *models.UserCard) bool {
 	if card.Level > 3 {
 		return false
 	}
-	
+
 	// Locked cards cannot be liquefied
 	if userCard != nil && userCard.Locked {
 		return false
 	}
-	
+
 	// Cards with amount <= 0 cannot be liquefied
 	if userCard != nil && userCard.Amount <= 0 {
 		return false
 	}
-	
+
 	// Check collection-based exclusions for liquefy
 	if colInfo, exists := GetCollectionInfo(card.ColID); exists {
 		// General excluded collections cannot be liquefied
@@ -320,17 +320,17 @@ func IsCardLiquefyEligible(card *models.Card, userCard *models.UserCard) bool {
 			return false
 		}
 	}
-	
+
 	// Legacy specific exclusions: lottery and jackpot collections
 	if card.ColID == "lottery" || card.ColID == "jackpot" {
 		return false
 	}
-	
+
 	// Favorite cards with only 1 copy cannot be liquefied (last copy protection)
 	if userCard != nil && userCard.Favorite && userCard.Amount == 1 {
 		return false
 	}
-	
+
 	return true
 }
 
@@ -366,7 +366,7 @@ func ParseSearchQuery(query string) SearchFilters {
 				continue
 			}
 		}
-		
+
 		// Handle escaped operators (legacy system compatibility)
 		if strings.HasPrefix(term, "\\") && len(term) > 1 {
 			if parseEscapedOperator(term, &filters) {
@@ -467,7 +467,7 @@ func parseComparisonOperator(term string, filters *SearchFilters) bool {
 		// >star means show higher stars first (descending), <star means show lower stars first (ascending)
 		filters.SortBy = SortByLevel
 		filters.SortDesc = operator == '>'
-		
+
 		// Also set star range filtering based on operator
 		switch operator {
 		case '>':
@@ -695,7 +695,7 @@ func parseNegativeFilter(term string, filters *SearchFilters) bool {
 				filters.AntiStars = append(filters.AntiStars, level)   // New terminology
 			} else {
 				// -3 means show 3-star cards (based on CommandReference.js logic)
-				filters.Levels = append(filters.Levels, level) // Backward compatibility  
+				filters.Levels = append(filters.Levels, level) // Backward compatibility
 				filters.Stars = append(filters.Stars, level)   // New terminology
 			}
 			return true
@@ -769,7 +769,7 @@ func MatchesCollection(cardColID, searchTerm string) bool {
 	if cardColID == searchTerm {
 		return true
 	}
-	
+
 	// Check if search term is a prefix (for shorter collections)
 	if strings.HasPrefix(cardColID, searchTerm) {
 		// Only match if the next character is not alphanumeric (to avoid "exo" matching "exocbx")
@@ -780,7 +780,7 @@ func MatchesCollection(cardColID, searchTerm string) bool {
 		}
 		return true
 	}
-	
+
 	// Check if search term is a suffix (for collections ending with the term)
 	if strings.HasSuffix(cardColID, searchTerm) {
 		// Only match if the previous character is not alphanumeric
@@ -790,12 +790,12 @@ func MatchesCollection(cardColID, searchTerm string) bool {
 		}
 		return true
 	}
-	
+
 	// For longer search terms (4+ chars), allow broader matching
 	if len(searchTerm) >= 4 {
 		return strings.Contains(cardColID, searchTerm)
 	}
-	
+
 	return false
 }
 
@@ -1110,13 +1110,13 @@ func applyCardFilters(card *models.Card, filters SearchFilters) bool {
 
 	// Check promo filter logic
 	colInfo, colExists := GetCollectionInfo(card.ColID)
-	
+
 	if filters.PromoOnly {
 		if !colExists || !colInfo.IsPromo {
 			return false
 		}
 	}
-	
+
 	if filters.ExcludePromo {
 		if colExists && colInfo.IsPromo {
 			return false
@@ -1198,10 +1198,10 @@ func WeightedSearchWithMulti(cards []*models.Card, filters SearchFilters, userCa
 		userCard, exists := userCards[card.ID]
 		if !exists {
 			// If user doesn't own the card, skip user-specific filters
-			if !filters.MultiOnly && !filters.SingleOnly && 
-			   !filters.Favorites && !filters.ExcludeFavorites &&
-			   !filters.LockedOnly && !filters.ExcludeLocked &&
-			   filters.AmountFilter.Min == 0 && filters.AmountFilter.Max == 0 && filters.AmountFilter.Exact == 0 {
+			if !filters.MultiOnly && !filters.SingleOnly &&
+				!filters.Favorites && !filters.ExcludeFavorites &&
+				!filters.LockedOnly && !filters.ExcludeLocked &&
+				filters.AmountFilter.Min == 0 && filters.AmountFilter.Max == 0 && filters.AmountFilter.Exact == 0 {
 				filteredResults = append(filteredResults, card)
 			}
 			continue
@@ -1220,7 +1220,7 @@ func WeightedSearchWithMulti(cards []*models.Card, filters SearchFilters, userCa
 func parseEscapedOperator(term string, filters *SearchFilters) bool {
 	// Remove the escape character
 	escapedTerm := term[1:]
-	
+
 	// Handle escaped heart operator
 	if strings.HasPrefix(escapedTerm, "<") && len(escapedTerm) > 1 {
 		// This is for handling escaped hearts like \<3
@@ -1228,20 +1228,20 @@ func parseEscapedOperator(term string, filters *SearchFilters) bool {
 		// For now, we'll treat it as a regular comparison operator
 		return parseComparisonOperator(escapedTerm, filters)
 	}
-	
+
 	return false
 }
 
 // IsQueryEmpty checks if a query has meaningful content (legacy system compatibility)
 func (filters *SearchFilters) IsQueryEmpty(useTag bool) bool {
-	return filters.UserID == "" && 
-		   !filters.LastCard && 
-		   len(filters.Levels) == 0 && 
-		   len(filters.Collections) == 0 && 
-		   len(filters.AntiCollections) == 0 && 
-		   len(filters.AntiLevels) == 0 && 
-		   filters.Name == "" && 
-		   (!useTag || (len(filters.Tags) == 0 && len(filters.AntiTags) == 0))
+	return filters.UserID == "" &&
+		!filters.LastCard &&
+		len(filters.Levels) == 0 &&
+		len(filters.Collections) == 0 &&
+		len(filters.AntiCollections) == 0 &&
+		len(filters.AntiLevels) == 0 &&
+		filters.Name == "" &&
+		(!useTag || (len(filters.Tags) == 0 && len(filters.AntiTags) == 0))
 }
 
 // AddSortCriteria adds a sort criterion to the sort chain (legacy firstBy().thenBy() equivalent)
@@ -1258,7 +1258,7 @@ func (filters *SearchFilters) AddSortCriteria(field string, desc bool) {
 // GetDefaultSort returns the default sort for legacy compatibility
 func GetDefaultSort() []SortCriteria {
 	return []SortCriteria{
-		{Field: SortByLevel, Desc: true},  // First by level (descending)
+		{Field: SortByLevel, Desc: true}, // First by level (descending)
 		{Field: SortByCol, Desc: false},  // Then by collection (ascending)
 		{Field: SortByName, Desc: false}, // Then by name (ascending)
 	}
@@ -1269,35 +1269,35 @@ func ApplyLegacyUserCardFiltering(userCard *models.UserCard, card *models.Card, 
 	if userCard == nil || card == nil {
 		return false
 	}
-	
+
 	// Apply user-specific filters
 	if !applyUserCardFilters(userCard, filters) {
 		return false
 	}
-	
+
 	// Apply new/rated/wish filters
 	if filters.NewOnly {
 		// This would need lastDaily comparison - placeholder for now
 		// if userCard.Obtained <= lastDaily { return false }
 	}
-	
+
 	if filters.ExcludeNew {
 		// This would need lastDaily comparison - placeholder for now
 		// if userCard.Obtained > lastDaily { return false }
 	}
-	
+
 	if filters.RatedOnly && userCard.Rating == 0 {
 		return false
 	}
-	
+
 	if filters.ExcludeRated && userCard.Rating > 0 {
 		return false
 	}
-	
+
 	// Wishlist filtering would need wishlist data
 	// if filters.WishOnly && !isInWishlist(card.ID) { return false }
 	// if filters.ExcludeWish && isInWishlist(card.ID) { return false }
-	
+
 	return true
 }
 
@@ -1471,15 +1471,15 @@ func SortByNameAsc() *SortBuilder {
 // DefaultLegacySort creates the default legacy sort chain: level desc -> collection asc -> name asc
 func DefaultLegacySort() *SortBuilder {
 	return NewSortBuilder().
-		FirstBy(SortByLevel, true).  // Level descending (high to low)
-		ThenBy(SortByCol, false).    // Collection ascending (A to Z)
-		ThenBy(SortByName, false)    // Name ascending (A to Z)
+		FirstBy(SortByLevel, true). // Level descending (high to low)
+		ThenBy(SortByCol, false).   // Collection ascending (A to Z)
+		ThenBy(SortByName, false)   // Name ascending (A to Z)
 }
 
 // BuildSortFromFilters creates a sort builder from search filters (legacy compatibility)
 func BuildSortFromFilters(filters SearchFilters) *SortBuilder {
 	builder := NewSortBuilder()
-	
+
 	// If sort chain is specified, use it
 	if len(filters.SortChain) > 0 {
 		for _, criterion := range filters.SortChain {
@@ -1491,7 +1491,7 @@ func BuildSortFromFilters(filters SearchFilters) *SortBuilder {
 		}
 		return builder
 	}
-	
+
 	// Otherwise use SortBy and SortDesc
 	if filters.SortBy != "" {
 		builder.FirstBy(filters.SortBy, filters.SortDesc)
@@ -1499,6 +1499,6 @@ func BuildSortFromFilters(filters SearchFilters) *SortBuilder {
 		// Default legacy sort
 		return DefaultLegacySort()
 	}
-	
+
 	return builder
 }

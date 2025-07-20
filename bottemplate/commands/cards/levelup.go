@@ -61,7 +61,7 @@ func (c *LevelUpCommand) Handle(event *handler.CommandEvent) error {
 	}
 
 	cardQuery := event.SlashCommandInteractionData().String("card_name")
-	
+
 	// Search only within user's owned cards
 	card, err := c.findCard(ctx, event.User().ID.String(), cardQuery)
 	if err != nil {
@@ -73,7 +73,7 @@ func (c *LevelUpCommand) Handle(event *handler.CommandEvent) error {
 	if err != nil {
 		return createErrorEmbed(event, "Card Access Error", "Failed to access your card data.")
 	}
-	
+
 	// Safety check to prevent nil pointer dereference
 	if userCard == nil {
 		return createErrorEmbed(event, "Card Data Error", "Card data is invalid.")
@@ -90,7 +90,7 @@ func (c *LevelUpCommand) Handle(event *handler.CommandEvent) error {
 		}
 		return createErrorEmbed(event, "Error", err.Error())
 	}
-	
+
 	// Safety check to prevent nil pointer dereference
 	if result == nil {
 		return createErrorEmbed(event, "Leveling Error", "Failed to process leveling result.")
@@ -100,15 +100,10 @@ func (c *LevelUpCommand) Handle(event *handler.CommandEvent) error {
 	go c.bot.CompletionChecker.CheckCompletionForCards(context.Background(), event.User().ID.String(), []int64{userCard.CardID})
 
 	// Track quest progress
-	if c.bot.QuestTracker != nil {
-		// Check if card reached level 5 (max level)
-		reachedMaxLevel := result.NewLevel == 5 && userCard.Level < 5
-		metadata := map[string]interface{}{
-			"is_max_level": reachedMaxLevel,
-			"new_level":    result.NewLevel,
-			"old_level":    userCard.Level,
-		}
-		go c.bot.QuestTracker.TrackCardLevelUpWithMetadata(context.Background(), event.User().ID.String(), 1, metadata)
+
+	// Track effect progress for Kiss Later
+	if c.bot.EffectManager != nil {
+		go c.bot.EffectManager.UpdateEffectProgress(context.Background(), event.User().ID.String(), "kisslater", 1)
 	}
 
 	// Get card details for name display
@@ -116,12 +111,12 @@ func (c *LevelUpCommand) Handle(event *handler.CommandEvent) error {
 	if err != nil {
 		return createErrorEmbed(event, "Error", "Failed to fetch card details")
 	}
-	
+
 	// Safety check to prevent nil pointer dereference
 	if cardDetails == nil {
 		return createErrorEmbed(event, "Card Details Error", "Card details are invalid.")
 	}
-	
+
 	// Safety check for bot services
 	if c.bot == nil || c.bot.SpacesService == nil {
 		return createErrorEmbed(event, "Service Error", "Bot services are not available.")
@@ -202,7 +197,7 @@ func (c *LevelUpCommand) handleCombine(event *handler.CommandEvent, mainCard *mo
 	if err != nil {
 		return createErrorEmbed(event, "Fodder Card Access Error", "Failed to access your fodder card data.")
 	}
-	
+
 	// Safety checks to prevent nil pointer dereference
 	if userFodderCard == nil {
 		return createErrorEmbed(event, "Fodder Card Data Error", "Fodder card data is invalid.")
@@ -212,7 +207,7 @@ func (c *LevelUpCommand) handleCombine(event *handler.CommandEvent, mainCard *mo
 	if err != nil {
 		return createErrorEmbed(event, "Combination Failed", err.Error())
 	}
-	
+
 	// Safety check to prevent nil pointer dereference
 	if result == nil {
 		return createErrorEmbed(event, "Combination Error", "Failed to process combination result.")
@@ -224,7 +219,7 @@ func (c *LevelUpCommand) handleCombine(event *handler.CommandEvent, mainCard *mo
 	// Track quest progress for combine
 	if c.bot.QuestTracker != nil {
 		// Check if card reached level 5 (max level) after combination
-		oldLevel := mainCard.Level - (result.NewLevel - mainCard.Level)  // Calculate old level before combine
+		oldLevel := mainCard.Level - (result.NewLevel - mainCard.Level) // Calculate old level before combine
 		reachedMaxLevel := result.NewLevel == 5 && oldLevel < 5
 		metadata := map[string]interface{}{
 			"is_max_level": reachedMaxLevel,

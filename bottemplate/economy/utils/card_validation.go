@@ -47,7 +47,7 @@ func (cv *CardValidation) CalculateBasePrice(card models.Card) int64 {
 	if err := cv.ValidateCardLevel(card.Level); err != nil {
 		return MinPrice
 	}
-	
+
 	basePrice := InitialBasePrice * int64(math.Pow(LevelMultiplier, float64(card.Level-1)))
 	return max(basePrice, MinPrice)
 }
@@ -121,7 +121,7 @@ func (cv *CardValidation) CalculateOwnershipModifier(activeOwners int) float64 {
 	if activeOwners < MinimumActiveOwners {
 		return 1.0
 	}
-	
+
 	// Inverse logarithmic scaling for scarcity
 	scarcityMod := 2.0 - math.Log10(float64(activeOwners)+1)/2.0
 	return math.Max(1.0, scarcityMod)

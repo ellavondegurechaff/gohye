@@ -51,7 +51,7 @@ func (s *CardOperationsService) GetUserCardsWithDetailsAndFiltersWithUser(ctx co
 	// Extract card IDs for bulk query
 	cardIDs := make([]int64, len(userCards))
 	cardMap := make(map[int64]*models.UserCard)
-	
+
 	for i, userCard := range userCards {
 		cardIDs[i] = userCard.CardID
 		cardMap[userCard.CardID] = userCard
@@ -66,20 +66,20 @@ func (s *CardOperationsService) GetUserCardsWithDetailsAndFiltersWithUser(ctx co
 	// Parse search filters
 	filters := utils.SearchFilters{}
 	var displayCards []*models.UserCard
-	
+
 	if len(query) > 0 {
 		filters = utils.ParseSearchQuery(query)
 		// Mark this as an inventory search to include album cards
 		filters.IsInventorySearch = true
-		
+
 		// Apply favorites filtering FIRST (on UserCards before search)
 		filteredUserCards := s.applyFavoritesFilter(userCards, filters)
-		
+
 		// Apply new card filtering if specified
 		if (filters.NewOnly || filters.ExcludeNew) && user != nil {
 			filteredUserCards = s.applyNewCardFilter(filteredUserCards, user, filters.NewOnly)
 		}
-		
+
 		// Build card mappings for the filtered user cards
 		filteredCardMap := make(map[int64]*models.UserCard)
 		filteredCardIDs := make([]int64, len(filteredUserCards))
@@ -87,13 +87,13 @@ func (s *CardOperationsService) GetUserCardsWithDetailsAndFiltersWithUser(ctx co
 			filteredCardMap[userCard.CardID] = userCard
 			filteredCardIDs[i] = userCard.CardID
 		}
-		
+
 		// Get cards for the filtered user cards
 		filteredCards, err := s.cardRepo.GetByIDs(ctx, filteredCardIDs)
 		if err != nil {
 			return nil, nil, utils.SearchFilters{}, fmt.Errorf("failed to fetch filtered card details: %w", err)
 		}
-		
+
 		// Run search on the favorites-filtered cards using unified search
 		var results []*models.Card
 		if filters.MultiOnly {
@@ -109,7 +109,7 @@ func (s *CardOperationsService) GetUserCardsWithDetailsAndFiltersWithUser(ctx co
 				displayCards = append(displayCards, userCard)
 			}
 		}
-		
+
 		// Apply user-specific sorting after mapping back to UserCards
 		// This is needed for sorts like experience, amount, rating that require UserCard data
 		if needsUserCardSorting(filters.SortBy) {
@@ -233,17 +233,17 @@ func (s *CardOperationsService) GetCardDifferences(ctx context.Context, userID, 
 func (s *CardOperationsService) SearchCardsInCollection(ctx context.Context, cards []*models.Card, filters utils.SearchFilters) []*models.Card {
 	// Check if this is a filter-only operation (levels, collections, tags, etc. without name search)
 	hasNameQuery := filters.Name != "" && filters.Name != filters.Query
-	hasFilterQuery := len(filters.Levels) > 0 || len(filters.AntiLevels) > 0 || 
-					  len(filters.Collections) > 0 || len(filters.AntiCollections) > 0 ||
-					  len(filters.Tags) > 0 || len(filters.AntiTags) > 0 ||
-					  filters.Animated || filters.ExcludeAnimated ||
-					  filters.PromoOnly || filters.ExcludePromo
-	
+	hasFilterQuery := len(filters.Levels) > 0 || len(filters.AntiLevels) > 0 ||
+		len(filters.Collections) > 0 || len(filters.AntiCollections) > 0 ||
+		len(filters.Tags) > 0 || len(filters.AntiTags) > 0 ||
+		filters.Animated || filters.ExcludeAnimated ||
+		filters.PromoOnly || filters.ExcludePromo
+
 	// For filter-only operations or when name is just the parsed query, use WeightedSearch
 	if !hasNameQuery || hasFilterQuery {
 		return utils.WeightedSearch(cards, filters)
 	}
-	
+
 	// Use UnifiedSearchService for text-based name searches
 	unifiedSearchService := NewUnifiedSearchService(s)
 	return unifiedSearchService.SearchCards(ctx, cards, filters.Name, filters)
@@ -376,12 +376,12 @@ func (s *CardOperationsService) applyFavoritesFilter(userCards []*models.UserCar
 			break
 		}
 	}
-	
+
 	// If no favorites query, return all cards
 	if favQuery == "" {
 		return userCards
 	}
-	
+
 	var filteredCards []*models.UserCard
 	for _, userCard := range userCards {
 		switch favQuery {
@@ -397,7 +397,7 @@ func (s *CardOperationsService) applyFavoritesFilter(userCards []*models.UserCar
 			}
 		}
 	}
-	
+
 	return filteredCards
 }
 
@@ -406,9 +406,9 @@ func (s *CardOperationsService) applyNewCardFilter(userCards []*models.UserCard,
 	if user == nil {
 		return userCards
 	}
-	
+
 	lastDaily := user.LastDaily
-	
+
 	// Handle zero time case - if user has never claimed daily
 	if lastDaily.IsZero() {
 		if newOnly {
@@ -419,11 +419,11 @@ func (s *CardOperationsService) applyNewCardFilter(userCards []*models.UserCard,
 			return []*models.UserCard{}
 		}
 	}
-	
+
 	var filtered []*models.UserCard
 	for _, userCard := range userCards {
 		isNewCard := userCard.Obtained.After(lastDaily)
-		
+
 		if newOnly {
 			// Include only cards obtained after last daily
 			if isNewCard {
@@ -436,6 +436,6 @@ func (s *CardOperationsService) applyNewCardFilter(userCards []*models.UserCard,
 			}
 		}
 	}
-	
+
 	return filtered
 }

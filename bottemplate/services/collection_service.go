@@ -257,7 +257,7 @@ func (s *CollectionService) GetCollectionLeaderboard(ctx context.Context, collec
 	if limit > 25 {
 		limit = 25 // Maximum limit to prevent performance issues
 	}
-	
+
 	return s.collectionRepo.GetCollectionProgress(ctx, collectionID, limit)
 }
 
@@ -300,6 +300,6 @@ func (s *CollectionService) GetRandomSampleCard(ctx context.Context, collectionI
 
 	// Select random card using existing codebase pattern
 	selectedCard := eligibleCards[rand.Intn(len(eligibleCards))]
-	
+
 	return selectedCard, nil
 }

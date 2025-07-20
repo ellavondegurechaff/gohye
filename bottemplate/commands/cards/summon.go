@@ -49,7 +49,7 @@ func SummonHandler(b *bottemplate.Bot) handler.CommandHandler {
 		if len(userCards) > 0 && len(cards) > 0 {
 			// Build card mappings for efficient lookup
 			_, cardMap := cardOperationsService.BuildCardMappings(userCards, cards)
-			
+
 			// Extract owned cards with amount > 0
 			var ownedCards []*models.Card
 			for _, userCard := range userCards {
@@ -59,7 +59,7 @@ func SummonHandler(b *bottemplate.Bot) handler.CommandHandler {
 					}
 				}
 			}
-			
+
 			// Use UnifiedSearchService for best match finding
 			if len(ownedCards) > 0 {
 				unifiedSearchService := services.NewUnifiedSearchService(cardOperationsService)

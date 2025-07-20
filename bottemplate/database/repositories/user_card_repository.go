@@ -245,7 +245,7 @@ func (r *userCardRepository) ToggleFavorite(ctx context.Context, userID string, 
 
 	// Toggle the favorite status
 	newFavoriteStatus := !userCard.Favorite
-	
+
 	// Update the favorite field
 	_, err = r.db.NewUpdate().
 		Model((*models.UserCard)(nil)).
@@ -253,7 +253,7 @@ func (r *userCardRepository) ToggleFavorite(ctx context.Context, userID string, 
 		Set("updated_at = ?", time.Now()).
 		Where("user_id = ? AND card_id = ?", userID, cardID).
 		Exec(ctx)
-	
+
 	if err != nil {
 		return false, fmt.Errorf("failed to toggle favorite: %w", err)
 	}

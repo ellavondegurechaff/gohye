@@ -391,7 +391,9 @@ func main() {
 		effectsHandlers.NewCherryblossHandler(deps),
 		effectsHandlers.NewRulerjeanneHandler(deps),
 		effectsHandlers.NewSpellcardHandler(deps),
-		effectsHandlers.NewWalpurgisnightHandler(deps),
+		effectsHandlers.NewLambhyejooHandler(deps),
+		effectsHandlers.NewYouthyouthHandler(deps),
+		effectsHandlers.NewKisslaterHandler(deps),
 	}
 
 	for _, effect := range passiveEffects {
@@ -433,11 +435,16 @@ func main() {
 	h.Component("/shop_item", handlers.WrapComponentWithLogging("shop_item", shopHandler.HandleComponent))
 	h.Component("/shop_buy/", handlers.WrapComponentWithLogging("shop_buy", shopHandler.HandleComponent))
 
-	// Inventory commands
-	inventoryHandler := system.NewInventoryHandler(b, effectManager)
-	h.Command("/inventory", handlers.WrapWithLogging("inventory", inventoryHandler.Handle))
-	h.Component("/inventory_category", handlers.WrapComponentWithLogging("inventory_category", inventoryHandler.HandleComponent))
-	h.Component("/inventory_item", handlers.WrapComponentWithLogging("inventory_item", inventoryHandler.HandleComponent))
+	// Effects commands
+	effectsHandler := system.NewEffectsHandler(b, effectManager)
+	h.Command("/effects", handlers.WrapWithLogging("effects", effectsHandler.Handle))
+	
+	effectInfoHandler := system.NewEffectInfoHandler(b, effectManager)
+	h.Command("/effect", handlers.WrapWithLogging("effect", effectInfoHandler.Handle))
+	
+	effectUpgradeHandler := system.NewEffectUpgradeHandler(b, effectManager)
+	h.Component("/effect_upgrade_confirm_", handlers.WrapComponentWithLogging("effect_upgrade_confirm", effectUpgradeHandler.HandleUpgradeConfirm))
+	h.Component("/effect_upgrade_cancel", handlers.WrapComponentWithLogging("effect_upgrade_cancel", effectUpgradeHandler.HandleUpgradeCancel))
 
 	// Use Effect commands
 	useEffectHandler := system.NewUseEffectHandler(b, effectManager)

@@ -57,7 +57,7 @@ var Diff = discord.SlashCommandCreate{
 
 func DiffHandler(b *bottemplate.Bot) handler.CommandHandler {
 	cardOperationsService := services.NewCardOperationsService(b.CardRepository, b.UserCardRepository)
-	
+
 	return func(e *handler.CommandEvent) error {
 		ctx, cancel := context.WithTimeout(context.Background(), config.DefaultQueryTimeout)
 		defer cancel()
@@ -171,25 +171,24 @@ func DiffHandler(b *bottemplate.Bot) handler.CommandHandler {
 	}
 }
 
-
 // DiffComponentHandler handles diff command pagination using the new unified factory
 func DiffComponentHandler(b *bottemplate.Bot) handler.ComponentHandler {
 	cardOperationsService := services.NewCardOperationsService(b.CardRepository, b.UserCardRepository)
-	
+
 	// Create data fetcher
 	fetcher := &DiffDataFetcher{
 		bot:                   b,
 		cardOperationsService: cardOperationsService,
 	}
-	
+
 	// Create formatter
 	formatter := &DiffFormatter{
 		bot: b,
 	}
-	
+
 	// Create validator
 	validator := &DiffValidator{}
-	
+
 	// Create factory configuration
 	factoryConfig := utils.PaginationFactoryConfig{
 		ItemsPerPage: config.CardsPerPage,
@@ -199,7 +198,7 @@ func DiffComponentHandler(b *bottemplate.Bot) handler.ComponentHandler {
 		Formatter:    formatter,
 		Validator:    validator,
 	}
-	
+
 	// Create factory and return handler
 	factory := utils.NewPaginationFactory(factoryConfig)
 	return factory.CreateHandler()
@@ -314,7 +313,7 @@ func (df *DiffFormatter) FormatCopy(items []interface{}, params utils.Pagination
 	for i, item := range items {
 		displayItems[i] = item.(services.CardDisplayItem)
 	}
-	
+
 	cardDisplayService := services.NewCardDisplayService(df.bot.CardRepository, df.bot.SpacesService)
 	copyText, err := cardDisplayService.FormatCopyText(context.Background(), displayItems, title)
 	if err != nil {
@@ -329,4 +328,3 @@ type DiffValidator struct{}
 func (dv *DiffValidator) ValidateUser(eventUserID string, params utils.PaginationParams) bool {
 	return eventUserID == params.UserID
 }
-

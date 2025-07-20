@@ -156,14 +156,44 @@ func (h *CakedayHandler) ApplyEffect(ctx context.Context, userID string, action 
 		return baseValue, fmt.Errorf("invalid base value type for daily reward")
 	}
 
-	// Add 100 snowflakes per claim made today
-	bonus := user.DailyStats.Claims * 100
+	// Get the user's effect tier and calculate bonus based on tier
+	effectRepo, ok := h.BaseEffectHandler.GetDependencies().EffectRepo.(repositories.EffectRepository)
+	if !ok {
+		return baseValue, fmt.Errorf("invalid effect repository type")
+	}
+
+	userEffect, err := effectRepo.GetUserEffect(ctx, userID, "cakeday")
+	if err != nil {
+		// Effect not found or error, use default
+		return baseValue, nil
+	}
+
+	// Get tier value from effect definition
+	effectData := effects.GetEffectItemByID("cakeday")
+	if effectData == nil || effectData.TierData == nil {
+		// Fallback to old behavior
+		bonus := user.DailyStats.Claims * 100
+		modifiedReward := baseReward + bonus
+		return modifiedReward, nil
+	}
+
+	// Get value for current tier
+	tierIndex := userEffect.Tier - 1
+	if tierIndex < 0 || tierIndex >= len(effectData.TierData.Values) {
+		return baseValue, fmt.Errorf("invalid tier index")
+	}
+
+	// Calculate bonus: flakes per claim * claims made
+	flakesPerClaim := effectData.TierData.Values[tierIndex]
+	bonus := user.DailyStats.Claims * flakesPerClaim
 	modifiedReward := baseReward + bonus
 
 	slog.Info("Applied Cakeday effect",
 		slog.String("user_id", userID),
 		slog.Int("base_reward", baseReward),
 		slog.Int("claims_today", user.DailyStats.Claims),
+		slog.Int("tier", userEffect.Tier),
+		slog.Int("flakes_per_claim", flakesPerClaim),
 		slog.Int("bonus", bonus),
 		slog.Int("modified_reward", modifiedReward))
 
@@ -186,7 +216,34 @@ func (h *CakedayHandler) GetModifier(ctx context.Context, userID string, action 
 		return 0.0, err
 	}
 
-	return float64(user.DailyStats.Claims * 100), nil
+	// Get the user's effect tier
+	effectRepo, ok := h.BaseEffectHandler.GetDependencies().EffectRepo.(repositories.EffectRepository)
+	if !ok {
+		// Fallback to old behavior
+		return float64(user.DailyStats.Claims * 100), nil
+	}
+
+	userEffect, err := effectRepo.GetUserEffect(ctx, userID, "cakeday")
+	if err != nil {
+		// Effect not found, return 0
+		return 0.0, nil
+	}
+
+	// Get tier value from effect definition
+	effectData := effects.GetEffectItemByID("cakeday")
+	if effectData == nil || effectData.TierData == nil {
+		// Fallback to old behavior
+		return float64(user.DailyStats.Claims * 100), nil
+	}
+
+	// Get value for current tier
+	tierIndex := userEffect.Tier - 1
+	if tierIndex < 0 || tierIndex >= len(effectData.TierData.Values) {
+		return 0.0, nil
+	}
+
+	flakesPerClaim := effectData.TierData.Values[tierIndex]
+	return float64(user.DailyStats.Claims * flakesPerClaim), nil
 }
 
 // HolygrailHandler implements the "The Holy Grail" passive effect
@@ -618,7 +675,7 @@ func (h *WalpurgisnightHandler) ApplyEffect(ctx context.Context, userID string, 
 
 	// Allow up to 3 draws with max 3-star
 	drawConfig := map[string]interface{}{
-		"max_draws":   3,
+		"max_draws":  3,
 		"max_rarity": 3,
 	}
 
@@ -641,4 +698,380 @@ func (h *WalpurgisnightHandler) GetModifier(ctx context.Context, userID string, 
 	}
 
 	return 3.0, nil
+}
+
+// LambhyejooHandler implements the "Lamb of Hyejoo" passive effect
+type LambhyejooHandler struct {
+	*effects.BaseEffectHandler
+	userRepo repositories.UserRepository
+}
+
+// NewLambhyejooHandler creates a new Lambhyejoo effect handler
+func NewLambhyejooHandler(deps *effects.EffectDependencies) *LambhyejooHandler {
+	metadata := effects.EffectMetadata{
+		ID:          "lambhyejoo",
+		Name:        "Lamb of Hyejoo",
+		Description: "Gain extra flakes from selling cards on auction",
+		Type:        effects.EffectTypePassive,
+		Category:    effects.EffectCategoryEconomy,
+		Cooldown:    0,
+		MaxUses:     -1,
+		Animated:    false,
+		Tags:        []string{"passive", "auction", "sales"},
+		Version:     "1.0.0",
+	}
+
+	return &LambhyejooHandler{
+		BaseEffectHandler: effects.NewBaseEffectHandler(metadata, deps),
+		userRepo:          deps.UserRepo.(repositories.UserRepository),
+	}
+}
+
+// Execute for passive effects
+func (h *LambhyejooHandler) Execute(ctx context.Context, params effects.EffectParams) (*effects.EffectResult, error) {
+	return &effects.EffectResult{
+		Success:  true,
+		Message:  "Lambhyejoo passive effect is active",
+		Consumed: false,
+	}, nil
+}
+
+// ApplyEffect applies the auction sale bonus
+func (h *LambhyejooHandler) ApplyEffect(ctx context.Context, userID string, action string, baseValue interface{}) (interface{}, error) {
+	if action != "auction_sale_bonus" {
+		return baseValue, nil
+	}
+
+	// Expect auction sale price as baseValue
+	salePrice, ok := baseValue.(int64)
+	if !ok {
+		return baseValue, fmt.Errorf("invalid base value type for auction sale price")
+	}
+
+	// Get the user's effect tier
+	effectRepo, ok := h.BaseEffectHandler.GetDependencies().EffectRepo.(repositories.EffectRepository)
+	if !ok {
+		return baseValue, fmt.Errorf("invalid effect repository type")
+	}
+
+	userEffect, err := effectRepo.GetUserEffect(ctx, userID, "lambhyejoo")
+	if err != nil {
+		// Effect not found, return base value
+		return baseValue, nil
+	}
+
+	// Get tier value from effect definition
+	effectData := effects.GetEffectItemByID("lambhyejoo")
+	if effectData == nil || effectData.TierData == nil {
+		return baseValue, nil
+	}
+
+	// Get value for current tier
+	tierIndex := userEffect.Tier - 1
+	if tierIndex < 0 || tierIndex >= len(effectData.TierData.Values) {
+		return baseValue, fmt.Errorf("invalid tier index")
+	}
+
+	// Calculate bonus based on tier
+	bonusPercent := effectData.TierData.Values[tierIndex]
+	bonus := int64(float64(salePrice) * float64(bonusPercent) / 100.0)
+
+	slog.Info("Applied Lambhyejoo effect",
+		slog.String("user_id", userID),
+		slog.Int64("sale_price", salePrice),
+		slog.Int("tier", userEffect.Tier),
+		slog.Int("bonus_percent", bonusPercent),
+		slog.Int64("bonus", bonus))
+
+	return bonus, nil
+}
+
+// IsActive checks if the effect is currently active
+func (h *LambhyejooHandler) IsActive(ctx context.Context, userID string) (bool, error) {
+	return true, nil // Simplified for now
+}
+
+// GetModifier returns the auction sale bonus percentage
+func (h *LambhyejooHandler) GetModifier(ctx context.Context, userID string, action string) (float64, error) {
+	if action != "auction_sale_bonus" {
+		return 0.0, nil
+	}
+
+	// Get the user's effect tier
+	effectRepo, ok := h.BaseEffectHandler.GetDependencies().EffectRepo.(repositories.EffectRepository)
+	if !ok {
+		return 0.0, nil
+	}
+
+	userEffect, err := effectRepo.GetUserEffect(ctx, userID, "lambhyejoo")
+	if err != nil {
+		return 0.0, nil
+	}
+
+	// Get tier value from effect definition
+	effectData := effects.GetEffectItemByID("lambhyejoo")
+	if effectData == nil || effectData.TierData == nil {
+		return 0.0, nil
+	}
+
+	// Get value for current tier
+	tierIndex := userEffect.Tier - 1
+	if tierIndex < 0 || tierIndex >= len(effectData.TierData.Values) {
+		return 0.0, nil
+	}
+
+	bonusPercent := effectData.TierData.Values[tierIndex]
+	return float64(bonusPercent) / 100.0, nil
+}
+
+// YouthyouthHandler implements the "Youth Youth By Young" passive effect
+type YouthyouthHandler struct {
+	*effects.BaseEffectHandler
+	userRepo repositories.UserRepository
+}
+
+// NewYouthyouthHandler creates a new Youthyouth effect handler
+func NewYouthyouthHandler(deps *effects.EffectDependencies) *YouthyouthHandler {
+	metadata := effects.EffectMetadata{
+		ID:          "youthyouth",
+		Name:        "Youth Youth By Young",
+		Description: "Gain extra rewards from work",
+		Type:        effects.EffectTypePassive,
+		Category:    effects.EffectCategoryEconomy,
+		Cooldown:    0,
+		MaxUses:     -1,
+		Animated:    false,
+		Tags:        []string{"passive", "work", "rewards"},
+		Version:     "1.0.0",
+	}
+
+	return &YouthyouthHandler{
+		BaseEffectHandler: effects.NewBaseEffectHandler(metadata, deps),
+		userRepo:          deps.UserRepo.(repositories.UserRepository),
+	}
+}
+
+// Execute for passive effects
+func (h *YouthyouthHandler) Execute(ctx context.Context, params effects.EffectParams) (*effects.EffectResult, error) {
+	return &effects.EffectResult{
+		Success:  true,
+		Message:  "Youthyouth passive effect is active",
+		Consumed: false,
+	}, nil
+}
+
+// ApplyEffect applies the work reward bonus
+func (h *YouthyouthHandler) ApplyEffect(ctx context.Context, userID string, action string, baseValue interface{}) (interface{}, error) {
+	if action != "work_reward" {
+		return baseValue, nil
+	}
+
+	// Expect work reward as baseValue
+	baseReward, ok := baseValue.(int)
+	if !ok {
+		return baseValue, fmt.Errorf("invalid base value type for work reward")
+	}
+
+	// Get the user's effect tier
+	effectRepo, ok := h.BaseEffectHandler.GetDependencies().EffectRepo.(repositories.EffectRepository)
+	if !ok {
+		return baseValue, fmt.Errorf("invalid effect repository type")
+	}
+
+	userEffect, err := effectRepo.GetUserEffect(ctx, userID, "youthyouth")
+	if err != nil {
+		// Effect not found, return base value
+		return baseValue, nil
+	}
+
+	// Get tier value from effect definition
+	effectData := effects.GetEffectItemByID("youthyouth")
+	if effectData == nil || effectData.TierData == nil {
+		return baseValue, nil
+	}
+
+	// Get value for current tier
+	tierIndex := userEffect.Tier - 1
+	if tierIndex < 0 || tierIndex >= len(effectData.TierData.Values) {
+		return baseValue, fmt.Errorf("invalid tier index")
+	}
+
+	// Calculate bonus based on tier
+	bonusPercent := effectData.TierData.Values[tierIndex]
+	bonus := int(float64(baseReward) * float64(bonusPercent) / 100.0)
+	modifiedReward := baseReward + bonus
+
+	slog.Info("Applied Youthyouth effect",
+		slog.String("user_id", userID),
+		slog.Int("base_reward", baseReward),
+		slog.Int("tier", userEffect.Tier),
+		slog.Int("bonus_percent", bonusPercent),
+		slog.Int("bonus", bonus),
+		slog.Int("modified_reward", modifiedReward))
+
+	return modifiedReward, nil
+}
+
+// IsActive checks if the effect is currently active
+func (h *YouthyouthHandler) IsActive(ctx context.Context, userID string) (bool, error) {
+	return true, nil // Simplified for now
+}
+
+// GetModifier returns the work bonus percentage
+func (h *YouthyouthHandler) GetModifier(ctx context.Context, userID string, action string) (float64, error) {
+	if action != "work_reward" {
+		return 1.0, nil
+	}
+
+	// Get the user's effect tier
+	effectRepo, ok := h.BaseEffectHandler.GetDependencies().EffectRepo.(repositories.EffectRepository)
+	if !ok {
+		return 1.0, nil
+	}
+
+	userEffect, err := effectRepo.GetUserEffect(ctx, userID, "youthyouth")
+	if err != nil {
+		return 1.0, nil
+	}
+
+	// Get tier value from effect definition
+	effectData := effects.GetEffectItemByID("youthyouth")
+	if effectData == nil || effectData.TierData == nil {
+		return 1.0, nil
+	}
+
+	// Get value for current tier
+	tierIndex := userEffect.Tier - 1
+	if tierIndex < 0 || tierIndex >= len(effectData.TierData.Values) {
+		return 1.0, nil
+	}
+
+	bonusPercent := effectData.TierData.Values[tierIndex]
+	return 1.0 + (float64(bonusPercent) / 100.0), nil
+}
+
+// KisslaterHandler implements the "Kiss Later" passive effect
+type KisslaterHandler struct {
+	*effects.BaseEffectHandler
+	userRepo repositories.UserRepository
+}
+
+// NewKisslaterHandler creates a new Kisslater effect handler
+func NewKisslaterHandler(deps *effects.EffectDependencies) *KisslaterHandler {
+	metadata := effects.EffectMetadata{
+		ID:          "kisslater",
+		Name:        "Kiss Later",
+		Description: "Gain extra XP from levelup",
+		Type:        effects.EffectTypePassive,
+		Category:    effects.EffectCategoryCollection,
+		Cooldown:    0,
+		MaxUses:     -1,
+		Animated:    false,
+		Tags:        []string{"passive", "levelup", "xp"},
+		Version:     "1.0.0",
+	}
+
+	return &KisslaterHandler{
+		BaseEffectHandler: effects.NewBaseEffectHandler(metadata, deps),
+		userRepo:          deps.UserRepo.(repositories.UserRepository),
+	}
+}
+
+// Execute for passive effects
+func (h *KisslaterHandler) Execute(ctx context.Context, params effects.EffectParams) (*effects.EffectResult, error) {
+	return &effects.EffectResult{
+		Success:  true,
+		Message:  "Kisslater passive effect is active",
+		Consumed: false,
+	}, nil
+}
+
+// ApplyEffect applies the levelup XP bonus
+func (h *KisslaterHandler) ApplyEffect(ctx context.Context, userID string, action string, baseValue interface{}) (interface{}, error) {
+	if action != "levelup_xp" {
+		return baseValue, nil
+	}
+
+	// Expect XP amount as baseValue
+	baseXP, ok := baseValue.(int)
+	if !ok {
+		return baseValue, fmt.Errorf("invalid base value type for XP")
+	}
+
+	// Get the user's effect tier
+	effectRepo, ok := h.BaseEffectHandler.GetDependencies().EffectRepo.(repositories.EffectRepository)
+	if !ok {
+		return baseValue, fmt.Errorf("invalid effect repository type")
+	}
+
+	userEffect, err := effectRepo.GetUserEffect(ctx, userID, "kisslater")
+	if err != nil {
+		// Effect not found, return base value
+		return baseValue, nil
+	}
+
+	// Get tier value from effect definition
+	effectData := effects.GetEffectItemByID("kisslater")
+	if effectData == nil || effectData.TierData == nil {
+		return baseValue, nil
+	}
+
+	// Get value for current tier
+	tierIndex := userEffect.Tier - 1
+	if tierIndex < 0 || tierIndex >= len(effectData.TierData.Values) {
+		return baseValue, fmt.Errorf("invalid tier index")
+	}
+
+	// Calculate bonus based on tier
+	bonusPercent := effectData.TierData.Values[tierIndex]
+	bonus := int(float64(baseXP) * float64(bonusPercent) / 100.0)
+	modifiedXP := baseXP + bonus
+
+	slog.Info("Applied Kisslater effect",
+		slog.String("user_id", userID),
+		slog.Int("base_xp", baseXP),
+		slog.Int("tier", userEffect.Tier),
+		slog.Int("bonus_percent", bonusPercent),
+		slog.Int("bonus", bonus),
+		slog.Int("modified_xp", modifiedXP))
+
+	return modifiedXP, nil
+}
+
+// IsActive checks if the effect is currently active
+func (h *KisslaterHandler) IsActive(ctx context.Context, userID string) (bool, error) {
+	return true, nil // Simplified for now
+}
+
+// GetModifier returns the XP bonus percentage
+func (h *KisslaterHandler) GetModifier(ctx context.Context, userID string, action string) (float64, error) {
+	if action != "levelup_xp" {
+		return 1.0, nil
+	}
+
+	// Get the user's effect tier
+	effectRepo, ok := h.BaseEffectHandler.GetDependencies().EffectRepo.(repositories.EffectRepository)
+	if !ok {
+		return 1.0, nil
+	}
+
+	userEffect, err := effectRepo.GetUserEffect(ctx, userID, "kisslater")
+	if err != nil {
+		return 1.0, nil
+	}
+
+	// Get tier value from effect definition
+	effectData := effects.GetEffectItemByID("kisslater")
+	if effectData == nil || effectData.TierData == nil {
+		return 1.0, nil
+	}
+
+	// Get value for current tier
+	tierIndex := userEffect.Tier - 1
+	if tierIndex < 0 || tierIndex >= len(effectData.TierData.Values) {
+		return 1.0, nil
+	}
+
+	bonusPercent := effectData.TierData.Values[tierIndex]
+	return 1.0 + (float64(bonusPercent) / 100.0), nil
 }

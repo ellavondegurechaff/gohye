@@ -34,23 +34,23 @@ type ProcessingStats struct {
 
 // PriceScheduler handles background price update orchestration and batch processing
 type PriceScheduler struct {
-	calculator    *Calculator
-	analyzer      *MarketAnalyzer
-	store         *PriceStore
-	sem           *semaphore.Weighted
+	calculator     *Calculator
+	analyzer       *MarketAnalyzer
+	store          *PriceStore
+	sem            *semaphore.Weighted
 	updateInterval time.Duration
-	logger        *log.Logger
+	logger         *log.Logger
 }
 
 // NewPriceScheduler creates a new price scheduler
 func NewPriceScheduler(calculator *Calculator, analyzer *MarketAnalyzer, store *PriceStore, updateInterval time.Duration) *PriceScheduler {
 	return &PriceScheduler{
-		calculator:    calculator,
-		analyzer:      analyzer,
-		store:         store,
-		sem:           semaphore.NewWeighted(maxConcurrentBatches),
+		calculator:     calculator,
+		analyzer:       analyzer,
+		store:          store,
+		sem:            semaphore.NewWeighted(maxConcurrentBatches),
 		updateInterval: updateInterval,
-		logger:        log.Default(),
+		logger:         log.Default(),
 	}
 }
 

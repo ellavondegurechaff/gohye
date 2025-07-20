@@ -48,7 +48,7 @@ func (h *FuseHandler) Handle(e *handler.CommandEvent) error {
 	}
 
 	hasAll, missing := checkRequirements(userItems, requirements)
-	
+
 	if !hasAll {
 		return h.showMissingItemsEmbed(e, userItems, missing)
 	}
@@ -261,7 +261,7 @@ func (h *FuseHandler) handleFusionConfirm(e *handler.ComponentEvent) error {
 	}
 
 	fmt.Printf("Found %d cards in %s collection after filtering\n", len(cards), albumType)
-	
+
 	if len(cards) == 0 {
 		// Rollback by giving items back
 		for itemID, quantity := range requirements {
@@ -272,10 +272,10 @@ func (h *FuseHandler) handleFusionConfirm(e *handler.ComponentEvent) error {
 			Components: &[]discord.ContainerComponent{},
 		})
 	}
-	
+
 	// Select random card
 	albumCard = cards[rand.Intn(len(cards))]
-	
+
 	if albumCard == nil {
 		// Rollback by giving items back
 		for itemID, quantity := range requirements {
@@ -286,7 +286,7 @@ func (h *FuseHandler) handleFusionConfirm(e *handler.ComponentEvent) error {
 			Components: &[]discord.ContainerComponent{},
 		})
 	}
-	
+
 	fmt.Printf("Selected card: ID=%d, Name=%s, ColID=%s\n", albumCard.ID, albumCard.Name, albumCard.ColID)
 
 	// Grant card to user

@@ -16,9 +16,9 @@ import (
 
 // AuctionIDGenerator handles the generation of unique auction IDs
 type AuctionIDGenerator struct {
-	repo      repositories.AuctionRepository
-	cardRepo  repositories.CardRepository
-	idGenMu   sync.Mutex
+	repo     repositories.AuctionRepository
+	cardRepo repositories.CardRepository
+	idGenMu  sync.Mutex
 }
 
 // NewAuctionIDGenerator creates a new ID generator

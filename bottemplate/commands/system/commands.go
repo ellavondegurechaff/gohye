@@ -12,4 +12,6 @@ var Commands = []discord.ApplicationCommandCreate{
 	Profile,
 	QuestsCommand,
 	QuestClaimCommand,
+	Effects,
+	EffectInfo,
 }

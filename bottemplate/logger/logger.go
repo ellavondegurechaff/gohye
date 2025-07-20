@@ -62,7 +62,7 @@ func (h *CustomHandler) Handle(_ context.Context, r slog.Record) error {
 	// Use pre-allocated builder to reduce allocations
 	var builder strings.Builder
 	builder.Grow(256) // Estimate typical log line size
-	
+
 	builder.WriteString("[")
 	builder.WriteString(time.Now().Format("15:04:05.000"))
 	builder.WriteString("][")
@@ -122,7 +122,7 @@ func (h *CustomHandler) buildMetadata(r *slog.Record) string {
 	builder.Grow(128) // Estimate typical metadata size
 
 	hasMetadata := false
-	
+
 	// Duration calculation removed from per-log metadata for performance
 	// Duration tracking should be handled at the operation level instead
 

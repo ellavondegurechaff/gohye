@@ -77,15 +77,15 @@ type EnhancedJobScenario struct {
 
 // Card bonus calculation result
 type CardBonus struct {
-	HasTagBonus        bool
-	HasCollectionBonus bool
-	TagMultiplier      float64
+	HasTagBonus          bool
+	HasCollectionBonus   bool
+	TagMultiplier        float64
 	CollectionMultiplier float64
-	CombinedMultiplier float64
-	RelevantCards      []*models.Card  // Cards from the specific collection
-	CollectionName     string
-	TagMatchCount      int             // Count of cards matching required tags
-	CollectionCardCount int            // Count of cards from the specific collection
+	CombinedMultiplier   float64
+	RelevantCards        []*models.Card // Cards from the specific collection
+	CollectionName       string
+	TagMatchCount        int // Count of cards matching required tags
+	CollectionCardCount  int // Count of cards from the specific collection
 }
 
 func (h *WorkHandler) HandleWork(e *handler.CommandEvent) error {
@@ -155,12 +155,12 @@ func (h *WorkHandler) HandleComponent(e *handler.ComponentEvent) error {
 			fmt.Sscanf(parts[4], "%d", &rarity)
 			collectionID := parts[5]
 			originalUserID := parts[6]
-			
+
 			// Validate that only the command author can click
 			if e.User().ID.String() != originalUserID {
 				return utils.EH.CreateEphemeralError(e, "Only the person who used the /work command can answer this question.")
 			}
-			
+
 			if collectionID == "none" {
 				collectionID = ""
 			}
@@ -176,7 +176,6 @@ func (h *WorkHandler) HandleComponent(e *handler.ComponentEvent) error {
 		})
 	}
 }
-
 
 func (h *WorkHandler) generateJobScenarioWithCollection(ctx context.Context) (JobScenario, EnhancedJobScenario) {
 	// Determine rarity (weighted distribution)
@@ -219,7 +218,6 @@ func (h *WorkHandler) generateJobScenarioWithCollection(ctx context.Context) (Jo
 
 	return enhanced.JobScenario, enhanced
 }
-
 
 // Generate enhanced scenarios based on rarity
 func getEnhancedJobScenarios(rarity JobRarity) []EnhancedJobScenario {
@@ -411,7 +409,7 @@ func (h *WorkHandler) calculateCardBonusWithCollection(ctx context.Context, user
 	tagCardCount := 0
 	highestLevelTag := 0
 	hasAnimatedTag := false
-	
+
 	highestLevelCollection := 0
 	hasAnimatedCollection := false
 
@@ -473,7 +471,7 @@ func (h *WorkHandler) calculateCardBonusWithCollection(ctx context.Context, user
 		if hasAnimatedTag {
 			animatedBonus = 0.1
 		}
-		
+
 		bonus.TagMultiplier = 1.0 + cardBonus + levelBonus + animatedBonus
 		// Cap tag multiplier at 1.5x
 		if bonus.TagMultiplier > 1.5 {
@@ -493,7 +491,7 @@ func (h *WorkHandler) calculateCardBonusWithCollection(ctx context.Context, user
 		if hasAnimatedCollection {
 			animatedBonus = 0.1
 		}
-		
+
 		bonus.CollectionMultiplier = 1.0 + cardBonus + levelBonus + animatedBonus
 		// Cap collection multiplier at 1.5x
 		if bonus.CollectionMultiplier > 1.5 {
@@ -511,14 +509,13 @@ func (h *WorkHandler) calculateCardBonusWithCollection(ctx context.Context, user
 	return bonus
 }
 
-
 func (h *WorkHandler) createJobScenarioEmbedWithCollection(scenario JobScenario, enhanced EnhancedJobScenario) discord.Embed {
 	// Rarity display
 	stars := strings.Repeat("⭐", int(scenario.Rarity))
 
 	var description strings.Builder
 	description.WriteString(fmt.Sprintf("**Rarity:** %s\n", stars))
-	
+
 	// Show collection bonus if applicable
 	if enhanced.CollectionBonus != "" && enhanced.CollectionBonus != "random" {
 		collection, err := h.bot.CollectionRepository.GetByID(context.Background(), enhanced.CollectionBonus)
@@ -526,7 +523,7 @@ func (h *WorkHandler) createJobScenarioEmbedWithCollection(scenario JobScenario,
 			description.WriteString(fmt.Sprintf("**Collection Bonus:** %s (need %d+ cards)\n", collection.Name, enhanced.MinCardsForBonus))
 		}
 	}
-	
+
 	description.WriteString(fmt.Sprintf("\n*%s*\n\n", scenario.Description))
 	description.WriteString(fmt.Sprintf("**%s**", scenario.Question))
 
@@ -561,7 +558,6 @@ func getRarityColor(rarity JobRarity) int {
 		return config.BackgroundColor
 	}
 }
-
 
 func (h *WorkHandler) createScenarioComponentsWithCollection(scenario JobScenario, enhanced EnhancedJobScenario, userID string) []discord.ContainerComponent {
 	// Store collection ID in the custom ID
@@ -658,13 +654,9 @@ func (h *WorkHandler) HandleWorkAnswer(e *handler.ComponentEvent, correctIdx, ch
 		})
 	}
 
-	// Track quest progress
-	if h.bot.QuestTracker != nil {
-		go h.bot.QuestTracker.TrackWork(context.Background(), user.DiscordID)
-		// Track snowflakes earned
-		if rewards.Flakes > 0 {
-			go h.bot.QuestTracker.TrackSnowflakesEarned(context.Background(), user.DiscordID, rewards.Flakes, "")
-		}
+	// Track effect progress for Youth Youth By Young
+	if h.bot.EffectManager != nil {
+		go h.bot.EffectManager.UpdateEffectProgress(context.Background(), user.DiscordID, "youthyouth", 1)
 	}
 
 	// Process item drops
@@ -850,17 +842,17 @@ func (h *WorkHandler) createWorkResultEmbedWithBonus(success bool, rarity JobRar
 
 	// Add rewards with multiplier in a clean format
 	hasBonus := cardBonus.CombinedMultiplier > 1.0 && success
-	
+
 	rewardText := fmt.Sprintf("❄️ **%d** Flakes", rewards.Flakes)
 	if hasBonus {
 		rewardText = fmt.Sprintf("❄️ **%d** Flakes ×%.1f", rewards.Flakes, cardBonus.CombinedMultiplier)
 	}
-	
+
 	vialText := fmt.Sprintf("🍷 **%d** Vials", rewards.Vials)
 	if hasBonus {
 		vialText = fmt.Sprintf("🍷 **%d** Vials ×%.1f", rewards.Vials, cardBonus.CombinedMultiplier)
 	}
-	
+
 	xpText := fmt.Sprintf("✨ **%d** XP", rewards.XP)
 	if hasBonus {
 		xpText = fmt.Sprintf("✨ **%d** XP ×%.1f", rewards.XP, cardBonus.CombinedMultiplier)
@@ -871,7 +863,7 @@ func (h *WorkHandler) createWorkResultEmbedWithBonus(success bool, rarity JobRar
 	description.WriteString(rewardText + "\n")
 	description.WriteString(vialText + "\n")
 	description.WriteString(xpText)
-	
+
 	// Add item drops if any
 	if len(rewards.ItemDrops) > 0 {
 		description.WriteString("\n\n**🎁 Bonus Items**\n")
@@ -880,14 +872,14 @@ func (h *WorkHandler) createWorkResultEmbedWithBonus(success bool, rarity JobRar
 			models.ItemMicrophone:    "🎤 Microphone",
 			models.ItemForgottenSong: "📜 Forgotten Song",
 		}
-		
+
 		for _, itemID := range rewards.ItemDrops {
 			if name, ok := itemMap[itemID]; ok {
 				description.WriteString(name + "\n")
 			}
 		}
 	}
-	
+
 	embed.SetDescription(description.String())
 
 	// Add bonus information if job was successful
@@ -906,7 +898,7 @@ func (h *WorkHandler) createWorkResultEmbedWithBonus(success bool, rarity JobRar
 				true,
 			)
 		}
-		
+
 		// Tag bonus field
 		tagIcon := "❌"
 		tagText := fmt.Sprintf("%d cards", cardBonus.TagMatchCount)
@@ -919,7 +911,7 @@ func (h *WorkHandler) createWorkResultEmbedWithBonus(success bool, rarity JobRar
 			tagText,
 			true,
 		)
-		
+
 		// Total multiplier field if any bonus applied
 		if hasBonus {
 			embed.AddField(

@@ -13,22 +13,22 @@ import (
 
 // PricingConfig holds all configuration for price calculation
 type PricingConfig struct {
-	BasePrice           int64   // Base price for level 1 cards
-	LevelMultiplier     float64 // Price multiplier per level
-	ScarcityWeight      float64 // Weight for scarcity impact
-	ActivityWeight      float64 // Weight for activity impact
-	MinPrice            int64   // Absolute minimum price
-	MaxPrice            int64   // Absolute maximum price
-	MinActiveOwners     int     // Minimum active owners for price calculation
-	MinTotalCopies      int     // Minimum total copies for price calculation
-	BaseMultiplier      float64 // Base price multiplier
-	ScarcityImpact      float64 // Price reduction per copy
-	DistributionImpact  float64 // Impact for distribution
-	HoardingThreshold   float64 // Supply threshold for hoarding
-	HoardingImpact      float64 // Price increase for hoarding
-	ActivityImpact      float64 // Impact for activity
-	OwnershipImpact     float64 // Impact per owner
-	RarityMultiplier    float64 // Increase per rarity level
+	BasePrice          int64   // Base price for level 1 cards
+	LevelMultiplier    float64 // Price multiplier per level
+	ScarcityWeight     float64 // Weight for scarcity impact
+	ActivityWeight     float64 // Weight for activity impact
+	MinPrice           int64   // Absolute minimum price
+	MaxPrice           int64   // Absolute maximum price
+	MinActiveOwners    int     // Minimum active owners for price calculation
+	MinTotalCopies     int     // Minimum total copies for price calculation
+	BaseMultiplier     float64 // Base price multiplier
+	ScarcityImpact     float64 // Price reduction per copy
+	DistributionImpact float64 // Impact for distribution
+	HoardingThreshold  float64 // Supply threshold for hoarding
+	HoardingImpact     float64 // Price increase for hoarding
+	ActivityImpact     float64 // Impact for activity
+	OwnershipImpact    float64 // Impact per owner
+	RarityMultiplier   float64 // Increase per rarity level
 }
 
 // CardStats represents the statistical data for a card

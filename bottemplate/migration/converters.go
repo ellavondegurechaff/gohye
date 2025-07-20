@@ -295,7 +295,7 @@ func cleanseString(s string) string {
 		// For valid UTF-8 strings, only remove null bytes and control characters
 		var result strings.Builder
 		result.Grow(len(s))
-		
+
 		for _, r := range s {
 			// Remove null runes and most control characters (keep tab, newline, carriage return)
 			if r == 0 || (r < 32 && r != 9 && r != 10 && r != 13) {
@@ -303,7 +303,7 @@ func cleanseString(s string) string {
 			}
 			result.WriteRune(r)
 		}
-		
+
 		return strings.TrimSpace(result.String())
 	}
 
@@ -311,9 +311,9 @@ func cleanseString(s string) string {
 	original := s
 
 	// Handle common Windows-1252 to UTF-8 problematic characters
-	s = strings.ReplaceAll(s, "\x90", "") // Remove 0x90 character
+	s = strings.ReplaceAll(s, "\x90", "")  // Remove 0x90 character
 	s = strings.ReplaceAll(s, "\x91", "'") // Left single quotation mark
-	s = strings.ReplaceAll(s, "\x92", "'") // Right single quotation mark  
+	s = strings.ReplaceAll(s, "\x92", "'") // Right single quotation mark
 	s = strings.ReplaceAll(s, "\x93", `"`) // Left double quotation mark
 	s = strings.ReplaceAll(s, "\x94", `"`) // Right double quotation mark
 	s = strings.ReplaceAll(s, "\x95", "•") // Bullet
@@ -324,14 +324,14 @@ func cleanseString(s string) string {
 	s = strings.ReplaceAll(s, "\x9A", "š") // Latin small letter s with caron
 	s = strings.ReplaceAll(s, "\x9B", "›") // Single right-pointing angle quotation mark
 	s = strings.ReplaceAll(s, "\x9C", "œ") // Latin small ligature oe
-	s = strings.ReplaceAll(s, "\x9D", "") // Remove 0x9D
+	s = strings.ReplaceAll(s, "\x9D", "")  // Remove 0x9D
 	s = strings.ReplaceAll(s, "\x9E", "ž") // Latin small letter z with caron
 	s = strings.ReplaceAll(s, "\x9F", "Ÿ") // Latin capital letter y with diaeresis
 
 	// Process as UTF-8 runes instead of bytes to preserve multi-byte sequences
 	var result strings.Builder
 	result.Grow(len(s))
-	
+
 	for _, r := range s {
 		// Remove null runes and most control characters (keep tab, newline, carriage return)
 		if r == 0 || (r < 32 && r != 9 && r != 10 && r != 13) {
@@ -341,7 +341,7 @@ func cleanseString(s string) string {
 	}
 
 	cleaned := result.String()
-	
+
 	// Final UTF-8 validation and cleanup
 	if !utf8.ValidString(cleaned) {
 		fmt.Printf("Warning: Still invalid UTF-8 after cleaning: %q -> applying fallback\n", original)
@@ -364,7 +364,7 @@ func min(a, b int) int {
 // Convert MongoDB collection to PostgreSQL collection
 func (m *Migrator) convertCollection(mc MongoCollection) *models.Collection {
 	now := time.Now()
-	
+
 	return &models.Collection{
 		ID:         mc.ColID,
 		Name:       cleanseString(mc.Name),
@@ -382,13 +382,13 @@ func (m *Migrator) convertCollection(mc MongoCollection) *models.Collection {
 // Convert MongoDB card to PostgreSQL card
 func (m *Migrator) convertMongoCard(mc MongoCard) *models.Card {
 	now := time.Now()
-	
+
 	// Convert tags string to array following existing pattern
 	var tags []string
 	if mc.Tags != "" {
 		tags = []string{mc.Tags}
 	}
-	
+
 	return &models.Card{
 		ID:        int64(mc.CardID),
 		Name:      cleanseString(mc.Name),
@@ -404,7 +404,7 @@ func (m *Migrator) convertMongoCard(mc MongoCard) *models.Card {
 // Convert MongoDB claim to PostgreSQL claims (array decomposition)
 func (m *Migrator) convertClaims(mc MongoClaim) []*models.Claim {
 	var claims []*models.Claim
-	
+
 	// Decompose array: create one claim record per card
 	for _, cardID := range mc.Cards {
 		claim := &models.Claim{
@@ -415,14 +415,14 @@ func (m *Migrator) convertClaims(mc MongoClaim) []*models.Claim {
 		}
 		claims = append(claims, claim)
 	}
-	
+
 	return claims
 }
 
 // Convert MongoDB auction to PostgreSQL auction and auction bids
 func (m *Migrator) convertAuction(ma MongoAuction) (*models.Auction, []*models.AuctionBid) {
 	now := time.Now()
-	
+
 	// Determine auction status
 	var status models.AuctionStatus
 	if ma.Cancelled {
@@ -432,7 +432,7 @@ func (m *Migrator) convertAuction(ma MongoAuction) (*models.Auction, []*models.A
 	} else {
 		status = models.AuctionStatusActive
 	}
-	
+
 	// Create auction record
 	auction := &models.Auction{
 		AuctionID:    ma.AuctionID,
@@ -449,11 +449,11 @@ func (m *Migrator) convertAuction(ma MongoAuction) (*models.Auction, []*models.A
 		CreatedAt:    now,
 		UpdatedAt:    now,
 	}
-	
+
 	if len(ma.Bids) > 0 {
 		auction.LastBidTime = ma.Bids[len(ma.Bids)-1].Time
 	}
-	
+
 	// Create individual bid records for relational enhancement
 	var auctionBids []*models.AuctionBid
 	for _, bid := range ma.Bids {
@@ -465,14 +465,14 @@ func (m *Migrator) convertAuction(ma MongoAuction) (*models.Auction, []*models.A
 		}
 		auctionBids = append(auctionBids, auctionBid)
 	}
-	
+
 	return auction, auctionBids
 }
 
 // Convert MongoDB user effect to PostgreSQL user effect
 func (m *Migrator) convertUserEffect(me MongoUserEffect) *models.UserEffect {
 	now := time.Now()
-	
+
 	effect := &models.UserEffect{
 		UserID:    me.UserID,
 		EffectID:  me.EffectID,
@@ -481,23 +481,23 @@ func (m *Migrator) convertUserEffect(me MongoUserEffect) *models.UserEffect {
 		CreatedAt: now,
 		UpdatedAt: now,
 	}
-	
+
 	// Handle optional fields
 	if !me.Expires.IsZero() {
 		effect.ExpiresAt = &me.Expires
 	}
-	
+
 	if !me.CooldownEnds.IsZero() {
 		effect.CooldownEndsAt = &me.CooldownEnds
 	}
-	
+
 	return effect
 }
 
 // Convert MongoDB user quest to PostgreSQL user quest
 func (m *Migrator) convertUserQuest(mq MongoUserQuest) *models.UserQuest {
 	now := time.Now()
-	
+
 	return &models.UserQuest{
 		UserID:    mq.UserID,
 		QuestID:   mq.QuestID,
@@ -513,13 +513,13 @@ func (m *Migrator) convertUserQuest(mq MongoUserQuest) *models.UserQuest {
 // MongoDB USER INVENTORIES actually represents recipes with specific cards, not simple inventory counts
 func (m *Migrator) convertUserInventory(mi MongoUserInventory) *models.UserRecipe {
 	now := time.Now()
-	
+
 	// Convert int32 card IDs to int64
 	var cardIDs []int64
 	for _, cardID := range mi.Cards {
 		cardIDs = append(cardIDs, int64(cardID))
 	}
-	
+
 	// MongoDB USER INVENTORIES should map to UserRecipe, not UserInventory
 	// This preserves the specific card information
 	recipe := &models.UserRecipe{
@@ -529,6 +529,6 @@ func (m *Migrator) convertUserInventory(mi MongoUserInventory) *models.UserRecip
 		CreatedAt: mi.Acquired, // Use original acquired time
 		UpdatedAt: now,
 	}
-	
+
 	return recipe
 }

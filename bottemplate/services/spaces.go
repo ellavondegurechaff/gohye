@@ -58,7 +58,7 @@ func NewSpacesService(spacesKey, spacesSecret, region, bucket, cardRoot string) 
 
 	// Initialize path cache in background
 	go service.cacheManager.InitializePathCache()
-	
+
 	return service
 }
 

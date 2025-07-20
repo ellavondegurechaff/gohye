@@ -77,17 +77,17 @@ func (h *HelpHandler) showOverviewHelp(event *handler.CommandEvent, categories m
 	var totalCommands int
 	for _, category := range categories {
 		totalCommands += len(category.Commands)
-		
+
 		var commandList []string
 		for _, cmd := range category.Commands {
 			commandList = append(commandList, fmt.Sprintf("`/%s`", cmd.Name))
 		}
-		
-		fieldValue := fmt.Sprintf("%s **%d commands**\n%s", 
-			category.Emoji, 
+
+		fieldValue := fmt.Sprintf("%s **%d commands**\n%s",
+			category.Emoji,
 			len(category.Commands),
 			strings.Join(commandList, " • "))
-		
+
 		embed.AddField(category.Name, fieldValue, false)
 	}
 
@@ -145,11 +145,11 @@ func (h *HelpHandler) showCategoryHelp(event *handler.CommandEvent, categoryName
 	for _, cmd := range category.Commands {
 		fieldName := fmt.Sprintf("/%s", cmd.Name)
 		fieldValue := cmd.Description
-		
+
 		if len(cmd.Subcommands) > 0 {
 			fieldValue += fmt.Sprintf("\n**Subcommands:** %s", strings.Join(cmd.Subcommands, ", "))
 		}
-		
+
 		embed.AddField(fieldName, fieldValue, false)
 	}
 
@@ -201,11 +201,11 @@ func (h *HelpHandler) updateCategoryHelp(event *handler.ComponentEvent, category
 	for _, cmd := range category.Commands {
 		fieldName := fmt.Sprintf("/%s", cmd.Name)
 		fieldValue := cmd.Description
-		
+
 		if len(cmd.Subcommands) > 0 {
 			fieldValue += fmt.Sprintf("\n**Subcommands:** %s", strings.Join(cmd.Subcommands, ", "))
 		}
-		
+
 		embed.AddField(fieldName, fieldValue, false)
 	}
 
@@ -233,17 +233,17 @@ func (h *HelpHandler) updateOverviewHelp(event *handler.ComponentEvent, categori
 	var totalCommands int
 	for _, category := range categories {
 		totalCommands += len(category.Commands)
-		
+
 		var commandList []string
 		for _, cmd := range category.Commands {
 			commandList = append(commandList, fmt.Sprintf("`/%s`", cmd.Name))
 		}
-		
-		fieldValue := fmt.Sprintf("%s **%d commands**\n%s", 
-			category.Emoji, 
+
+		fieldValue := fmt.Sprintf("%s **%d commands**\n%s",
+			category.Emoji,
 			len(category.Commands),
 			strings.Join(commandList, " • "))
-		
+
 		embed.AddField(category.Name, fieldValue, false)
 	}
 

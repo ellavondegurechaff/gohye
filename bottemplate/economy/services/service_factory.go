@@ -152,27 +152,27 @@ func DefaultEconomicServiceConfig() EconomicServiceConfig {
 // ProductionEconomicServiceConfig returns a production-optimized configuration
 func ProductionEconomicServiceConfig() EconomicServiceConfig {
 	config := DefaultEconomicServiceConfig()
-	
+
 	// Production optimizations
 	config.DefaultTransactionTimeout = 60 * time.Second
 	config.MaxRetries = 5
 	config.MonitoringInterval = 5 * time.Minute
 	config.PricingConfig.PriceUpdateInterval = 6 * time.Hour
 	config.PricingConfig.CacheExpiration = 30 * time.Minute
-	
+
 	return config
 }
 
 // DevelopmentEconomicServiceConfig returns a development-optimized configuration
 func DevelopmentEconomicServiceConfig() EconomicServiceConfig {
 	config := DefaultEconomicServiceConfig()
-	
+
 	// Development optimizations
 	config.DefaultTransactionTimeout = 10 * time.Second
 	config.ClaimCooldownPeriod = 1 * time.Second
 	config.MonitoringInterval = 1 * time.Minute
 	config.PricingConfig.PriceUpdateInterval = 10 * time.Minute
 	config.PricingConfig.CacheExpiration = 5 * time.Minute
-	
+
 	return config
 }

@@ -404,10 +404,6 @@ func executeImageCommand(ctx context.Context, e *handler.CommandEvent, b *bottem
 	}
 }
 
-
-
-
-
 func createImageManagementResponse(e *handler.CommandEvent, result *services.ImageManagementResult) error {
 	if result == nil {
 		return fmt.Errorf("nil result in createImageManagementResponse")

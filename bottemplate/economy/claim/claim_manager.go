@@ -62,10 +62,10 @@ func (m *Manager) LockClaim(userID string) bool {
 	// Store claim lock with expiry time - this must succeed since we just created the session
 	expiry := now.Add(m.lockDuration)
 	m.activeClaimLock.Store(userID, expiry)
-	
+
 	// Initialize claim owner entry to maintain consistency
 	m.claimOwners.Store(userID, userID)
-	
+
 	return true
 }
 
@@ -74,7 +74,7 @@ func (m *Manager) ReleaseClaim(userID string) {
 	m.activeClaimLock.Delete(userID)
 	m.activeUsers.Delete(userID)
 	m.claimOwners.Delete(userID)
-	
+
 	// Clean up message owners - need to iterate to find messages owned by this user
 	var messagesToDelete []string
 	m.messageOwners.Range(func(key, value interface{}) bool {
@@ -85,7 +85,7 @@ func (m *Manager) ReleaseClaim(userID string) {
 		}
 		return true
 	})
-	
+
 	for _, messageID := range messagesToDelete {
 		m.messageOwners.Delete(messageID)
 		m.claimCards.Delete(messageID)

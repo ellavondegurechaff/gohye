@@ -172,7 +172,7 @@ func (br *BaseRepository) ValidateRequired(fields map[string]interface{}) error 
 		if value == nil {
 			return fmt.Errorf("required field %s cannot be nil", field)
 		}
-		
+
 		// Check for empty strings
 		if str, ok := value.(string); ok && str == "" {
 			return fmt.Errorf("required field %s cannot be empty", field)
@@ -184,13 +184,13 @@ func (br *BaseRepository) ValidateRequired(fields map[string]interface{}) error 
 // SetTimestamps updates CreatedAt and UpdatedAt fields
 func (br *BaseRepository) SetTimestamps(model interface{}) {
 	now := time.Now()
-	
+
 	// Use reflection or interface to set timestamps
 	// This is a simplified version - in practice you might want to use interfaces
 	type Timestamped interface {
 		SetTimestamps(created, updated time.Time)
 	}
-	
+
 	if ts, ok := model.(Timestamped); ok {
 		ts.SetTimestamps(now, now)
 	}
@@ -199,11 +199,11 @@ func (br *BaseRepository) SetTimestamps(model interface{}) {
 // SetUpdateTimestamp updates only the UpdatedAt field
 func (br *BaseRepository) SetUpdateTimestamp(model interface{}) {
 	now := time.Now()
-	
+
 	type UpdateTimestamped interface {
 		SetUpdateTimestamp(updated time.Time)
 	}
-	
+
 	if ts, ok := model.(UpdateTimestamped); ok {
 		ts.SetUpdateTimestamp(now)
 	}

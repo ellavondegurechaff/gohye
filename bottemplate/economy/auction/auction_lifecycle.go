@@ -199,12 +199,12 @@ func (l *AuctionLifecycleManager) completeAuction(ctx context.Context, auctionID
 		slog.Int64("auction_id", auctionID),
 		slog.String("winner_id", auction.TopBidderID),
 		slog.Int64("final_price", auction.CurrentPrice))
-	
+
 	// Track quest progress for auction win if there was a winner
 	if auction.TopBidderID != "" && l.manager.questTrackerFunc != nil {
 		go l.manager.questTrackerFunc(auction.TopBidderID)
 	}
-	
+
 	// Track snowflakes earned from auction sale
 	if auction.TopBidderID != "" && l.manager.questSnowflakesTrackerFunc != nil {
 		go l.manager.questSnowflakesTrackerFunc(auction.SellerID, auction.CurrentPrice, "auction")
@@ -258,4 +258,3 @@ func (l *AuctionLifecycleManager) cancelAuctionInternal(ctx context.Context, auc
 
 	return nil
 }
-

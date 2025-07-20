@@ -14,7 +14,7 @@ func (db *DB) InitializeQuestData(ctx context.Context) error {
 	var questCount int
 	err := db.pool.QueryRow(ctx, "SELECT COUNT(*) FROM quest_definitions").Scan(&questCount)
 	if err == nil && questCount > 0 {
-		slog.Info("Quest data already initialized, skipping", 
+		slog.Info("Quest data already initialized, skipping",
 			slog.Int("existing_quests", questCount))
 		return nil
 	}
@@ -37,18 +37,18 @@ func (db *DB) InitializeQuestData(ctx context.Context) error {
 			RewardXP:         25,
 		},
 		{
-			QuestID:          "daily_vial_collector",
-			Name:             "Vial Collector",
-			Description:      "Liquefy cards to gain 100 vials",
-			Tier:             1,
-			Type:             models.QuestTypeDaily,
-			Category:         models.QuestCategoryTrainee,
-			RequirementType:  models.RequirementTypeSpecificCommand,
+			QuestID:           "daily_vial_collector",
+			Name:              "Vial Collector",
+			Description:       "Liquefy cards to gain 100 vials",
+			Tier:              1,
+			Type:              models.QuestTypeDaily,
+			Category:          models.QuestCategoryTrainee,
+			RequirementType:   models.RequirementTypeSpecificCommand,
 			RequirementTarget: "liquefy",
-			RequirementCount: 100,
-			RewardSnowflakes: 250,
-			RewardVials:      20,
-			RewardXP:         25,
+			RequirementCount:  100,
+			RewardSnowflakes:  250,
+			RewardVials:       20,
+			RewardXP:          25,
 		},
 		{
 			QuestID:          "daily_card_claimer",
@@ -185,7 +185,7 @@ func (db *DB) InitializeQuestData(ctx context.Context) error {
 			RequirementType:  models.RequirementTypeCombo,
 			RequirementCount: 1,
 			RequirementMetadata: map[string]interface{}{
-				"claim": 10,
+				"claim":   10,
 				"levelup": 5,
 			},
 			RewardSnowflakes: 650,
@@ -241,9 +241,9 @@ func (db *DB) InitializeQuestData(ctx context.Context) error {
 			RequirementType:  models.RequirementTypeCombo,
 			RequirementCount: 1,
 			RequirementMetadata: map[string]interface{}{
-				"claim": 8,
-				"work": 3,
-				"levelup": 10,
+				"claim":          8,
+				"work":           3,
+				"levelup":        10,
 				"auction_create": 1,
 			},
 			RewardSnowflakes: 650,
@@ -418,7 +418,7 @@ func (db *DB) InitializeQuestData(ctx context.Context) error {
 			RequirementType:  models.RequirementTypeCombo,
 			RequirementCount: 1,
 			RequirementMetadata: map[string]interface{}{
-				"claim": 50,
+				"claim":   50,
 				"levelup": 20,
 			},
 			RewardSnowflakes: 2500,
@@ -629,7 +629,7 @@ func (db *DB) InitializeQuestData(ctx context.Context) error {
 			RequirementType:  models.RequirementTypeCombo,
 			RequirementCount: 1,
 			RequirementMetadata: map[string]interface{}{
-				"claim": 200,
+				"claim":   200,
 				"levelup": 100,
 			},
 			RewardSnowflakes: 8000,
@@ -663,18 +663,18 @@ func (db *DB) InitializeQuestData(ctx context.Context) error {
 			RewardXP:         200,
 		},
 		{
-			QuestID:          "monthly_ultimate_flipper",
-			Name:             "Ultimate Flipper",
-			Description:      "Earn 20,000 snowflakes through auctions",
-			Tier:             3,
-			Type:             models.QuestTypeMonthly,
-			Category:         models.QuestCategoryIdol,
-			RequirementType:  models.RequirementTypeSnowflakesFromSource,
+			QuestID:           "monthly_ultimate_flipper",
+			Name:              "Ultimate Flipper",
+			Description:       "Earn 20,000 snowflakes through auctions",
+			Tier:              3,
+			Type:              models.QuestTypeMonthly,
+			Category:          models.QuestCategoryIdol,
+			RequirementType:   models.RequirementTypeSnowflakesFromSource,
 			RequirementTarget: "auction",
-			RequirementCount: 20000,
-			RewardSnowflakes: 8000,
-			RewardVials:      200,
-			RewardXP:         200,
+			RequirementCount:  20000,
+			RewardSnowflakes:  8000,
+			RewardVials:       200,
+			RewardXP:          200,
 		},
 		{
 			QuestID:          "monthly_perfect_dedication",
@@ -737,24 +737,24 @@ func (db *DB) InitializeQuestData(ctx context.Context) error {
 
 	slog.Info("Quest data initialization completed",
 		slog.Int("total_quests", len(allQuests)))
-	
+
 	// Apply quest fixes for existing quests in database
 	slog.Info("Applying quest fixes...")
-	
+
 	// Fix Level Addict quest to track days
 	_, err = db.bunDB.NewUpdate().
 		Model((*models.QuestDefinition)(nil)).
 		Set("description = ?", "Use /levelup on 3 different days").
 		Set("requirement_metadata = ?", map[string]interface{}{"track_days": true}).
 		Set("updated_at = NOW()").
-		Where("quest_id = ? OR (name = ? AND requirement_type = ?)", 
+		Where("quest_id = ? OR (name = ? AND requirement_type = ?)",
 			"monthly_level_addict", "Level Addict", "card_levelup").
 		Exec(ctx)
 	if err != nil {
 		slog.Warn("Failed to update Level Addict quest",
 			slog.Any("error", err))
 	}
-	
+
 	// Reset Level Addict progress for proper day tracking
 	_, err = db.bunDB.NewUpdate().
 		Model((*models.UserQuestProgress)(nil)).
@@ -769,7 +769,7 @@ func (db *DB) InitializeQuestData(ctx context.Context) error {
 		slog.Warn("Failed to reset Level Addict progress",
 			slog.Any("error", err))
 	}
-	
+
 	// Reset Balanced Routine progress if it exists
 	_, err = db.bunDB.NewUpdate().
 		Model((*models.UserQuestProgress)(nil)).
@@ -783,8 +783,8 @@ func (db *DB) InitializeQuestData(ctx context.Context) error {
 		slog.Warn("Failed to reset Balanced Routine progress",
 			slog.Any("error", err))
 	}
-	
+
 	slog.Info("Quest fixes applied successfully")
-	
+
 	return nil
 }

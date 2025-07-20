@@ -47,7 +47,7 @@ func (gi *GameIntegrator) GetActivePassiveEffects(ctx context.Context, userID st
 // ApplyDailyEffects applies passive effects to daily rewards
 func (gi *GameIntegrator) ApplyDailyEffects(ctx context.Context, userID string, baseReward int) int {
 	result := gi.applyPassiveEffectWithFeedback(ctx, userID, "daily_reward", baseReward)
-	
+
 	modifiedReward, ok := result.GetValue().(int)
 	if !ok {
 		slog.Warn("Invalid result type from passive effect application",
@@ -67,7 +67,7 @@ func (gi *GameIntegrator) ApplyDailyEffectsWithFeedback(ctx context.Context, use
 // ApplyClaimEffects applies passive effects to claim chances
 func (gi *GameIntegrator) ApplyClaimEffects(ctx context.Context, userID string, baseChance float64) float64 {
 	result := gi.applyPassiveEffectWithFeedback(ctx, userID, "claim_3star_chance", baseChance)
-	
+
 	modifiedChance, ok := result.GetValue().(float64)
 	if !ok {
 		slog.Warn("Invalid result type from passive effect application",
@@ -87,7 +87,7 @@ func (gi *GameIntegrator) ApplyClaimEffectsWithFeedback(ctx context.Context, use
 // ApplyForgeDiscount applies passive effects to forge costs
 func (gi *GameIntegrator) ApplyForgeDiscount(ctx context.Context, userID string, baseCost int) int {
 	result := gi.applyPassiveEffectWithFeedback(ctx, userID, "forge_cost", baseCost)
-	
+
 	modifiedCost, ok := result.GetValue().(int)
 	if !ok {
 		slog.Warn("Invalid result type from passive effect application",
@@ -342,7 +342,7 @@ func (gi *GameIntegrator) IsEffectActive(ctx context.Context, userID string, eff
 		if err != nil {
 			return false, nil
 		}
-		
+
 		for _, effect := range userEffect {
 			if effect.EffectID == effectID && effect.Active {
 				return true, nil
@@ -368,7 +368,7 @@ func (gi *GameIntegrator) GetPassiveEffectModifier(ctx context.Context, userID s
 func (gi *GameIntegrator) RefreshEffects(ctx context.Context, userID string) error {
 	// Refresh individual user's effect status
 	if err := gi.effectManager.RefreshEffectStatus(ctx, userID); err != nil {
-		slog.Warn("Failed to refresh user effect status", 
+		slog.Warn("Failed to refresh user effect status",
 			slog.String("user_id", userID),
 			slog.Any("error", err))
 	}
@@ -465,7 +465,7 @@ func (gi *GameIntegrator) applyPassiveEffect(ctx context.Context, userID string,
 // applyPassiveEffectWithFeedback applies passive effects and returns detailed feedback
 func (gi *GameIntegrator) applyPassiveEffectWithFeedback(ctx context.Context, userID string, action string, baseValue interface{}) *EffectApplicationResult {
 	result := NewEffectApplicationResult(baseValue)
-	
+
 	// Get all active passive effects for user
 	activeEffects, err := gi.effectManager.GetActiveUserEffects(ctx, userID)
 	if err != nil {
@@ -499,7 +499,7 @@ func (gi *GameIntegrator) applyPassiveEffectWithFeedback(ctx context.Context, us
 
 		// Store original value before applying effect
 		originalValue := currentValue
-		
+
 		// Apply the effect
 		currentValue, err = handler.ApplyEffect(ctx, userID, action, currentValue)
 		if err != nil {
@@ -515,7 +515,7 @@ func (gi *GameIntegrator) applyPassiveEffectWithFeedback(ctx context.Context, us
 		if currentValue != originalValue {
 			// Get modifier for feedback
 			modifier, _ := handler.GetModifier(ctx, userID, action)
-			
+
 			// Add to applied effects list
 			result.AddAppliedEffect(
 				userEffect.EffectID,

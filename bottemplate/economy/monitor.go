@@ -230,7 +230,7 @@ func calculateGiniCoefficient(balances []int64) float64 {
 	// Convert to float64 slice for calculations
 	sortedBalances := make([]float64, len(balances))
 	var totalSum float64
-	
+
 	for i, balance := range balances {
 		sortedBalances[i] = float64(balance)
 		totalSum += float64(balance)

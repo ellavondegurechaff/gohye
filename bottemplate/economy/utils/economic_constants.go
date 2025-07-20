@@ -34,25 +34,25 @@ const (
 
 // Auction Constants
 const (
-	MinBidIncrement = 100                // Minimum bid increment
-	MaxAuctionTime  = 24 * time.Hour     // Maximum auction duration
-	MinAuctionTime  = 10 * time.Second   // Minimum auction duration
-	AntiSnipeTime   = 10 * time.Second   // Anti-snipe extension time
-	AuctionIDLength = 6                  // Length of auction ID
-	MaxRetries      = 5                  // Maximum retries for operations
+	MinBidIncrement = 100              // Minimum bid increment
+	MaxAuctionTime  = 24 * time.Hour   // Maximum auction duration
+	MinAuctionTime  = 10 * time.Second // Minimum auction duration
+	AntiSnipeTime   = 10 * time.Second // Anti-snipe extension time
+	AuctionIDLength = 6                // Length of auction ID
+	MaxRetries      = 5                // Maximum retries for operations
 )
 
 // Card Level Validation
 const (
-	MinCardLevel         = 1 // Minimum card level
-	MaxCardLevel         = 5 // Maximum card level
-	MaxLiquefyCardLevel  = 3 // Maximum card level that can be liquefied
+	MinCardLevel        = 1 // Minimum card level
+	MaxCardLevel        = 5 // Maximum card level
+	MaxLiquefyCardLevel = 3 // Maximum card level that can be liquefied
 )
 
 // Transaction Constants
 const (
-	DefaultTxTimeout        = 30 * time.Second      // Default transaction timeout
-	CleanupInterval         = 15 * time.Second      // Cleanup ticker interval
+	DefaultTxTimeout        = 30 * time.Second       // Default transaction timeout
+	CleanupInterval         = 15 * time.Second       // Cleanup ticker interval
 	NotificationDelay       = 100 * time.Millisecond // Delay between notifications
-	UserInactivityThreshold = 30 * 24 * time.Hour   // 30 days user inactivity threshold
+	UserInactivityThreshold = 30 * 24 * time.Hour    // 30 days user inactivity threshold
 )

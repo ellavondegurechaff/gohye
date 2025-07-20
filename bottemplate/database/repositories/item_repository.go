@@ -14,7 +14,7 @@ type ItemRepository interface {
 	GetByID(ctx context.Context, id string) (*models.Item, error)
 	GetAll(ctx context.Context) ([]*models.Item, error)
 	GetByType(ctx context.Context, itemType string) ([]*models.Item, error)
-	
+
 	// User item operations
 	GetUserItems(ctx context.Context, userID string) ([]*models.UserItem, error)
 	GetUserItem(ctx context.Context, userID, itemID string) (*models.UserItem, error)

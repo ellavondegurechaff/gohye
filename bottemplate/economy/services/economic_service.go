@@ -50,9 +50,9 @@ type EconomicService struct {
 	config EconomicServiceConfig
 
 	// Coordination
-	mu                sync.RWMutex
-	activeOperations  map[string]*OperationContext
-	operationCounter  int64
+	mu               sync.RWMutex
+	activeOperations map[string]*OperationContext
+	operationCounter int64
 }
 
 // EconomicServiceConfig holds configuration for the economic service

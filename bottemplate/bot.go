@@ -24,24 +24,24 @@ import (
 
 func New(cfg Config, version string, commit string) *Bot {
 	return &Bot{
-		Cfg:                     cfg,
-		Paginator:               paginator.New(),
-		Version:                 version,
-		Commit:                  commit,
-		StartTime:               time.Now(),
+		Cfg:                      cfg,
+		Paginator:                paginator.New(),
+		Version:                  version,
+		Commit:                   commit,
+		StartTime:                time.Now(),
 		BackgroundProcessManager: utils.NewBackgroundProcessManager(),
 	}
 }
 
 type Bot struct {
-	Cfg                      Config
-	Client                   bot.Client
-	Paginator                *paginator.Manager
-	
+	Cfg       Config
+	Client    bot.Client
+	Paginator *paginator.Manager
+
 	// Modern effect system
-	EffectManager            *effects.Manager
-	EffectIntegrator         *effects.GameIntegrator
-	
+	EffectManager    *effects.Manager
+	EffectIntegrator *effects.GameIntegrator
+
 	Version                  string
 	Commit                   string
 	DB                       *database.DB

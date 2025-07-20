@@ -4,20 +4,20 @@ import "fmt"
 
 // EffectApplicationResult contains the result of applying effects along with feedback
 type EffectApplicationResult struct {
-	OriginalValue interface{}            `json:"original_value"`
-	ModifiedValue interface{}            `json:"modified_value"`
-	AppliedEffects []AppliedEffectInfo   `json:"applied_effects"`
-	Changed       bool                   `json:"changed"`
+	OriginalValue  interface{}         `json:"original_value"`
+	ModifiedValue  interface{}         `json:"modified_value"`
+	AppliedEffects []AppliedEffectInfo `json:"applied_effects"`
+	Changed        bool                `json:"changed"`
 }
 
 // AppliedEffectInfo contains information about an effect that was applied
 type AppliedEffectInfo struct {
-	EffectID     string      `json:"effect_id"`
-	EffectName   string      `json:"effect_name"`
-	Description  string      `json:"description"`
-	Modifier     interface{} `json:"modifier"`
-	Action       string      `json:"action"`
-	Emoji        string      `json:"emoji"`
+	EffectID    string      `json:"effect_id"`
+	EffectName  string      `json:"effect_name"`
+	Description string      `json:"description"`
+	Modifier    interface{} `json:"modifier"`
+	Action      string      `json:"action"`
+	Emoji       string      `json:"emoji"`
 }
 
 // NewEffectApplicationResult creates a new result with no effects applied

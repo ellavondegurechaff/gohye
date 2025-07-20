@@ -85,13 +85,13 @@ func SearchCardsHandler(b *bottemplate.Bot) handler.CommandHandler {
 	return func(event *handler.CommandEvent) error {
 		// Get single query parameter
 		query := strings.TrimSpace(event.SlashCommandInteractionData().String("query"))
-		
+
 		// Use enhanced search filters for parsing
 		var repoFilters repositories.SearchFilters
 		if query != "" {
 			// Parse using enhanced parser for advanced query syntax
 			enhancedFilters := utils.ParseSearchQuery(query)
-			
+
 			// Convert enhanced filters to repository filters
 			repoFilters = repositories.SearchFilters{
 				Name:       enhancedFilters.Name,
@@ -319,20 +319,20 @@ func sortCardsByRelevance(cards []*models.Card, searchTerm string) {
 	if searchTerm == "" || len(cards) == 0 {
 		return
 	}
-	
+
 	// Use UnifiedSearchService for improved search accuracy and speed
 	cardOpsService := services.NewCardOperationsService(nil, nil) // repositories not needed for this operation
 	unifiedSearchService := services.NewUnifiedSearchService(cardOpsService)
-	
+
 	filters := utils.SearchFilters{
 		Name:     searchTerm,
 		SortBy:   utils.SortByLevel,
 		SortDesc: true,
 	}
-	
+
 	// Use unified search for better relevance scoring
 	sortedCards := unifiedSearchService.SearchCards(context.Background(), cards, searchTerm, filters)
-	
+
 	// Replace contents of original slice with sorted results (only up to original length)
 	if len(sortedCards) > 0 {
 		copyLen := len(sortedCards)

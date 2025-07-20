@@ -38,15 +38,15 @@ func main() {
 	timestamp := time.Now().Format("20060102_150405")
 	logFile := filepath.Join(*logDir, fmt.Sprintf("migration_%s.log", timestamp))
 	fmt.Printf("Log file: %s\n", logFile)
-	
+
 	if err := setupFileLogging(logFile); err != nil {
 		fmt.Printf("Failed to setup file logging: %v\n", err)
 		slog.Error("Failed to setup file logging", "error", err)
 		os.Exit(1)
 	}
 	fmt.Println("=== LOGGING SETUP COMPLETE ===")
-	
-	slog.Info("Migration started", 
+
+	slog.Info("Migration started",
 		"timestamp", timestamp,
 		"logFile", logFile,
 		"dataDir", *dataDir)
@@ -100,12 +100,12 @@ func setupFileLogging(logFile string) error {
 
 	// Create a multi-writer that writes to both stdout and file
 	multiHandler := slog.NewTextHandler(file, &slog.HandlerOptions{
-		Level: slog.LevelDebug,
+		Level:     slog.LevelDebug,
 		AddSource: true,
 	})
 
 	logger := slog.New(multiHandler)
 	slog.SetDefault(logger)
-	
+
 	return nil
 }

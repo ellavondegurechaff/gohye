@@ -30,20 +30,20 @@ func NewLeaderboardImageService() *LeaderboardImageService {
 	service := &LeaderboardImageService{
 		logger: slog.With(slog.String("service", "leaderboard_image")),
 	}
-	
+
 	// Test chromedp availability
 	service.testChromedpAvailability()
-	
+
 	return service
 }
 
 func (s *LeaderboardImageService) testChromedpAvailability() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	
+
 	chromedpCtx, cancel := chromedp.NewContext(ctx)
 	defer cancel()
-	
+
 	err := chromedp.Run(chromedpCtx, chromedp.Navigate("data:text/html,<html><body>test</body></html>"))
 	if err != nil {
 		s.logger.Error("chromedp not available - image generation will fail",
@@ -69,7 +69,7 @@ func (s *LeaderboardImageService) GenerateLeaderboardImage(ctx context.Context, 
 	if len(results) > 5 {
 		results = results[:5]
 	}
-	
+
 	s.logger.Info("Processing results for image generation",
 		slog.Int("final_results_count", len(results)))
 
@@ -128,7 +128,7 @@ func (s *LeaderboardImageService) GenerateLeaderboardImage(ctx context.Context, 
 func (s *LeaderboardImageService) generateHTML(data LeaderboardData) (string, error) {
 	// Get the template file path
 	templatePath := filepath.Join("bottemplate", "templates", "leaderboard.html")
-	
+
 	// Read the template file
 	templateContent, err := os.ReadFile(templatePath)
 	if err != nil {

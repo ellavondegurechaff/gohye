@@ -330,10 +330,10 @@ func (m *Migrator) ImportCardsFromJSON(ctx context.Context) error {
 	totalImported := len(seenIDs)
 	gapsFilledCount := min(assignedIDCount, len(availableIDs))
 	sequentialAssignedCount := assignedIDCount - gapsFilledCount
-	
-	logProgress(fmt.Sprintf("Cards JSON import completed: %d total records, %d unique cards imported, %d duplicates skipped", 
+
+	logProgress(fmt.Sprintf("Cards JSON import completed: %d total records, %d unique cards imported, %d duplicates skipped",
 		totalProcessed, totalImported, duplicateCount))
-	logProgress(fmt.Sprintf("ID assignment: %d gaps filled in sequence, %d sequential IDs assigned after max", 
+	logProgress(fmt.Sprintf("ID assignment: %d gaps filled in sequence, %d sequential IDs assigned after max",
 		gapsFilledCount, sequentialAssignedCount))
 	return nil
 }

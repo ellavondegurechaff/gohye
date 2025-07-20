@@ -59,44 +59,44 @@ var Gift = discord.SlashCommandCreate{
 func GiftHandler(b *bottemplate.Bot) handler.CommandHandler {
 	return func(e *handler.CommandEvent) error {
 		ctx := context.Background()
-		
+
 		// Get command parameters
 		targetUser := e.SlashCommandInteractionData().User("user")
-		
+
 		// Get optional parameters
 		var balance int64 = 0
 		var cardName string = ""
 		var cardAmount int64 = 1
 		var itemName string = ""
 		var itemQuantity int = 1
-		
+
 		if balanceOpt, ok := e.SlashCommandInteractionData().OptInt("balance"); ok {
 			balance = int64(balanceOpt)
 		}
-		
+
 		if cardNameOpt, ok := e.SlashCommandInteractionData().OptString("card_name"); ok {
 			cardName = strings.TrimSpace(cardNameOpt)
 		}
-		
+
 		if cardAmountOpt, ok := e.SlashCommandInteractionData().OptInt("card_amount"); ok {
 			cardAmount = int64(cardAmountOpt)
 		}
-		
+
 		if itemNameOpt, ok := e.SlashCommandInteractionData().OptString("item_name"); ok {
 			itemName = strings.TrimSpace(strings.ToLower(itemNameOpt))
 		}
-		
+
 		if itemQuantityOpt, ok := e.SlashCommandInteractionData().OptInt("item_quantity"); ok {
 			itemQuantity = int(itemQuantityOpt)
 		}
-		
+
 		// Validate at least one gift is provided
 		if balance <= 0 && cardName == "" && itemName == "" {
 			return e.CreateMessage(discord.MessageCreate{
 				Content: "❌ You must provide either balance, card_name, or item_name (or any combination).",
 			})
 		}
-		
+
 		// Validate target user exists in database
 		targetUserID := targetUser.ID.String()
 		_, err := b.UserRepository.GetByDiscordID(ctx, targetUserID)
@@ -105,7 +105,7 @@ func GiftHandler(b *bottemplate.Bot) handler.CommandHandler {
 				Content: fmt.Sprintf("❌ User %s not found in database. They need to use a bot command first.", targetUser.Username),
 			})
 		}
-		
+
 		// Find card by name if card_name provided
 		var card *models.Card
 		if cardName != "" {
@@ -116,7 +116,7 @@ func GiftHandler(b *bottemplate.Bot) handler.CommandHandler {
 				})
 			}
 		}
-		
+
 		// Find item by name if item_name provided
 		var itemID string
 		var itemInfo *itemDisplayInfo
@@ -128,7 +128,7 @@ func GiftHandler(b *bottemplate.Bot) handler.CommandHandler {
 				})
 			}
 		}
-		
+
 		// Start transaction
 		tx, err := b.DB.BunDB().BeginTx(ctx, nil)
 		if err != nil {
@@ -137,9 +137,9 @@ func GiftHandler(b *bottemplate.Bot) handler.CommandHandler {
 			})
 		}
 		defer tx.Rollback()
-		
+
 		var messages []string
-		
+
 		// Add balance if provided
 		if balance > 0 {
 			err = addBalanceToUser(ctx, tx, targetUserID, balance)
@@ -150,7 +150,7 @@ func GiftHandler(b *bottemplate.Bot) handler.CommandHandler {
 			}
 			messages = append(messages, fmt.Sprintf("💰 Added %d balance", balance))
 		}
-		
+
 		// Add card if provided
 		if card != nil {
 			err = addCardToUser(ctx, tx, targetUserID, card.ID, cardAmount)
@@ -166,7 +166,7 @@ func GiftHandler(b *bottemplate.Bot) handler.CommandHandler {
 				messages = append(messages, fmt.Sprintf("🎴 Added %dx %s (ID: %d)", cardAmount, displayName, card.ID))
 			}
 		}
-		
+
 		// Add item if provided
 		if itemID != "" {
 			err = b.ItemRepository.AddUserItem(ctx, targetUserID, itemID, itemQuantity)
@@ -181,25 +181,25 @@ func GiftHandler(b *bottemplate.Bot) handler.CommandHandler {
 				messages = append(messages, fmt.Sprintf("%s Added %dx %s", itemInfo.emoji, itemQuantity, itemInfo.name))
 			}
 		}
-		
+
 		// Commit transaction
 		if err = tx.Commit(); err != nil {
 			return e.CreateMessage(discord.MessageCreate{
 				Content: "❌ Failed to commit transaction.",
 			})
 		}
-		
+
 		// Create success message
-		successMessage := fmt.Sprintf("🎁 **Gifts sent to %s:**\n%s", 
-			targetUser.Username, 
-			"• " + fmt.Sprintf("%s", messages[0]))
-		
+		successMessage := fmt.Sprintf("🎁 **Gifts sent to %s:**\n%s",
+			targetUser.Username,
+			"• "+fmt.Sprintf("%s", messages[0]))
+
 		if len(messages) > 1 {
 			for i := 1; i < len(messages); i++ {
 				successMessage += "\n• " + messages[i]
 			}
 		}
-		
+
 		return e.CreateMessage(discord.MessageCreate{
 			Content: successMessage,
 		})
@@ -229,12 +229,12 @@ func addCardToUser(ctx context.Context, tx bun.Tx, userID string, cardID int64, 
 	if err != nil {
 		return fmt.Errorf("failed to update user card: %w", err)
 	}
-	
+
 	rowsAffected, err := result.RowsAffected()
 	if err != nil {
 		return fmt.Errorf("failed to check rows affected: %w", err)
 	}
-	
+
 	// If no rows affected, create new user card
 	if rowsAffected == 0 {
 		userCard := &models.UserCard{
@@ -250,14 +250,14 @@ func addCardToUser(ctx context.Context, tx bun.Tx, userID string, cardID int64, 
 			return fmt.Errorf("failed to create user card: %w", err)
 		}
 	}
-	
+
 	return nil
 }
 
 // findCardByName finds a card by name using the same search method as /searchcards
 func findCardByName(ctx context.Context, b *bottemplate.Bot, query string) (*models.Card, error) {
 	fmt.Printf("[DEBUG] Gift findCardByName: query='%s'\n", query)
-	
+
 	// Handle empty query
 	if query == "" {
 		return nil, fmt.Errorf("please provide a card name")
@@ -267,14 +267,14 @@ func findCardByName(ctx context.Context, b *bottemplate.Bot, query string) (*mod
 	filters := repositories.SearchFilters{
 		Name: query, // Set the name filter to use the complex search logic
 	}
-	
+
 	// Use the main Search method that /searchcards uses
 	cards, _, err := b.CardRepository.Search(ctx, filters, 0, 50) // Get first 50 results
 	if err != nil {
 		fmt.Printf("[DEBUG] Gift findCardByName: search error: %v\n", err)
 		return nil, fmt.Errorf("search failed: %v", err)
 	}
-	
+
 	if len(cards) == 0 {
 		fmt.Printf("[DEBUG] Gift findCardByName: NO CARD FOUND for query='%s'\n", query)
 		return nil, fmt.Errorf("no cards found matching '%s'", query)
@@ -300,18 +300,18 @@ func findItemByName(query string) (string, *itemDisplayInfo, error) {
 		info itemDisplayInfo
 	}{
 		// Broken Disc
-		"broken_disc":  {models.ItemBrokenDisc, itemDisplayInfo{"Broken Disc", "💿"}},
-		"broken disc":  {models.ItemBrokenDisc, itemDisplayInfo{"Broken Disc", "💿"}},
-		"disc":         {models.ItemBrokenDisc, itemDisplayInfo{"Broken Disc", "💿"}},
-		"cd":           {models.ItemBrokenDisc, itemDisplayInfo{"Broken Disc", "💿"}},
-		"brokendisc":   {models.ItemBrokenDisc, itemDisplayInfo{"Broken Disc", "💿"}},
-		
+		"broken_disc": {models.ItemBrokenDisc, itemDisplayInfo{"Broken Disc", "💿"}},
+		"broken disc": {models.ItemBrokenDisc, itemDisplayInfo{"Broken Disc", "💿"}},
+		"disc":        {models.ItemBrokenDisc, itemDisplayInfo{"Broken Disc", "💿"}},
+		"cd":          {models.ItemBrokenDisc, itemDisplayInfo{"Broken Disc", "💿"}},
+		"brokendisc":  {models.ItemBrokenDisc, itemDisplayInfo{"Broken Disc", "💿"}},
+
 		// Microphone
-		"microphone":   {models.ItemMicrophone, itemDisplayInfo{"Microphone", "🎤"}},
-		"mic":          {models.ItemMicrophone, itemDisplayInfo{"Microphone", "🎤"}},
-		"mike":         {models.ItemMicrophone, itemDisplayInfo{"Microphone", "🎤"}},
-		"micro":        {models.ItemMicrophone, itemDisplayInfo{"Microphone", "🎤"}},
-		
+		"microphone": {models.ItemMicrophone, itemDisplayInfo{"Microphone", "🎤"}},
+		"mic":        {models.ItemMicrophone, itemDisplayInfo{"Microphone", "🎤"}},
+		"mike":       {models.ItemMicrophone, itemDisplayInfo{"Microphone", "🎤"}},
+		"micro":      {models.ItemMicrophone, itemDisplayInfo{"Microphone", "🎤"}},
+
 		// Forgotten Song
 		"forgotten_song": {models.ItemForgottenSong, itemDisplayInfo{"Forgotten Song", "📜"}},
 		"forgotten song": {models.ItemForgottenSong, itemDisplayInfo{"Forgotten Song", "📜"}},
@@ -319,18 +319,18 @@ func findItemByName(query string) (string, *itemDisplayInfo, error) {
 		"forgottensong":  {models.ItemForgottenSong, itemDisplayInfo{"Forgotten Song", "📜"}},
 		"scroll":         {models.ItemForgottenSong, itemDisplayInfo{"Forgotten Song", "📜"}},
 	}
-	
+
 	// Try exact match first
 	if item, ok := itemMap[query]; ok {
 		return item.id, &item.info, nil
 	}
-	
+
 	// Try partial matching
 	for key, item := range itemMap {
 		if strings.Contains(key, query) || strings.Contains(query, key) {
 			return item.id, &item.info, nil
 		}
 	}
-	
+
 	return "", nil, fmt.Errorf("item not found. Available items: disc/broken_disc, microphone/mic, song/forgotten_song")
 }

@@ -40,7 +40,7 @@ type CardRepository interface {
 	GetLastCardID(ctx context.Context) (int64, error)
 	BatchCreateWithTransaction(ctx context.Context, tx bun.Tx, cards []*models.Card) error
 	GetCardCount(ctx context.Context) (int64, error)
-	
+
 	// Enhanced search methods for optimization
 	GetByNameOrIDFuzzy(ctx context.Context, query string) (*models.Card, error)
 	SearchByNameFuzzy(ctx context.Context, query string, limit int) ([]*models.Card, error)
@@ -523,7 +523,6 @@ func (r *cardRepository) setCache(key string, value interface{}, duration time.D
 	fmt.Printf("Cached value for key: %s (expires: %s)\n", key, entry.expiresAt)
 }
 
-
 // Add this method for cache invalidation
 func (r *cardRepository) invalidateCache(cardID int64) {
 	r.cache.Delete(fmt.Sprintf("card:%d", cardID))
@@ -660,17 +659,17 @@ func (r *cardRepository) BatchCreateWithTransaction(ctx context.Context, tx bun.
 	if len(cards) == 0 {
 		return nil
 	}
-	
+
 	now := time.Now()
 	for _, card := range cards {
 		card.CreatedAt = now
 		card.UpdatedAt = now
 	}
-	
+
 	_, err := tx.NewInsert().
 		Model(&cards).
 		Exec(ctx)
-	
+
 	return err
 }
 
@@ -682,7 +681,7 @@ func (r *cardRepository) GetCardCount(ctx context.Context) (int64, error) {
 	count, err := r.db.NewSelect().
 		Model((*models.Card)(nil)).
 		Count(ctx)
-	
+
 	return int64(count), err
 }
 
@@ -692,32 +691,32 @@ func (r *cardRepository) GetByNameOrIDFuzzy(ctx context.Context, query string) (
 	defer cancel()
 
 	card := new(models.Card)
-	
+
 	// Try exact ID match first
 	err := r.db.NewSelect().
 		Model(card).
 		Where("id::text = ?", query).
 		Scan(ctx)
-	
+
 	if err == nil {
 		return card, nil
 	}
-	
+
 	// Try exact name match (case insensitive)
 	err = r.db.NewSelect().
 		Model(card).
 		Where("LOWER(name) = LOWER(?)", query).
 		Scan(ctx)
-	
+
 	if err == nil {
 		return card, nil
 	}
-	
+
 	// Try fuzzy name match with LIKE
 	err = r.db.NewSelect().
 		Model(card).
 		Where("LOWER(name) LIKE LOWER(?)", "%"+query+"%").
-		OrderExpr("LENGTH(name)").  // Prefer shorter matches
+		OrderExpr("LENGTH(name)"). // Prefer shorter matches
 		Limit(1).
 		Scan(ctx)
 
@@ -744,7 +743,7 @@ func (r *cardRepository) SearchByNameFuzzy(ctx context.Context, query string, li
 	err := r.db.NewSelect().
 		Model(&cards).
 		Where("LOWER(name) LIKE LOWER(?)", "%"+query+"%").
-		OrderExpr("LENGTH(name)").Order("name").  // Prefer shorter, then alphabetical
+		OrderExpr("LENGTH(name)").Order("name"). // Prefer shorter, then alphabetical
 		Limit(limit).
 		Scan(ctx)
 
@@ -772,21 +771,21 @@ func (r *cardRepository) SearchAdminMode(ctx context.Context, query string, filt
 	if filters.Level != 0 {
 		selectQuery = selectQuery.Where("level = ?", filters.Level)
 	}
-	
+
 	if filters.Collection != "" {
 		selectQuery = selectQuery.Where("LOWER(col_id) LIKE LOWER(?)", "%"+filters.Collection+"%")
 	}
-	
+
 	if filters.Animated {
 		selectQuery = selectQuery.Where("animated = true")
 	}
 
 	// Admin mode: no promo/exclusion filtering, order by relevance
 	selectQuery = selectQuery.OrderExpr("LENGTH(name)").Order("level DESC", "name")
-	
+
 	var cards []*models.Card
 	err := selectQuery.Scan(ctx, &cards)
-	
+
 	if err != nil {
 		return nil, fmt.Errorf("failed to perform admin search: %w", err)
 	}

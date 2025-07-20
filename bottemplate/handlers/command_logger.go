@@ -98,10 +98,10 @@ func WrapWithLoggingAndQuests(name string, h handler.CommandHandler, b interface
 	return func(e *handler.CommandEvent) error {
 		// First apply the logging wrapper
 		loggedHandler := WrapWithLogging(name, h)
-		
+
 		// Execute the command
 		err := loggedHandler(e)
-		
+
 		// Track command for quests if successful
 		if err == nil {
 			if tracker := b.GetQuestTracker(); tracker != nil {
@@ -114,7 +114,7 @@ func WrapWithLoggingAndQuests(name string, h handler.CommandHandler, b interface
 				slog.Warn("Quest tracker is nil, cannot track command")
 			}
 		}
-		
+
 		return err
 	}
 }

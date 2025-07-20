@@ -95,7 +95,7 @@ func (h *AuctionHandler) Register(r handler.Router) {
 	// Component patterns must start with /
 	r.Component("/auction/confirm", h.HandleConfirmation)
 	r.Component("/auction/cancel", h.HandleCancel)
-	
+
 	// Register auction list pagination components
 	r.Component("/auction-list/", h.CreateAuctionListComponentHandler())
 }
@@ -238,19 +238,19 @@ func formatDuration(d time.Duration) string {
 func (h *AuctionHandler) HandleList(event *handler.CommandEvent) error {
 	ctx := context.Background()
 	userID := event.User().ID.String()
-	
+
 	// Create data fetcher
 	fetcher := &AuctionListDataFetcher{
 		manager:  h.manager,
 		cardRepo: h.cardRepo,
 	}
-	
+
 	// Create formatter
 	formatter := &AuctionListFormatter{}
-	
+
 	// Create validator
 	validator := &AuctionListValidator{}
-	
+
 	// Create factory configuration
 	factoryConfig := utils.PaginationFactoryConfig{
 		ItemsPerPage: 10,
@@ -260,17 +260,17 @@ func (h *AuctionHandler) HandleList(event *handler.CommandEvent) error {
 		Formatter:    formatter,
 		Validator:    validator,
 	}
-	
+
 	// Create factory
 	factory := utils.NewPaginationFactory(factoryConfig)
-	
+
 	// Create initial pagination params
 	params := utils.PaginationParams{
 		UserID: userID,
 		Page:   0,
 		Query:  "",
 	}
-	
+
 	// Create initial embed and components
 	embed, components, err := factory.CreateInitialPaginationEmbed(ctx, params)
 	if err != nil {
@@ -312,13 +312,13 @@ func (h *AuctionHandler) CreateAuctionListComponentHandler() handler.ComponentHa
 		manager:  h.manager,
 		cardRepo: h.cardRepo,
 	}
-	
+
 	// Create formatter
 	formatter := &AuctionListFormatter{}
-	
+
 	// Create validator
 	validator := &AuctionListValidator{}
-	
+
 	// Create factory configuration
 	factoryConfig := utils.PaginationFactoryConfig{
 		ItemsPerPage: 10,
@@ -328,7 +328,7 @@ func (h *AuctionHandler) CreateAuctionListComponentHandler() handler.ComponentHa
 		Formatter:    formatter,
 		Validator:    validator,
 	}
-	
+
 	// Create factory and return handler
 	factory := utils.NewPaginationFactory(factoryConfig)
 	return factory.CreateHandler()
@@ -358,7 +358,7 @@ func (f *AuctionListDataFetcher) FetchData(ctx context.Context, params utils.Pag
 		if err != nil {
 			continue
 		}
-		
+
 		items = append(items, AuctionListItem{
 			Auction: auc,
 			Card:    card,
@@ -376,10 +376,10 @@ func (f *AuctionListFormatter) FormatItems(allItems []interface{}, page, totalPa
 	itemsPerPage := 10
 	startIdx := page * itemsPerPage
 	endIdx := min(startIdx+itemsPerPage, len(allItems))
-	
+
 	// Get items for this page only
 	pageItems := allItems[startIdx:endIdx]
-	
+
 	var description strings.Builder
 	description.WriteString("```ansi\n")
 
@@ -407,13 +407,13 @@ func (f *AuctionListFormatter) FormatItems(allItems []interface{}, page, totalPa
 
 		// Show current price and bid status
 		description.WriteString(fmt.Sprintf("\u001b[36m[%s]\u001b[0m \u001b[33m%s\u001b[0m \u001b[32m[%s]\u001b[0m \u001b[91m[%s]\u001b[0m %s \u001b[97m%s\u001b[0m \u001b[94m[%s]\u001b[0m\n",
-			timeStr,                         // Cyan for time
-			auction.AuctionID,               // Gold for auction ID
-			bidStatus,                       // Green for bid status
-			priceDisplay,                    // Red for current price
+			timeStr,           // Cyan for time
+			auction.AuctionID, // Gold for auction ID
+			bidStatus,         // Green for bid status
+			priceDisplay,      // Red for current price
 			utils.GetPromoRarityPlainText(card.ColID, card.Level), // Stars or promo emoji (no color)
-			cardName,                        // Bright white for name
-			strings.ToUpper(card.ColID)))    // Light blue for collection
+			cardName,                     // Bright white for name
+			strings.ToUpper(card.ColID))) // Light blue for collection
 	}
 	description.WriteString("```")
 

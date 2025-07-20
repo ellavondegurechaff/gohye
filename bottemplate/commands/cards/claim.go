@@ -164,12 +164,12 @@ func (h *ClaimHandler) HandleCommand(e *handler.CommandEvent) error {
 		if excludedCollections[card.ColID] {
 			continue
 		}
-		
+
 		// Also check collection info for promo flag
 		if colInfo, exists := utils.GetCollectionInfo(card.ColID); exists && colInfo.IsPromo {
 			continue
 		}
-		
+
 		cards = append(cards, card)
 	}
 
@@ -363,9 +363,9 @@ func (h *ClaimHandler) HandleCommand(e *handler.CommandEvent) error {
 	}
 	go h.bot.CompletionChecker.CheckCompletionForCards(context.Background(), userID, claimedCardIDs)
 
-	// Track quest progress
-	if h.bot.QuestTracker != nil {
-		go h.bot.QuestTracker.TrackCardClaim(context.Background(), userID, count)
+	// Track effect progress for Cake Day
+	if h.bot.EffectManager != nil {
+		go h.bot.EffectManager.UpdateEffectProgress(context.Background(), userID, "cakeday", count)
 	}
 
 	return e.CreateMessage(discord.MessageCreate{
@@ -392,7 +392,7 @@ func (h *ClaimHandler) HandleComponent(e *handler.ComponentEvent) error {
 
 	action := parts[2]
 	claimerID := parts[3]
-	
+
 	// Handle favorite button
 	if action == "favorite" {
 		if len(parts) != 6 {
@@ -401,12 +401,12 @@ func (h *ClaimHandler) HandleComponent(e *handler.ComponentEvent) error {
 				slog.Int("parts_length", len(parts)))
 			return nil
 		}
-		
+
 		cardID, err := strconv.ParseInt(parts[4], 10, 64)
 		if err != nil {
 			return nil
 		}
-		
+
 		// Only the claimer can favorite
 		if e.User().ID.String() != claimerID {
 			return e.CreateMessage(discord.MessageCreate{
@@ -414,12 +414,12 @@ func (h *ClaimHandler) HandleComponent(e *handler.ComponentEvent) error {
 				Flags:   discord.MessageFlagEphemeral,
 			})
 		}
-		
+
 		// Toggle favorite status
 		ctx := context.Background()
 		isFavorited, err := h.bot.UserCardRepository.ToggleFavorite(ctx, claimerID, cardID)
 		if err != nil {
-			slog.Error("Failed to toggle favorite", 
+			slog.Error("Failed to toggle favorite",
 				slog.String("error", err.Error()),
 				slog.String("user_id", claimerID),
 				slog.Int64("card_id", cardID))
@@ -428,13 +428,13 @@ func (h *ClaimHandler) HandleComponent(e *handler.ComponentEvent) error {
 				Flags:   discord.MessageFlagEphemeral,
 			})
 		}
-		
+
 		// Update the button emoji
 		msg := e.Message
 		if len(msg.Components) > 0 {
 			actionRow := msg.Components[0].(discord.ActionRowComponent)
 			buttons := actionRow.Components()
-			
+
 			// Update the middle button (favorite button)
 			if len(buttons) >= 3 {
 				favoriteEmoji := "🤍"
@@ -442,17 +442,17 @@ func (h *ClaimHandler) HandleComponent(e *handler.ComponentEvent) error {
 					favoriteEmoji = "❤️"
 				}
 				buttons[1] = discord.NewSecondaryButton(favoriteEmoji, customID)
-				
+
 				components := []discord.ContainerComponent{
 					discord.NewActionRow(buttons...),
 				}
-				
+
 				return e.UpdateMessage(discord.MessageUpdate{
 					Components: &components,
 				})
 			}
 		}
-		
+
 		return nil
 	}
 
@@ -488,7 +488,7 @@ func (h *ClaimHandler) HandleComponent(e *handler.ComponentEvent) error {
 	if len(footerParts) >= 3 && strings.HasPrefix(footerParts[2], "IDs:") {
 		cardIDsStr = strings.TrimPrefix(footerParts[2], "IDs:")
 	}
-	
+
 	// Parse card IDs
 	var cardIDs []int64
 	if cardIDsStr != "" {
@@ -539,7 +539,7 @@ func (h *ClaimHandler) HandleComponent(e *handler.ComponentEvent) error {
 	if newPage-1 < len(cardIDs) {
 		currentCardID = cardIDs[newPage-1]
 	}
-	
+
 	// Check if current card is favorited
 	ctx := context.Background()
 	favoriteEmoji := "🤍"

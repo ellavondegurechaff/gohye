@@ -33,7 +33,7 @@ var Has = discord.SlashCommandCreate{
 
 func HasHandler(b *bottemplate.Bot) handler.CommandHandler {
 	cardOperationsService := services.NewCardOperationsService(b.CardRepository, b.UserCardRepository)
-	
+
 	return func(e *handler.CommandEvent) error {
 		ctx, cancel := context.WithTimeout(context.Background(), config.DefaultQueryTimeout)
 		defer cancel()
@@ -45,7 +45,7 @@ func HasHandler(b *bottemplate.Bot) handler.CommandHandler {
 		// Try direct query first (optimized approach)
 		var card *models.Card
 		var err error
-		
+
 		// First try GetByQuery for exact matches
 		if directCard, queryErr := b.CardRepository.GetByQuery(ctx, query); queryErr == nil {
 			card = directCard

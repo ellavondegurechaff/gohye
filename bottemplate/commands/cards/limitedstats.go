@@ -236,4 +236,3 @@ func LimitedStatsComponentHandler(b *bottemplate.Bot) handler.ComponentHandler {
 		})
 	}
 }
-

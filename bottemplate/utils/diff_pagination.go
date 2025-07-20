@@ -125,14 +125,14 @@ func (dph *DiffPaginationHandler) HandleDiffPagination(
 	// Calculate slice boundaries for current page
 	startIdx := newPage * dph.Config.ItemsPerPage
 	endIdx := min(startIdx+dph.Config.ItemsPerPage, len(paginationData.Items))
-	
+
 	if startIdx >= len(paginationData.Items) {
 		return EH.CreateEphemeralError(e, "Page not found")
 	}
-	
+
 	// Slice items for current page only
 	pageItems := paginationData.Items[startIdx:endIdx]
-	
+
 	// Create embed for new page
 	embed, err := dph.FormatItems(pageItems, newPage, totalPages, paginationData)
 	if err != nil {

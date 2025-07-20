@@ -236,12 +236,15 @@ func (h *LiquefyHandler) HandleComponent(e *handler.ComponentEvent) error {
 			SetDescription(fmt.Sprintf("```md\n## Result\n* Card: %s\n* Collection: %s\n* Vials Received: %d 🍷\n```",
 				card.Name,
 				card.ColID,
-				vials)).
-			SetTimestamp(time.Now()).
-			Build()
+				vials))
+
+		// Track effect progress for Holy Grail
+		if h.bot.EffectManager != nil {
+			go h.bot.EffectManager.UpdateEffectProgress(context.Background(), e.User().ID.String(), "holygrail", 1)
+		}
 
 		return e.UpdateMessage(discord.MessageUpdate{
-			Embeds:     &[]discord.Embed{embed},
+			Embeds:     &[]discord.Embed{embed.Build()},
 			Components: &[]discord.ContainerComponent{},
 		})
 

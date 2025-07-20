@@ -33,20 +33,20 @@ func NewProfileImageService() *ProfileImageService {
 	service := &ProfileImageService{
 		logger: slog.With(slog.String("service", "profile_image")),
 	}
-	
+
 	// Test chromedp availability
 	service.testChromedpAvailability()
-	
+
 	return service
 }
 
 func (s *ProfileImageService) testChromedpAvailability() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	
+
 	chromedpCtx, cancel := chromedp.NewContext(ctx)
 	defer cancel()
-	
+
 	err := chromedp.Run(chromedpCtx, chromedp.Navigate("data:text/html,<html><body>test</body></html>"))
 	if err != nil {
 		s.logger.Error("chromedp not available - image generation will fail",
@@ -129,7 +129,7 @@ func (s *ProfileImageService) GenerateProfileImage(ctx context.Context, username
 func (s *ProfileImageService) generateHTML(data ProfileData) (string, error) {
 	// Get the template file path
 	templatePath := filepath.Join("bottemplate", "templates", "profile.html")
-	
+
 	// Read the template file
 	templateContent, err := os.ReadFile(templatePath)
 	if err != nil {

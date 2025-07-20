@@ -177,14 +177,14 @@ func (c *SpacesCacheManager) FindPathForCard(ctx context.Context, cardName strin
 		if err == nil {
 			baseDir := strings.Split(path, "/")[1]
 			pathType := PathType(baseDir)
-			
+
 			// Update cache with found path
 			c.UpdatePathInfo(colID, PathInfo{
 				BaseDir:  pathType,
 				GroupDir: groupType,
 				ColID:    colID,
 			})
-			
+
 			return baseDir, pathType
 		}
 	}

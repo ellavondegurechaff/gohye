@@ -15,10 +15,10 @@ import (
 
 // SearchService provides unified search functionality across commands
 type SearchService struct {
-	cardRepo       interfaces.CardRepositoryInterface
-	userCardRepo   interfaces.UserCardRepositoryInterface
-	userRepo       repositories.UserRepository
-	wishlistRepo   repositories.WishlistRepository
+	cardRepo     interfaces.CardRepositoryInterface
+	userCardRepo interfaces.UserCardRepositoryInterface
+	userRepo     repositories.UserRepository
+	wishlistRepo repositories.WishlistRepository
 }
 
 // NewSearchService creates a new search service
@@ -198,7 +198,7 @@ func (ss *SearchService) SearchCardsForDiff(ctx context.Context, user1ID, user2I
 	if strings.TrimSpace(query) != "" {
 		filters := utils.ParseSearchQuery(query)
 		filteredCards := utils.WeightedSearch(diffCards, filters)
-		
+
 		// Filter percentages to match filtered cards
 		var filteredPercentages []string
 		cardToPercentage := make(map[int64]string)
@@ -207,13 +207,13 @@ func (ss *SearchService) SearchCardsForDiff(ctx context.Context, user1ID, user2I
 				cardToPercentage[card.ID] = percentages[i]
 			}
 		}
-		
+
 		for _, card := range filteredCards {
 			if pct, exists := cardToPercentage[card.ID]; exists {
 				filteredPercentages = append(filteredPercentages, pct)
 			}
 		}
-		
+
 		return filteredCards, filteredPercentages, nil
 	}
 
@@ -307,7 +307,7 @@ func (ss *SearchService) GetSearchSuggestions(ctx context.Context, partial strin
 // WithCardsCallback represents a callback function that processes user cards (legacy pattern)
 type WithCardsCallback func(userCards []*models.UserCard, cards []*models.Card, filters utils.SearchFilters) error
 
-// WithGlobalCardsCallback represents a callback function that processes all cards (legacy pattern)  
+// WithGlobalCardsCallback represents a callback function that processes all cards (legacy pattern)
 type WithGlobalCardsCallback func(cards []*models.Card, filters utils.SearchFilters) error
 
 // WithMultiQueryCallback represents a callback function that processes multi-query results (legacy pattern)
@@ -451,13 +451,13 @@ func (ss *SearchService) WithGlobalCards(ctx context.Context, userID string, fil
 		for _, card := range filteredCards {
 			cardMap[card.ID] = card
 		}
-		
+
 		// For global cards, we need to convert to user cards format temporarily
 		tempUserCards := make([]*models.UserCard, len(filteredCards))
 		for i, card := range filteredCards {
 			tempUserCards[i] = &models.UserCard{CardID: card.ID}
 		}
-		
+
 		filteredUserCards := ss.applyTagFilters(tempUserCards, cardMap, filters.Tags, false)
 		filteredCards = make([]*models.Card, len(filteredUserCards))
 		for i, uc := range filteredUserCards {
@@ -470,12 +470,12 @@ func (ss *SearchService) WithGlobalCards(ctx context.Context, userID string, fil
 		for _, card := range filteredCards {
 			cardMap[card.ID] = card
 		}
-		
+
 		tempUserCards := make([]*models.UserCard, len(filteredCards))
 		for i, card := range filteredCards {
 			tempUserCards[i] = &models.UserCard{CardID: card.ID}
 		}
-		
+
 		filteredUserCards := ss.applyTagFilters(tempUserCards, cardMap, filters.AntiTags, true)
 		filteredCards = make([]*models.Card, len(filteredUserCards))
 		for i, uc := range filteredUserCards {
@@ -548,10 +548,10 @@ func (ss *SearchService) WithMultiQuery(ctx context.Context, userID string, quer
 
 	// Process each query
 	cardBatches := make([][]*models.Card, len(queries))
-	
+
 	for i, filters := range parsedFilters {
 		var batchCards []*models.Card
-		
+
 		if filters.LastCard {
 			// Handle lastcard filter - get user's last card
 			batchCards = ss.applyLastCardFilterGlobal(ctx, cards, userID)
@@ -614,13 +614,13 @@ func (ss *SearchService) WithMultiQuery(ctx context.Context, userID string, quer
 // applyTagFilters filters user cards based on tags (similar to legacy fetchTaggedCards)
 func (ss *SearchService) applyTagFilters(userCards []*models.UserCard, cardMap map[int64]*models.Card, tags []string, isAntiTag bool) []*models.UserCard {
 	var filtered []*models.UserCard
-	
+
 	for _, userCard := range userCards {
 		card, exists := cardMap[userCard.CardID]
 		if !exists {
 			continue
 		}
-		
+
 		hasMatchingTag := false
 		for _, filterTag := range tags {
 			for _, cardTag := range card.Tags {
@@ -633,7 +633,7 @@ func (ss *SearchService) applyTagFilters(userCards []*models.UserCard, cardMap m
 				break
 			}
 		}
-		
+
 		// For anti-tags, exclude cards that have matching tags
 		// For regular tags, include cards that have matching tags
 		if isAntiTag {
@@ -646,14 +646,14 @@ func (ss *SearchService) applyTagFilters(userCards []*models.UserCard, cardMap m
 			}
 		}
 	}
-	
+
 	return filtered
 }
 
 // applyCardFilters applies basic card-level filters (non-user-specific)
 func (ss *SearchService) applyCardFilters(cards []*models.Card, filters utils.SearchFilters) []*models.Card {
 	var filtered []*models.Card
-	
+
 	for _, card := range cards {
 		// Apply level filters
 		if len(filters.Levels) > 0 {
@@ -668,7 +668,7 @@ func (ss *SearchService) applyCardFilters(cards []*models.Card, filters utils.Se
 				continue
 			}
 		}
-		
+
 		// Apply anti-level filters
 		if len(filters.AntiLevels) > 0 {
 			levelExcluded := false
@@ -682,7 +682,7 @@ func (ss *SearchService) applyCardFilters(cards []*models.Card, filters utils.Se
 				continue
 			}
 		}
-		
+
 		// Apply collection filters
 		if len(filters.Collections) > 0 {
 			collectionMatch := false
@@ -707,7 +707,7 @@ func (ss *SearchService) applyCardFilters(cards []*models.Card, filters utils.Se
 				continue
 			}
 		}
-		
+
 		// Apply anti-collection filters
 		if len(filters.AntiCollections) > 0 {
 			collectionExcluded := false
@@ -722,7 +722,7 @@ func (ss *SearchService) applyCardFilters(cards []*models.Card, filters utils.Se
 				continue
 			}
 		}
-		
+
 		// Apply animated filters
 		if filters.Animated && !card.Animated {
 			continue
@@ -730,7 +730,7 @@ func (ss *SearchService) applyCardFilters(cards []*models.Card, filters utils.Se
 		if filters.ExcludeAnimated && card.Animated {
 			continue
 		}
-		
+
 		// Apply boy/girl group filters
 		if filters.BoyGroups {
 			hasTag := false
@@ -744,7 +744,7 @@ func (ss *SearchService) applyCardFilters(cards []*models.Card, filters utils.Se
 				continue
 			}
 		}
-		
+
 		if filters.GirlGroups {
 			hasTag := false
 			for _, tag := range card.Tags {
@@ -757,7 +757,7 @@ func (ss *SearchService) applyCardFilters(cards []*models.Card, filters utils.Se
 				continue
 			}
 		}
-		
+
 		// Apply promo filters
 		if colInfo, exists := utils.GetCollectionInfo(card.ColID); exists {
 			if filters.PromoOnly && !colInfo.IsPromo {
@@ -768,10 +768,10 @@ func (ss *SearchService) applyCardFilters(cards []*models.Card, filters utils.Se
 			}
 			// No exclusions - all cards are searchable
 		}
-		
+
 		filtered = append(filtered, card)
 	}
-	
+
 	return filtered
 }
 
@@ -787,7 +787,7 @@ func (ss *SearchService) matchesUserCardFilters(userCard *models.UserCard, card 
 	if filters.AmountFilter.Exact > 0 && userCard.Amount != filters.AmountFilter.Exact {
 		return false
 	}
-	
+
 	// Apply multi/single filters
 	if filters.MultiOnly && userCard.Amount <= 1 {
 		return false
@@ -795,7 +795,7 @@ func (ss *SearchService) matchesUserCardFilters(userCard *models.UserCard, card 
 	if filters.SingleOnly && userCard.Amount != 1 {
 		return false
 	}
-	
+
 	// Apply favorite filters
 	if filters.Favorites && !userCard.Favorite {
 		return false
@@ -803,7 +803,7 @@ func (ss *SearchService) matchesUserCardFilters(userCard *models.UserCard, card 
 	if filters.ExcludeFavorites && userCard.Favorite {
 		return false
 	}
-	
+
 	// Apply locked filters
 	if filters.LockedOnly && !userCard.Locked {
 		return false
@@ -811,7 +811,7 @@ func (ss *SearchService) matchesUserCardFilters(userCard *models.UserCard, card 
 	if filters.ExcludeLocked && userCard.Locked {
 		return false
 	}
-	
+
 	// Apply rating filters
 	if filters.RatedOnly && userCard.Rating == 0 {
 		return false
@@ -819,22 +819,22 @@ func (ss *SearchService) matchesUserCardFilters(userCard *models.UserCard, card 
 	if filters.ExcludeRated && userCard.Rating > 0 {
 		return false
 	}
-	
+
 	// Apply new card filters - placeholder, needs user context for lastDaily comparison
 	// This is handled at the service layer where we have access to user data
-	
+
 	// Apply wishlist filters - now implemented using actual wishlist data
 	if filters.WishOnly {
 		// This card must be in the user's wishlist
 		// We can't check this at the UserCard level since it requires a separate service call
 		// This will be handled at the service layer level
 	}
-	
+
 	if filters.ExcludeWish {
 		// This card must NOT be in the user's wishlist
 		// This will be handled at the service layer level
 	}
-	
+
 	return true
 }
 
@@ -846,20 +846,20 @@ func (ss *SearchService) applyLastCardFilter(ctx context.Context, userCards []*m
 		// If we can't get the user, return empty result
 		return []*models.UserCard{}
 	}
-	
+
 	lastCardID := user.UserStats.LastCard
 	if lastCardID == 0 {
 		// No last card set, return empty result
 		return []*models.UserCard{}
 	}
-	
+
 	// Find the user card that matches the last card ID
 	for _, userCard := range userCards {
 		if userCard.CardID == lastCardID {
 			return []*models.UserCard{userCard}
 		}
 	}
-	
+
 	// Last card not found in user's collection
 	return []*models.UserCard{}
 }
@@ -872,20 +872,20 @@ func (ss *SearchService) applyLastCardFilterGlobal(ctx context.Context, cards []
 		// If we can't get the user, return empty result
 		return []*models.Card{}
 	}
-	
+
 	lastCardID := user.UserStats.LastCard
 	if lastCardID == 0 {
 		// No last card set, return empty result
 		return []*models.Card{}
 	}
-	
+
 	// Find the card that matches the last card ID
 	for _, card := range cards {
 		if card.ID == lastCardID {
 			return []*models.Card{card}
 		}
 	}
-	
+
 	// Last card not found in card collection
 	return []*models.Card{}
 }
@@ -903,17 +903,17 @@ func (ss *SearchService) applyWishlistFilter(ctx context.Context, userCards []*m
 		// If we can't get the wishlist, return empty result for safety
 		return []*models.UserCard{}
 	}
-	
+
 	// Create a map of wishlist card IDs for O(1) lookup
 	wishlistCardIDs := make(map[int64]bool)
 	for _, item := range wishlistItems {
 		wishlistCardIDs[item.CardID] = true
 	}
-	
+
 	var filtered []*models.UserCard
 	for _, userCard := range userCards {
 		isInWishlist := wishlistCardIDs[userCard.CardID]
-		
+
 		if wishOnly {
 			// Include only cards that are in the wishlist
 			if isInWishlist {
@@ -926,7 +926,7 @@ func (ss *SearchService) applyWishlistFilter(ctx context.Context, userCards []*m
 			}
 		}
 	}
-	
+
 	return filtered
 }
 
@@ -938,17 +938,17 @@ func (ss *SearchService) applyWishlistFilterGlobal(ctx context.Context, cards []
 		// If we can't get the wishlist, return empty result for safety
 		return []*models.Card{}
 	}
-	
+
 	// Create a map of wishlist card IDs for O(1) lookup
 	wishlistCardIDs := make(map[int64]bool)
 	for _, item := range wishlistItems {
 		wishlistCardIDs[item.CardID] = true
 	}
-	
+
 	var filtered []*models.Card
 	for _, card := range cards {
 		isInWishlist := wishlistCardIDs[card.ID]
-		
+
 		if wishOnly {
 			// Include only cards that are in the wishlist
 			if isInWishlist {
@@ -961,7 +961,7 @@ func (ss *SearchService) applyWishlistFilterGlobal(ctx context.Context, cards []
 			}
 		}
 	}
-	
+
 	return filtered
 }
 
@@ -973,7 +973,7 @@ func (ss *SearchService) applyNewCardFilter(ctx context.Context, userCards []*mo
 		// If we can't get the user, return empty result for safety
 		return []*models.UserCard{}
 	}
-	
+
 	lastDaily := user.LastDaily
 	// If lastDaily is zero time, treat as very old date (before any card could be obtained)
 	if lastDaily.IsZero() {
@@ -985,11 +985,11 @@ func (ss *SearchService) applyNewCardFilter(ctx context.Context, userCards []*mo
 			return []*models.UserCard{}
 		}
 	}
-	
+
 	var filtered []*models.UserCard
 	for _, userCard := range userCards {
 		isNewCard := userCard.Obtained.After(lastDaily)
-		
+
 		if newOnly {
 			// Include only cards obtained after last daily
 			if isNewCard {
@@ -1002,7 +1002,7 @@ func (ss *SearchService) applyNewCardFilter(ctx context.Context, userCards []*mo
 			}
 		}
 	}
-	
+
 	return filtered
 }
 
@@ -1014,20 +1014,20 @@ func (ss *SearchService) applyNewCardFilterGlobal(ctx context.Context, cards []*
 		// If we can't get the user, return empty result for safety
 		return []*models.Card{}
 	}
-	
+
 	// For global cards, we need to check if user owns them and when they were obtained
 	userCards, err := ss.userCardRepo.GetAllByUserID(ctx, userID)
 	if err != nil {
 		// If we can't get user cards, return empty result for safety
 		return []*models.Card{}
 	}
-	
+
 	// Create a map of card ID to obtained timestamp
 	cardObtainedMap := make(map[int64]time.Time)
 	for _, userCard := range userCards {
 		cardObtainedMap[userCard.CardID] = userCard.Obtained
 	}
-	
+
 	lastDaily := user.LastDaily
 	// If lastDaily is zero time, treat as very old date
 	if lastDaily.IsZero() {
@@ -1045,7 +1045,7 @@ func (ss *SearchService) applyNewCardFilterGlobal(ctx context.Context, cards []*
 			return []*models.Card{}
 		}
 	}
-	
+
 	var filtered []*models.Card
 	for _, card := range cards {
 		obtainedTime, owned := cardObtainedMap[card.ID]
@@ -1053,9 +1053,9 @@ func (ss *SearchService) applyNewCardFilterGlobal(ctx context.Context, cards []*
 			// User doesn't own this card, skip it for new/old filtering
 			continue
 		}
-		
+
 		isNewCard := obtainedTime.After(lastDaily)
-		
+
 		if newOnly {
 			// Include only cards obtained after last daily
 			if isNewCard {
@@ -1068,19 +1068,19 @@ func (ss *SearchService) applyNewCardFilterGlobal(ctx context.Context, cards []*
 			}
 		}
 	}
-	
+
 	return filtered
 }
 
 // hasUserSpecificFilters checks if the search filters contain any user-specific criteria
 func (ss *SearchService) hasUserSpecificFilters(filters utils.SearchFilters) bool {
 	return filters.AmountFilter.Min > 0 || filters.AmountFilter.Max > 0 || filters.AmountFilter.Exact > 0 ||
-		   filters.ExpFilter.Min > 0 || filters.ExpFilter.Max > 0 || filters.ExpFilter.Exact > 0 ||
-		   filters.Favorites || filters.ExcludeFavorites ||
-		   filters.LockedOnly || filters.ExcludeLocked ||
-		   filters.MultiOnly || filters.SingleOnly ||
-		   filters.NewOnly || filters.ExcludeNew ||
-		   filters.RatedOnly || filters.ExcludeRated ||
-		   filters.WishOnly || filters.ExcludeWish ||
-		   filters.LastCard || filters.Diff > 0
+		filters.ExpFilter.Min > 0 || filters.ExpFilter.Max > 0 || filters.ExpFilter.Exact > 0 ||
+		filters.Favorites || filters.ExcludeFavorites ||
+		filters.LockedOnly || filters.ExcludeLocked ||
+		filters.MultiOnly || filters.SingleOnly ||
+		filters.NewOnly || filters.ExcludeNew ||
+		filters.RatedOnly || filters.ExcludeRated ||
+		filters.WishOnly || filters.ExcludeWish ||
+		filters.LastCard || filters.Diff > 0
 }

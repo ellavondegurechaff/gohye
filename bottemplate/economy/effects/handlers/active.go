@@ -532,7 +532,7 @@ func NewEnayanoHandler(deps *effects.EffectDependencies) *EnayanoHandler {
 func (h *EnayanoHandler) Execute(ctx context.Context, params effects.EffectParams) (*effects.EffectResult, error) {
 	// For now, implement a placeholder that simulates quest completion
 	// This will need to be integrated with the actual quest system when available
-	
+
 	slog.Info("Enlightened Ayano effect executed (placeholder)",
 		slog.String("user_id", params.UserID),
 		slog.String("note", "Quest system integration pending"))
@@ -541,7 +541,7 @@ func (h *EnayanoHandler) Execute(ctx context.Context, params effects.EffectParam
 	// 1. Find active tier 1 quest for user
 	// 2. Mark it as completed
 	// 3. Award quest rewards
-	
+
 	return &effects.EffectResult{
 		Success:  true,
 		Message:  "Quest completion functionality pending implementation. Effect consumed.",
@@ -614,7 +614,7 @@ func NewPbocchiHandler(deps *effects.EffectDependencies) *PbocchiHandler {
 func (h *PbocchiHandler) Execute(ctx context.Context, params effects.EffectParams) (*effects.EffectResult, error) {
 	// For now, implement a placeholder that simulates quest generation
 	// This will need to be integrated with the actual quest system when available
-	
+
 	slog.Info("Powerful Bocchi effect executed (placeholder)",
 		slog.String("user_id", params.UserID),
 		slog.String("note", "Quest system integration pending"))
@@ -623,7 +623,7 @@ func (h *PbocchiHandler) Execute(ctx context.Context, params effects.EffectParam
 	// 1. Check if user has active quests
 	// 2. Generate a new tier 1 quest
 	// 3. Add it to user's active quests
-	
+
 	return &effects.EffectResult{
 		Success:  true,
 		Message:  "Quest generation functionality pending implementation. Effect consumed.",

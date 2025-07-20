@@ -19,7 +19,7 @@ type QuestRepository interface {
 	GetRandomQuestsByTier(ctx context.Context, questType string, tier int, count int) ([]*models.QuestDefinition, error)
 	GetAllQuestDefinitions(ctx context.Context) ([]*models.QuestDefinition, error)
 	CreateQuestDefinition(ctx context.Context, quest *models.QuestDefinition) error
-	
+
 	// User progress
 	GetActiveQuests(ctx context.Context, userID string) ([]*models.UserQuestProgress, error)
 	GetQuestProgress(ctx context.Context, userID string, questID string) (*models.UserQuestProgress, error)
@@ -28,12 +28,12 @@ type QuestRepository interface {
 	GetUnclaimedQuests(ctx context.Context, userID string) ([]*models.UserQuestProgress, error)
 	GetCompletedQuestCount(ctx context.Context, userID string, questType string, since time.Time) (int, error)
 	DeleteExpiredQuests(ctx context.Context) error
-	
+
 	// Leaderboards
 	GetLeaderboard(ctx context.Context, periodType string, periodStart time.Time, limit int) ([]*models.QuestLeaderboard, error)
 	UpdateLeaderboard(ctx context.Context, entry *models.QuestLeaderboard) error
 	GetUserLeaderboardEntry(ctx context.Context, userID string, periodType string, periodStart time.Time) (*models.QuestLeaderboard, error)
-	
+
 	// Quest chains
 	GetQuestChain(ctx context.Context, chainID string) (*models.QuestChain, error)
 	GetAllQuestChains(ctx context.Context) ([]*models.QuestChain, error)
@@ -54,14 +54,14 @@ func (r *questRepository) GetQuestDefinition(ctx context.Context, questID string
 		Model(quest).
 		Where("quest_id = ?", questID).
 		Scan(ctx)
-	
+
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, fmt.Errorf("quest not found: %s", questID)
 		}
 		return nil, err
 	}
-	
+
 	return quest, nil
 }
 
@@ -72,7 +72,7 @@ func (r *questRepository) GetQuestsByType(ctx context.Context, questType string)
 		Where("type = ?", questType).
 		Order("tier ASC", "quest_id ASC").
 		Scan(ctx)
-	
+
 	return quests, err
 }
 
@@ -84,7 +84,7 @@ func (r *questRepository) GetRandomQuestsByTier(ctx context.Context, questType s
 		OrderExpr("RANDOM()").
 		Limit(count).
 		Scan(ctx)
-	
+
 	return quests, err
 }
 
@@ -94,7 +94,7 @@ func (r *questRepository) GetAllQuestDefinitions(ctx context.Context) ([]*models
 		Model(&quests).
 		Order("type ASC", "tier ASC", "quest_id ASC").
 		Scan(ctx)
-	
+
 	return quests, err
 }
 
@@ -116,14 +116,14 @@ func (r *questRepository) GetActiveQuests(ctx context.Context, userID string) ([
 		// Removed the claimed = false filter to show completed quests too
 		Order("uqp.quest_id ASC").
 		Scan(ctx)
-	
+
 	if err != nil {
 		slog.Error("Failed to get active quests",
 			slog.String("user_id", userID),
 			slog.Any("error", err))
 		return nil, err
 	}
-	
+
 	return progress, nil
 }
 
@@ -137,14 +137,14 @@ func (r *questRepository) GetQuestProgress(ctx context.Context, userID string, q
 		Order("created_at DESC").
 		Limit(1).
 		Scan(ctx)
-	
+
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
 		}
 		return nil, err
 	}
-	
+
 	return progress, nil
 }
 
@@ -152,26 +152,26 @@ func (r *questRepository) CreateQuestProgress(ctx context.Context, progress *mod
 	progress.CreatedAt = time.Now()
 	progress.UpdatedAt = time.Now()
 	progress.StartedAt = time.Now()
-	
+
 	_, err := r.db.NewInsert().Model(progress).Exec(ctx)
 	return err
 }
 
 func (r *questRepository) UpdateQuestProgress(ctx context.Context, progress *models.UserQuestProgress) error {
 	progress.UpdatedAt = time.Now()
-	
+
 	// Check if quest is completed
 	if progress.QuestDefinition != nil && progress.CurrentProgress >= progress.QuestDefinition.RequirementCount {
 		progress.Completed = true
 		now := time.Now()
 		progress.CompletedAt = &now
 	}
-	
+
 	_, err := r.db.NewUpdate().
 		Model(progress).
 		WherePK().
 		Exec(ctx)
-	
+
 	return err
 }
 
@@ -186,7 +186,7 @@ func (r *questRepository) GetUnclaimedQuests(ctx context.Context, userID string)
 		Where("uqp.expires_at > ?", time.Now()).
 		Order("uqp.completed_at ASC").
 		Scan(ctx)
-	
+
 	return progress, err
 }
 
@@ -199,7 +199,7 @@ func (r *questRepository) GetCompletedQuestCount(ctx context.Context, userID str
 		Where("user_quest_progress.completed_at >= ?", since).
 		Where("qd.type = ?", questType).
 		Count(ctx)
-	
+
 	return count, err
 }
 
@@ -209,7 +209,7 @@ func (r *questRepository) DeleteExpiredQuests(ctx context.Context) error {
 		Where("expires_at < ?", time.Now()).
 		Where("claimed = ?", false).
 		Exec(ctx)
-	
+
 	return err
 }
 
@@ -223,13 +223,13 @@ func (r *questRepository) GetLeaderboard(ctx context.Context, periodType string,
 		Order("points_earned DESC", "quests_completed DESC").
 		Limit(limit).
 		Scan(ctx)
-	
+
 	return entries, err
 }
 
 func (r *questRepository) UpdateLeaderboard(ctx context.Context, entry *models.QuestLeaderboard) error {
 	entry.UpdatedAt = time.Now()
-	
+
 	// Upsert logic
 	_, err := r.db.NewInsert().
 		Model(entry).
@@ -238,7 +238,7 @@ func (r *questRepository) UpdateLeaderboard(ctx context.Context, entry *models.Q
 		Set("points_earned = EXCLUDED.points_earned").
 		Set("updated_at = EXCLUDED.updated_at").
 		Exec(ctx)
-	
+
 	return err
 }
 
@@ -250,14 +250,14 @@ func (r *questRepository) GetUserLeaderboardEntry(ctx context.Context, userID st
 		Where("period_type = ?", periodType).
 		Where("period_start = ?", periodStart).
 		Scan(ctx)
-	
+
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
 		}
 		return nil, err
 	}
-	
+
 	return entry, nil
 }
 
@@ -268,14 +268,14 @@ func (r *questRepository) GetQuestChain(ctx context.Context, chainID string) (*m
 		Model(chain).
 		Where("chain_id = ?", chainID).
 		Scan(ctx)
-	
+
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, fmt.Errorf("quest chain not found: %s", chainID)
 		}
 		return nil, err
 	}
-	
+
 	return chain, nil
 }
 
@@ -285,6 +285,6 @@ func (r *questRepository) GetAllQuestChains(ctx context.Context) ([]*models.Ques
 		Model(&chains).
 		Order("chain_id ASC").
 		Scan(ctx)
-	
+
 	return chains, err
 }

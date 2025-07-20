@@ -22,7 +22,6 @@ func NewAuctionHelpers(manager *Manager) *AuctionHelpers {
 	}
 }
 
-
 // getMarketPrice calculates the market price for a card based on auction history
 func (h *AuctionHelpers) getMarketPrice(ctx context.Context, cardID int64) (int64, error) {
 	// Get recent auction history for this card
@@ -115,7 +114,6 @@ func (h *AuctionHelpers) getUserCardByName(ctx context.Context, userID string, c
 
 	return nil, fmt.Errorf("internal error: card found but user ownership not matched")
 }
-
 
 // initializeTable creates the necessary database tables for auctions
 func (h *AuctionHelpers) initializeTable(ctx context.Context) error {

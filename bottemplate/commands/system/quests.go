@@ -30,7 +30,7 @@ func QuestsHandler(b *bottemplate.Bot) handler.CommandHandler {
 		// Ensure user exists
 		user, err := b.UserRepository.GetByDiscordID(ctx, userID)
 		if err != nil {
-			slog.Error("Failed to get user", 
+			slog.Error("Failed to get user",
 				slog.String("user_id", userID),
 				slog.Any("error", err))
 			return utils.EH.CreateErrorEmbed(e, "Failed to load user data. Please try again.")
@@ -71,7 +71,7 @@ func QuestsHandler(b *bottemplate.Bot) handler.CommandHandler {
 func QuestComponentHandler(b *bottemplate.Bot) handler.ComponentHandler {
 	return func(e *handler.ComponentEvent) error {
 		customID := e.Data.CustomID()
-		
+
 		// Parse component ID: /quest/{action}/{userID}
 		parts := strings.Split(customID, "/")
 		if len(parts) < 4 {
@@ -90,7 +90,7 @@ func QuestComponentHandler(b *bottemplate.Bot) handler.ComponentHandler {
 		if action == "claim" {
 			return handleQuestClaim(b, e)
 		}
-		
+
 		// Handle navigation buttons (daily, weekly, monthly)
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
@@ -116,7 +116,7 @@ func QuestComponentHandler(b *bottemplate.Bot) handler.ComponentHandler {
 		// Select appropriate quests based on type
 		var quests []*models.UserQuestProgress
 		var displayType string
-		
+
 		switch action {
 		case "daily":
 			quests = status.DailyQuests
@@ -163,7 +163,7 @@ func handleQuestClaim(b *bottemplate.Bot, e *handler.ComponentEvent) error {
 		slog.Error("Failed to claim quest rewards",
 			slog.String("user_id", userID),
 			slog.Any("error", err))
-		
+
 		// Provide more specific error message
 		errorMsg := "Failed to claim rewards. Please try again."
 		if strings.Contains(err.Error(), "no completed quests") {
@@ -171,7 +171,7 @@ func handleQuestClaim(b *bottemplate.Bot, e *handler.ComponentEvent) error {
 		} else if strings.Contains(err.Error(), "database") || strings.Contains(err.Error(), "SQLSTATE") {
 			errorMsg = "A database error occurred. Please try again in a moment."
 		}
-		
+
 		return utils.EH.CreateEphemeralError(e, errorMsg)
 	}
 
@@ -186,7 +186,7 @@ func handleQuestClaim(b *bottemplate.Bot, e *handler.ComponentEvent) error {
 	go func() {
 		// Small delay to ensure database is updated
 		time.Sleep(500 * time.Millisecond)
-		
+
 		// Get updated quest status
 		status, err := questService.GetUserQuestStatus(ctx, userID)
 		if err != nil {
@@ -277,7 +277,7 @@ func createQuestEmbed(quests []*models.UserQuestProgress, questType string, user
 	totalQuests := 0
 	completedQuests := 0
 	claimedQuests := 0
-	
+
 	for _, quest := range quests {
 		if quest.QuestDefinition != nil {
 			totalQuests++
@@ -309,7 +309,7 @@ func createQuestEmbed(quests []*models.UserQuestProgress, questType string, user
 
 			// Progress bar
 			progressBar := createProgressBar(quest)
-			
+
 			// Status emoji and text
 			statusEmoji := "⏳"
 			statusText := ""
@@ -324,12 +324,12 @@ func createQuestEmbed(quests []*models.UserQuestProgress, questType string, user
 			// Quest line
 			questLine := fmt.Sprintf("%s **%s**%s\n", statusEmoji, quest.QuestDefinition.Name, statusText)
 			questLine += fmt.Sprintf("└ %s\n", quest.QuestDefinition.Description)
-			
+
 			// Only show progress if not claimed
 			if !quest.Claimed {
-				questLine += fmt.Sprintf("└ Progress: %s %d/%d\n", 
-					progressBar, 
-					quest.CurrentProgress, 
+				questLine += fmt.Sprintf("└ Progress: %s %d/%d\n",
+					progressBar,
+					quest.CurrentProgress,
 					quest.QuestDefinition.RequirementCount)
 			}
 
@@ -379,7 +379,7 @@ func createQuestEmbed(quests []*models.UserQuestProgress, questType string, user
 			"Complete quest chains for bonus rewards!",
 		)
 	}
-	
+
 	if len(tips) > 0 {
 		randomTip := tips[time.Now().Unix()%int64(len(tips))]
 		embed.SetFooter(fmt.Sprintf("💡 %s", randomTip), "")
@@ -487,12 +487,12 @@ func formatDuration(d time.Duration) string {
 
 func getNextResetTime(questType string) time.Time {
 	now := time.Now()
-	
+
 	switch questType {
 	case "daily":
 		// Next day at midnight
 		return time.Date(now.Year(), now.Month(), now.Day()+1, 0, 0, 0, 0, now.Location())
-	
+
 	case "weekly":
 		// Next Monday at midnight
 		days := (7 - int(now.Weekday()) + 1) % 7
@@ -500,11 +500,11 @@ func getNextResetTime(questType string) time.Time {
 			days = 7
 		}
 		return time.Date(now.Year(), now.Month(), now.Day()+days, 0, 0, 0, 0, now.Location())
-	
+
 	case "monthly":
 		// First day of next month at midnight
 		return time.Date(now.Year(), now.Month()+1, 1, 0, 0, 0, 0, now.Location())
-	
+
 	default:
 		// Default to 24 hours
 		return now.Add(24 * time.Hour)

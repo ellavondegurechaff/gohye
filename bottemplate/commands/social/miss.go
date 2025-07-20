@@ -29,7 +29,7 @@ func MissHandler(b *bottemplate.Bot) handler.CommandHandler {
 	// Initialize services
 	cardDisplayService := services.NewCardDisplayService(b.CardRepository, b.SpacesService)
 	cardOperationsService := services.NewCardOperationsService(b.CardRepository, b.UserCardRepository)
-	
+
 	// Create pagination handler with standard items per page
 	paginationHandler := &utils.PaginationHandler{
 		Config: utils.PaginationConfig{
@@ -42,12 +42,12 @@ func MissHandler(b *bottemplate.Bot) handler.CommandHandler {
 			for i, item := range items {
 				displayItems[i] = item.(services.CardDisplayItem)
 			}
-			
+
 			description, err := cardDisplayService.FormatCardDisplayItems(context.Background(), displayItems)
 			if err != nil {
 				return discord.Embed{}, fmt.Errorf("failed to format card display: %w", err)
 			}
-			
+
 			// Calculate total items from pagination data
 			itemsPerPage := config.CardsPerPage
 			totalItems := totalPages * itemsPerPage
@@ -55,18 +55,18 @@ func MissHandler(b *bottemplate.Bot) handler.CommandHandler {
 				// Last page might have fewer items
 				totalItems = (totalPages-1)*itemsPerPage + len(items)
 			}
-			
+
 			embed := discord.NewEmbedBuilder().
 				SetTitle("Missing Cards").
 				SetDescription(description).
 				SetColor(config.BackgroundColor).
 				SetFooter(fmt.Sprintf("Page %d/%d • Total Missing: %d", page+1, totalPages, totalItems), "")
-			
+
 			// Add search query to description if provided
 			if query != "" {
 				embed.SetDescription(fmt.Sprintf("🔍`%s`\n\n%s", query, description))
 			}
-			
+
 			return embed.Build(), nil
 		},
 		FormatCopy: func(items []interface{}) string {
@@ -75,7 +75,7 @@ func MissHandler(b *bottemplate.Bot) handler.CommandHandler {
 			for i, item := range items {
 				displayItems[i] = item.(services.CardDisplayItem)
 			}
-			
+
 			copyText, err := cardDisplayService.FormatCopyText(context.Background(), displayItems, "Missing Cards")
 			if err != nil {
 				return "Error formatting copy text"
@@ -92,7 +92,7 @@ func MissHandler(b *bottemplate.Bot) handler.CommandHandler {
 		defer cancel()
 
 		query := strings.TrimSpace(e.SlashCommandInteractionData().String("card_query"))
-		
+
 		// Use CardOperationsService to get missing cards
 		missingCards, err := cardOperationsService.GetMissingCards(ctx, e.User().ID.String(), query)
 		if err != nil {
@@ -130,21 +130,21 @@ func MissHandler(b *bottemplate.Bot) handler.CommandHandler {
 // MissComponentHandler handles pagination for missing cards using the new unified factory
 func MissComponentHandler(b *bottemplate.Bot) handler.ComponentHandler {
 	cardOperationsService := services.NewCardOperationsService(b.CardRepository, b.UserCardRepository)
-	
+
 	// Create data fetcher
 	fetcher := &MissDataFetcher{
 		bot:                   b,
 		cardOperationsService: cardOperationsService,
 	}
-	
+
 	// Create formatter
 	formatter := &MissFormatter{
 		bot: b,
 	}
-	
+
 	// Create validator
 	validator := &MissValidator{}
-	
+
 	// Create factory configuration with standard items per page
 	factoryConfig := utils.PaginationFactoryConfig{
 		ItemsPerPage: config.CardsPerPage,
@@ -154,7 +154,7 @@ func MissComponentHandler(b *bottemplate.Bot) handler.ComponentHandler {
 		Formatter:    formatter,
 		Validator:    validator,
 	}
-	
+
 	// Create factory and return handler
 	factory := utils.NewPaginationFactory(factoryConfig)
 	return factory.CreateHandler()
@@ -203,13 +203,13 @@ func (mf *MissFormatter) FormatItems(items []interface{}, page, totalPages int, 
 	for i, item := range items {
 		displayItems[i] = item.(services.CardDisplayItem)
 	}
-	
+
 	cardDisplayService := services.NewCardDisplayService(mf.bot.CardRepository, mf.bot.SpacesService)
 	description, err := cardDisplayService.FormatCardDisplayItems(context.Background(), displayItems)
 	if err != nil {
 		return discord.Embed{}, fmt.Errorf("failed to format card display: %w", err)
 	}
-	
+
 	// Calculate total items from pagination data
 	itemsPerPage := config.CardsPerPage
 	totalItems := totalPages * itemsPerPage
@@ -217,18 +217,18 @@ func (mf *MissFormatter) FormatItems(items []interface{}, page, totalPages int, 
 		// Last page might have fewer items
 		totalItems = (totalPages-1)*itemsPerPage + len(items)
 	}
-	
+
 	embed := discord.NewEmbedBuilder().
 		SetTitle("Missing Cards").
 		SetDescription(description).
 		SetColor(config.BackgroundColor).
 		SetFooter(fmt.Sprintf("Page %d/%d • Total Missing: %d", page+1, totalPages, totalItems), "")
-	
+
 	// Add search query to description if provided
 	if params.Query != "" {
 		embed.SetDescription(fmt.Sprintf("🔍`%s`\n\n%s", params.Query, description))
 	}
-	
+
 	return embed.Build(), nil
 }
 
@@ -237,7 +237,7 @@ func (mf *MissFormatter) FormatCopy(items []interface{}, params utils.Pagination
 	for i, item := range items {
 		displayItems[i] = item.(services.CardDisplayItem)
 	}
-	
+
 	cardDisplayService := services.NewCardDisplayService(mf.bot.CardRepository, mf.bot.SpacesService)
 	copyText, err := cardDisplayService.FormatCopyText(context.Background(), displayItems, "Missing Cards")
 	if err != nil {

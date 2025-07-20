@@ -57,10 +57,10 @@ func (r *collectionRepository) GetByIDs(ctx context.Context, ids []string) ([]*m
 	if len(ids) == 0 {
 		return []*models.Collection{}, nil
 	}
-	
+
 	ctx, cancel := context.WithTimeout(ctx, config.DefaultQueryTimeout)
 	defer cancel()
-	
+
 	var collections []*models.Collection
 	err := r.db.NewSelect().
 		Model(&collections).
@@ -89,7 +89,7 @@ func (r *collectionRepository) GetAllWithCardCounts(ctx context.Context) ([]*Col
 		Group("col.id").
 		Order("col.name ASC").
 		Scan(ctx, &results)
-	
+
 	return results, err
 }
 
@@ -101,7 +101,7 @@ func (r *collectionRepository) GetCollectionCount(ctx context.Context) (int64, e
 	count, err := r.db.NewSelect().
 		Model((*models.Collection)(nil)).
 		Count(ctx)
-	
+
 	return int64(count), err
 }
 
@@ -195,7 +195,7 @@ func (r *collectionRepository) GetCollectionProgress(ctx context.Context, collec
 		Model(&cards).
 		Where("col_id = ?", collectionID).
 		Scan(ctx)
-	
+
 	if err != nil {
 		return nil, fmt.Errorf("failed to get collection cards: %w", err)
 	}
@@ -213,7 +213,7 @@ func (r *collectionRepository) GetCollectionProgress(ctx context.Context, collec
 			}
 		}
 	}
-	
+
 	if len(filteredCardIDs) == 0 {
 		return nil, fmt.Errorf("no eligible cards found for collection %s", collectionID)
 	}
@@ -221,7 +221,7 @@ func (r *collectionRepository) GetCollectionProgress(ctx context.Context, collec
 	// Build the aggregation query equivalent to MongoDB pipeline
 	totalCards := len(filteredCardIDs)
 	var results []*models.CollectionProgressResult
-	
+
 	query := `
 		SELECT 
 			u.discord_id,
@@ -236,7 +236,7 @@ func (r *collectionRepository) GetCollectionProgress(ctx context.Context, collec
 		ORDER BY progress DESC, owned_cards DESC
 		LIMIT ?
 	`
-	
+
 	err = r.db.NewRaw(query, totalCards, bun.In(filteredCardIDs), limit).Scan(ctx, &results)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get collection progress: %w", err)
@@ -250,17 +250,17 @@ func (r *collectionRepository) CreateWithStandardFormat(ctx context.Context, col
 	defer cancel()
 
 	collection := &models.Collection{
-		ID:         strings.ToLower(collectionID),  // Force lowercase
-		Name:       displayName,                    // Keep original casing
-		Origin:     "",                            // Empty string (not null)
+		ID:         strings.ToLower(collectionID),           // Force lowercase
+		Name:       displayName,                             // Keep original casing
+		Origin:     "",                                      // Empty string (not null)
 		Aliases:    []string{strings.ToLower(collectionID)}, // ID in array
 		Promo:      isPromo,
-		Compressed: true,                          // Always true
-		Fragments:  false,                         // Always false
-		Tags:       []string{groupType},           // Single tag array
+		Compressed: true,                // Always true
+		Fragments:  false,               // Always false
+		Tags:       []string{groupType}, // Single tag array
 		CreatedAt:  time.Now(),
 		UpdatedAt:  time.Now(),
 	}
-	
+
 	return r.Create(ctx, collection)
 }

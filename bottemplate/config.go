@@ -57,13 +57,13 @@ type DBConfig struct {
 }
 
 type WebConfig struct {
-	Host         string `toml:"host"`
-	Port         int    `toml:"port"`
-	OAuth        OAuthConfig `toml:"oauth"`
-	SessionKey   string `toml:"session_key"`
-	AdminUsers   []string `toml:"admin_users"`   // Discord user IDs with admin access
-	AdminRoles   []string `toml:"admin_roles"`   // Discord role IDs with admin access
-	AdminGuildID string   `toml:"admin_guild_id"` // Guild to check roles in
+	Host         string          `toml:"host"`
+	Port         int             `toml:"port"`
+	OAuth        OAuthConfig     `toml:"oauth"`
+	SessionKey   string          `toml:"session_key"`
+	AdminUsers   []string        `toml:"admin_users"`    // Discord user IDs with admin access
+	AdminRoles   []string        `toml:"admin_roles"`    // Discord role IDs with admin access
+	AdminGuildID string          `toml:"admin_guild_id"` // Guild to check roles in
 	RateLimit    RateLimitConfig `toml:"rate_limit"`
 }
 
@@ -75,7 +75,7 @@ type OAuthConfig struct {
 }
 
 type RateLimitConfig struct {
-	Enabled bool `toml:"enabled"`
-	Requests int `toml:"requests"`
-	Window   int `toml:"window"`
+	Enabled  bool `toml:"enabled"`
+	Requests int  `toml:"requests"`
+	Window   int  `toml:"window"`
 }

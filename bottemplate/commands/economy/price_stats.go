@@ -68,7 +68,7 @@ func handleCardByID(b *bottemplate.Bot, event *handler.CommandEvent, cardID int6
 	// Get market stats
 	marketStats, err := b.PriceCalculator.GetMarketStats(ctx, cardID, price)
 	if err != nil {
-		slog.Error("Failed to fetch market statistics", 
+		slog.Error("Failed to fetch market statistics",
 			slog.String("type", "cmd"),
 			slog.String("name", "price-stats"),
 			slog.Int64("card_id", cardID),

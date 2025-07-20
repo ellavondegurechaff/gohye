@@ -11,22 +11,22 @@ import (
 
 // EffectRegistry manages all registered effects
 type EffectRegistry struct {
-	mu                sync.RWMutex
-	handlers          map[string]EffectHandler
-	activeHandlers    map[string]ActiveEffectHandler
-	passiveHandlers   map[string]PassiveEffectHandler
-	categories        map[EffectCategory][]string
-	executionStats    map[string]*EffectExecutionStats
-	deps              *EffectDependencies
+	mu              sync.RWMutex
+	handlers        map[string]EffectHandler
+	activeHandlers  map[string]ActiveEffectHandler
+	passiveHandlers map[string]PassiveEffectHandler
+	categories      map[EffectCategory][]string
+	executionStats  map[string]*EffectExecutionStats
+	deps            *EffectDependencies
 }
 
 // EffectExecutionStats tracks statistics for effect execution
 type EffectExecutionStats struct {
-	TotalExecutions   int64         `json:"total_executions"`
-	SuccessfulRuns    int64         `json:"successful_runs"`
-	FailedRuns        int64         `json:"failed_runs"`
-	AverageTime       time.Duration `json:"average_time"`
-	LastExecuted      time.Time     `json:"last_executed"`
+	TotalExecutions    int64         `json:"total_executions"`
+	SuccessfulRuns     int64         `json:"successful_runs"`
+	FailedRuns         int64         `json:"failed_runs"`
+	AverageTime        time.Duration `json:"average_time"`
+	LastExecuted       time.Time     `json:"last_executed"`
 	TotalExecutionTime time.Duration `json:"total_execution_time"`
 }
 
@@ -195,7 +195,7 @@ func (r *EffectRegistry) ExecuteEffect(ctx context.Context, effectID string, par
 
 	// Execute the effect
 	result, err := handler.Execute(ctx, params)
-	
+
 	executionTime := time.Since(startTime)
 	success := err == nil && result != nil && result.Success
 

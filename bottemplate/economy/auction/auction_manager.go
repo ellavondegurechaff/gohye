@@ -31,17 +31,17 @@ type Manager struct {
 	minBidIncrement int64
 	maxAuctionTime  time.Duration
 	// Separate mutexes for different operations to prevent deadlocks
-	activeMu        sync.RWMutex // Protects activeAuctions map
-	txManager       *economicUtils.EconomicTransactionManager
-	
+	activeMu  sync.RWMutex // Protects activeAuctions map
+	txManager *economicUtils.EconomicTransactionManager
+
 	// Component managers for decomposed functionality
-	idGenerator       *AuctionIDGenerator
-	lifecycleManager  *AuctionLifecycleManager
-	scheduler         *AuctionScheduler
-	helpers           *AuctionHelpers
-	
+	idGenerator      *AuctionIDGenerator
+	lifecycleManager *AuctionLifecycleManager
+	scheduler        *AuctionScheduler
+	helpers          *AuctionHelpers
+
 	// Quest tracking
-	questTrackerFunc func(userID string)
+	questTrackerFunc           func(userID string)
 	questSnowflakesTrackerFunc func(userID string, amount int64, source string)
 }
 
@@ -247,7 +247,7 @@ func (m *Manager) GetActiveAuctions(ctx context.Context) ([]*models.Auction, err
 
 	// Log auction summary instead of individual auction details
 	slog.Info("Fetched active auctions", slog.Int("count", len(auctions)))
-	
+
 	// Log detailed auction information only at debug level
 	if slog.Default().Enabled(nil, slog.LevelDebug) {
 		for _, auction := range auctions {
@@ -293,7 +293,7 @@ func (m *Manager) RecoverActiveAuctions(ctx context.Context) error {
 			go func(aid int64) {
 				ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 				defer cancel()
-				
+
 				if err := m.lifecycleManager.completeAuction(ctx, aid); err != nil {
 					slog.Error("Failed to complete recovered expired auction",
 						slog.Int64("auction_id", aid),

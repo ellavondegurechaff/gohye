@@ -216,4 +216,3 @@ func LimitedCardsComponentHandler(b *bottemplate.Bot) handler.ComponentHandler {
 		})
 	}
 }
-

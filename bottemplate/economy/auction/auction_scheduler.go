@@ -37,16 +37,16 @@ func (s *AuctionScheduler) Start() {
 // scheduleAuctionEnd schedules the completion of an auction after the specified duration
 func (s *AuctionScheduler) scheduleAuctionEnd(auctionID int64, duration time.Duration) {
 	timer := time.NewTimer(duration)
-	
+
 	// Store timer for cleanup
 	s.auctionTimers.Store(auctionID, timer)
-	
+
 	go func() {
 		defer func() {
 			s.auctionTimers.Delete(auctionID)
 			timer.Stop()
 		}()
-		
+
 		select {
 		case <-timer.C:
 			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -68,7 +68,7 @@ func (s *AuctionScheduler) scheduleAuctionEnd(auctionID int64, duration time.Dur
 func (s *AuctionScheduler) startCleanupTicker() {
 	go func() {
 		defer s.cleanupTicker.Stop()
-		
+
 		for {
 			select {
 			case <-s.cleanupTicker.C:
@@ -154,12 +154,12 @@ func (s *AuctionScheduler) cleanupExpiredAuctions(ctx context.Context) error {
 func (s *AuctionScheduler) Shutdown() {
 	// Signal shutdown to all goroutines
 	close(s.shutdown)
-	
+
 	// Stop cleanup ticker
 	if s.cleanupTicker != nil {
 		s.cleanupTicker.Stop()
 	}
-	
+
 	// Stop all auction timers
 	s.auctionTimers.Range(func(key, value interface{}) bool {
 		if timer, ok := value.(*time.Timer); ok {
@@ -167,6 +167,6 @@ func (s *AuctionScheduler) Shutdown() {
 		}
 		return true
 	})
-	
+
 	slog.Info("Auction scheduler shutdown completed")
 }

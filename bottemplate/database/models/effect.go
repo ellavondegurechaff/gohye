@@ -19,8 +19,8 @@ type EffectItem struct {
 	Duration    int       `bun:"duration,notnull"` // in hours
 	Level       int       `bun:"level,notnull"`    // star level effect
 	Recipe      []int64   `bun:"recipe,type:jsonb"`
-	Cooldown    int       `bun:"cooldown,notnull,default:0"` // cooldown in hours for active effects
-	Passive     bool      `bun:"passive,notnull,default:false"` // is this a passive effect
+	Cooldown    int       `bun:"cooldown,notnull,default:0"`     // cooldown in hours for active effects
+	Passive     bool      `bun:"passive,notnull,default:false"`  // is this a passive effect
 	Animated    bool      `bun:"animated,notnull,default:false"` // legacy animated flag
 	CreatedAt   time.Time `bun:"created_at,notnull"`
 	UpdatedAt   time.Time `bun:"updated_at,notnull"`
@@ -37,11 +37,19 @@ type UserEffect struct {
 	RecipeCards    []int64    `bun:"recipe_cards,type:jsonb"`
 	Active         bool       `bun:"active,notnull,default:false"`
 	Uses           int        `bun:"uses,notnull,default:0"`
-	ExpiresAt      *time.Time `bun:"expires_at"` // when effect expires (legacy: expires)
-	CooldownEndsAt *time.Time `bun:"cooldown_ends_at"` // when cooldown ends (legacy: cooldownends)
+	ExpiresAt      *time.Time `bun:"expires_at"`                    // when effect expires (legacy: expires)
+	CooldownEndsAt *time.Time `bun:"cooldown_ends_at"`              // when cooldown ends (legacy: cooldownends)
 	Notified       bool       `bun:"notified,notnull,default:true"` // legacy notification tracking
 	CreatedAt      time.Time  `bun:"created_at,notnull"`
 	UpdatedAt      time.Time  `bun:"updated_at,notnull"`
+	Tier           int        `bun:"tier,notnull,default:1"`     // Current tier level (1-5)
+	Progress       int        `bun:"progress,notnull,default:0"` // Progress towards next tier
+}
+
+// EffectTierData represents the tier configuration for an effect
+type EffectTierData struct {
+	Values     []int `json:"values"`     // Values per tier (e.g., bonus amounts)
+	Thresholds []int `json:"thresholds"` // Requirements to reach next tier
 }
 
 // UserInventory represents items in a user's inventory

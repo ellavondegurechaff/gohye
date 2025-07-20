@@ -27,7 +27,6 @@ var CollectionProgress = discord.SlashCommandCreate{
 	},
 }
 
-
 func CollectionProgressHandler(b *bottemplate.Bot) handler.CommandHandler {
 	collectionService := services.NewCollectionService(b.CollectionRepository, b.CardRepository, b.UserCardRepository)
 	imageService := services.NewLeaderboardImageService()
@@ -35,12 +34,12 @@ func CollectionProgressHandler(b *bottemplate.Bot) handler.CommandHandler {
 	return func(event *handler.CommandEvent) error {
 		start := time.Now()
 		userID := event.User().ID.String()
-		
+
 		slog.Info("Collection-progress command started",
 			slog.String("type", "cmd"),
 			slog.String("name", "collection-progress"),
 			slog.String("user_id", userID))
-		
+
 		defer func() {
 			slog.Info("Collection-progress command completed",
 				slog.String("type", "cmd"),
@@ -50,7 +49,7 @@ func CollectionProgressHandler(b *bottemplate.Bot) handler.CommandHandler {
 		}()
 
 		ctx := context.Background()
-		
+
 		collectionQuery := strings.TrimSpace(event.SlashCommandInteractionData().String("collection"))
 		if collectionQuery == "" {
 			return utils.EH.CreateErrorEmbed(event, "Collection parameter is required")
@@ -61,7 +60,7 @@ func CollectionProgressHandler(b *bottemplate.Bot) handler.CommandHandler {
 		if err := event.DeferCreateMessage(false); err != nil {
 			return utils.EH.CreateErrorEmbed(event, "Failed to defer message")
 		}
-		
+
 		slog.Info("Collection-progress parameters parsed",
 			slog.String("type", "cmd"),
 			slog.String("name", "collection-progress"),
@@ -86,7 +85,7 @@ func CollectionProgressHandler(b *bottemplate.Bot) handler.CommandHandler {
 		// Get collection progress leaderboard using optimized SQL aggregation
 		progressResults, err := collectionService.GetCollectionLeaderboard(ctx, collection.ID, limit)
 		if err != nil {
-			slog.Error("Failed to get collection progress", 
+			slog.Error("Failed to get collection progress",
 				slog.String("type", "cmd"),
 				slog.String("name", "collection-progress"),
 				slog.String("user_id", userID),
@@ -109,7 +108,7 @@ func CollectionProgressHandler(b *bottemplate.Bot) handler.CommandHandler {
 			slog.String("user_id", userID),
 			slog.String("collection_id", collection.ID),
 			slog.Int("results_count", len(progressResults)))
-		
+
 		imageBytes, err := imageService.GenerateLeaderboardImage(ctx, collection.Name, collection.ID, progressResults)
 		if err != nil {
 			slog.Error("Failed to generate leaderboard image",
@@ -118,20 +117,20 @@ func CollectionProgressHandler(b *bottemplate.Bot) handler.CommandHandler {
 				slog.String("user_id", userID),
 				slog.String("collection_id", collection.ID),
 				slog.String("error", err.Error()))
-			
+
 			// Send error message
 			_, err := event.CreateFollowupMessage(discord.MessageCreate{
 				Content: fmt.Sprintf("❌ **Image Generation Failed**\nSorry, I couldn't generate the leaderboard image for %s. Please try again later.", collection.Name),
 			})
 			return err
 		}
-		
+
 		slog.Info("Image generated successfully, sending to Discord",
 			slog.String("type", "cmd"),
 			slog.String("name", "collection-progress"),
 			slog.String("user_id", userID),
 			slog.Int("image_size", len(imageBytes)))
-		
+
 		// Send image as attachment
 		_, err = event.CreateFollowupMessage(discord.MessageCreate{
 			Content: fmt.Sprintf("🏆 **%s - Collection Progress Leaderboard**", collection.Name),

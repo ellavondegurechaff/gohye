@@ -179,7 +179,11 @@ func (h *ForgeHandler) HandleComponent(e *handler.ComponentEvent) error {
 			})
 		}
 
-		// Check for collection completion after successful forge
+		// Track effect progress for Cherry Blossom
+		if h.bot.EffectManager != nil {
+			userIDStr := strconv.FormatInt(userID, 10)
+			go h.bot.EffectManager.UpdateEffectProgress(context.Background(), userIDStr, "cherrybloss", 1)
+		}
 		userIDStr := strconv.FormatInt(userID, 10)
 		go h.bot.CompletionChecker.CheckCompletionForCards(context.Background(), userIDStr, []int64{newCard.ID})
 

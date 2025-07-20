@@ -100,7 +100,7 @@ func (ucd *UserCardDisplay) GetExtraInfo() []string {
 type UserCardDisplayWithContext struct {
 	UserCard *models.UserCard
 	Card     *models.Card
-	User     *models.User // Optional user data for new card detection
+	User     *models.User        // Optional user data for new card detection
 	Filters  utils.SearchFilters // Search context for display decisions
 }
 
@@ -171,7 +171,7 @@ func (ucdc *UserCardDisplayWithContext) GetExtraInfo() []string {
 			extras = append(extras, fmt.Sprintf("`%d%%`", expPercent))
 		}
 		// For promo cards, fragments, excluded collections, and level 5 cards, no EXP is shown
-		
+
 		// Show amount for multiples in default view
 		if ucdc.UserCard.Amount > 1 {
 			extras = append(extras, fmt.Sprintf("`x%d`", ucdc.UserCard.Amount))
@@ -251,11 +251,11 @@ func (cds *CardDisplayService) FormatCardDisplayItems(ctx context.Context, items
 		}
 
 		groupType := utils.GetGroupType(card.Tags)
-		
+
 		// Always use base card level for star display (Card.Level = star rating 1-5)
 		// UserCard.Level is progression level which is different from star rating
 		displayLevel := card.Level
-		
+
 		displayInfo := utils.GetCardDisplayInfo(
 			card.Name,
 			card.ColID,

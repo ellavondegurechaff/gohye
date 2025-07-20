@@ -44,11 +44,11 @@ func NewDefaultConfig() *Config {
 			Level3: 0.4, // Reduced from 0.6
 			Level4: 0.2, // Reduced from 0.4
 		},
-		ExpGainCooldown:    0, // Temporarily disabled cooldown
-		DailyExpGainLimit:  30,              // Reduced from 50
-		WeeklyExpGainLimit: 180,             // Reduced from 300
-		CriticalExpChance:  0.10,            // Reduced from 0.15
-		CriticalExpBonus:   1.5,             // Reduced from 2.0
-		ComboBonus:         0.05,            // Reduced from 0.1
+		ExpGainCooldown:    0,    // Temporarily disabled cooldown
+		DailyExpGainLimit:  30,   // Reduced from 50
+		WeeklyExpGainLimit: 180,  // Reduced from 300
+		CriticalExpChance:  0.10, // Reduced from 0.15
+		CriticalExpBonus:   1.5,  // Reduced from 2.0
+		ComboBonus:         0.05, // Reduced from 0.1
 	}
 }

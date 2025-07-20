@@ -100,8 +100,6 @@ func GetPromoRarityPlainText(colID string, level int) string {
 	return strings.Repeat("★", level)
 }
 
-
-
 // SpacesConfig holds the configuration for DigitalOcean Spaces
 type SpacesConfig struct {
 	Bucket      string

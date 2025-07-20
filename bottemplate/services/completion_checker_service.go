@@ -16,12 +16,12 @@ import (
 
 // CompletionCheckerService handles automatic detection of collection completions
 type CompletionCheckerService struct {
-	client               bot.Client
-	collectionService    *CollectionService
-	userRepo             repositories.UserRepository
-	cardRepo             interfaces.CardRepositoryInterface
-	userCardRepo         interfaces.UserCardRepositoryInterface
-	collectionRepo       repositories.CollectionRepository
+	client            bot.Client
+	collectionService *CollectionService
+	userRepo          repositories.UserRepository
+	cardRepo          interfaces.CardRepositoryInterface
+	userCardRepo      interfaces.UserCardRepositoryInterface
+	collectionRepo    repositories.CollectionRepository
 }
 
 // NewCompletionCheckerService creates a new completion checker service
@@ -106,7 +106,7 @@ func (s *CompletionCheckerService) isCollectionAlreadyCompleted(user *models.Use
 	if user.CompletedCols == nil {
 		return false
 	}
-	
+
 	for _, completedCol := range user.CompletedCols {
 		if completedCol.ID == collectionID {
 			return true
@@ -178,7 +178,7 @@ func (s *CompletionCheckerService) handleLostCompletion(ctx context.Context, use
 func (s *CompletionCheckerService) sendCompletionNotification(ctx context.Context, user *models.User, collectionID string, isCompleted bool) {
 	// Check if user has notifications enabled (following JavaScript pattern)
 	// For now, we'll assume notifications are enabled. In the future, this could check user preferences
-	
+
 	// Get collection information
 	collection, err := s.collectionRepo.GetByID(ctx, collectionID)
 	if err != nil {
@@ -190,13 +190,13 @@ func (s *CompletionCheckerService) sendCompletionNotification(ctx context.Contex
 
 	var message string
 	var color int
-	
+
 	if isCompleted {
-		message = fmt.Sprintf("🎉 **Collection Completed!**\n\nYou have just completed `%s`!\n\nYou can now decide if you want to reset this collection for a clout star and a legendary card if it contains one!\n\nOne copy of each card below 5 stars will be consumed if the collection has 200 or fewer cards. Otherwise 200 specified cards will be taken based on overall card composition.\n\nTo reset type: `/collection reset collection:%s`", 
+		message = fmt.Sprintf("🎉 **Collection Completed!**\n\nYou have just completed `%s`!\n\nYou can now decide if you want to reset this collection for a clout star and a legendary card if it contains one!\n\nOne copy of each card below 5 stars will be consumed if the collection has 200 or fewer cards. Otherwise 200 specified cards will be taken based on overall card composition.\n\nTo reset type: `/collection reset collection:%s`",
 			collection.Name, collectionID)
 		color = 0x00FF00 // Green
 	} else {
-		message = fmt.Sprintf("⚠️ **Collection Completion Lost**\n\nYou no longer have all the cards required for a full completion of `%s`. This collection has been removed from your completed list.", 
+		message = fmt.Sprintf("⚠️ **Collection Completion Lost**\n\nYou no longer have all the cards required for a full completion of `%s`. This collection has been removed from your completed list.",
 			collection.Name)
 		color = 0xFF9900 // Orange
 	}
