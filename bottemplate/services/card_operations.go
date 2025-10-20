@@ -1,10 +1,12 @@
 package services
 
 import (
-	"context"
-	"fmt"
-	"sort"
-	"strings"
+    "context"
+    "fmt"
+    "sync"
+    "sort"
+    "strings"
+    "time"
 
 	"github.com/disgoorg/bot-template/bottemplate/database/models"
 	"github.com/disgoorg/bot-template/bottemplate/interfaces"
@@ -13,9 +15,27 @@ import (
 
 // CardOperationsService provides common card operations functionality
 type CardOperationsService struct {
-	cardRepo     interfaces.CardRepositoryInterface
-	userCardRepo interfaces.UserCardRepositoryInterface
+    cardRepo     interfaces.CardRepositoryInterface
+    userCardRepo interfaces.UserCardRepositoryInterface
 }
+
+// Simple in-memory cache for recent /cards queries to speed up pagination
+type cardsCacheEntry struct {
+    userID   string
+    query    string
+    userCards []*models.UserCard
+    cards     []*models.Card
+    filters   utils.SearchFilters
+    ts       time.Time
+}
+
+var (
+    cardOpsCache = struct{
+        sync.RWMutex
+        m map[string]*cardsCacheEntry
+    }{m: make(map[string]*cardsCacheEntry)}
+    cacheTTL = 10 * time.Second
+)
 
 // NewCardOperationsService creates a new card operations service
 func NewCardOperationsService(cardRepo interfaces.CardRepositoryInterface, userCardRepo interfaces.UserCardRepositoryInterface) *CardOperationsService {
@@ -38,11 +58,23 @@ func (s *CardOperationsService) GetUserCardsWithDetailsAndFilters(ctx context.Co
 
 // GetUserCardsWithDetailsAndFiltersWithUser fetches user cards with card details, applies filtering, and returns the parsed filters, with user data for advanced filtering
 func (s *CardOperationsService) GetUserCardsWithDetailsAndFiltersWithUser(ctx context.Context, userID string, query string, user *models.User) ([]*models.UserCard, []*models.Card, utils.SearchFilters, error) {
-	// Get user's cards
-	userCards, err := s.userCardRepo.GetAllByUserID(ctx, userID)
-	if err != nil {
-		return nil, nil, utils.SearchFilters{}, fmt.Errorf("failed to fetch user cards: %w", err)
-	}
+    // Check cache first
+    key := userID + "|" + strings.TrimSpace(strings.ToLower(query))
+    cardOpsCache.RLock()
+    if ent, ok := cardOpsCache.m[key]; ok && time.Since(ent.ts) < cacheTTL {
+        uc := ent.userCards
+        cd := ent.cards
+        f := ent.filters
+        cardOpsCache.RUnlock()
+        return uc, cd, f, nil
+    }
+    cardOpsCache.RUnlock()
+
+    // Get user's cards
+    userCards, err := s.userCardRepo.GetAllByUserID(ctx, userID)
+    if err != nil {
+        return nil, nil, utils.SearchFilters{}, fmt.Errorf("failed to fetch user cards: %w", err)
+    }
 
 	if len(userCards) == 0 {
 		return userCards, nil, utils.SearchFilters{}, nil
@@ -57,11 +89,16 @@ func (s *CardOperationsService) GetUserCardsWithDetailsAndFiltersWithUser(ctx co
 		cardMap[userCard.CardID] = userCard
 	}
 
-	// Get card details with bulk query
-	cards, err := s.cardRepo.GetByIDs(ctx, cardIDs)
-	if err != nil {
-		return nil, nil, utils.SearchFilters{}, fmt.Errorf("failed to fetch card details: %w", err)
-	}
+    // Get card details with bulk query once
+    cards, err := s.cardRepo.GetByIDs(ctx, cardIDs)
+    if err != nil {
+        return nil, nil, utils.SearchFilters{}, fmt.Errorf("failed to fetch card details: %w", err)
+    }
+    // Build a map for quick access to card details by ID
+    cardDetailsByID := make(map[int64]*models.Card, len(cards))
+    for _, c := range cards {
+        cardDetailsByID[c.ID] = c
+    }
 
 	// Parse search filters
 	filters := utils.SearchFilters{}
@@ -88,11 +125,13 @@ func (s *CardOperationsService) GetUserCardsWithDetailsAndFiltersWithUser(ctx co
 			filteredCardIDs[i] = userCard.CardID
 		}
 
-		// Get cards for the filtered user cards
-		filteredCards, err := s.cardRepo.GetByIDs(ctx, filteredCardIDs)
-		if err != nil {
-			return nil, nil, utils.SearchFilters{}, fmt.Errorf("failed to fetch filtered card details: %w", err)
-		}
+        // Build filtered cards from the already-fetched card details
+        filteredCards := make([]*models.Card, 0, len(filteredUserCards))
+        for _, id := range filteredCardIDs {
+            if c, ok := cardDetailsByID[id]; ok {
+                filteredCards = append(filteredCards, c)
+            }
+        }
 
 		// Run search on the favorites-filtered cards using unified search
 		var results []*models.Card
@@ -121,7 +160,12 @@ func (s *CardOperationsService) GetUserCardsWithDetailsAndFiltersWithUser(ctx co
 		s.sortUserCards(displayCards, cards)
 	}
 
-	return displayCards, cards, filters, nil
+    // Cache result for fast pagination
+    cardOpsCache.Lock()
+    cardOpsCache.m[key] = &cardsCacheEntry{userID: userID, query: query, userCards: displayCards, cards: cards, filters: filters, ts: time.Now()}
+    cardOpsCache.Unlock()
+
+    return displayCards, cards, filters, nil
 }
 
 // GetMissingCards returns cards the user doesn't own, with optional filtering

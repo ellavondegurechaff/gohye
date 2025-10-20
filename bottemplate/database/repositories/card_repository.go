@@ -595,12 +595,13 @@ func (r *cardRepository) GetAllByUserID(ctx context.Context, userID string) ([]*
 
 	userCards := make([]*models.UserCard, 0)
 
-	err := r.db.NewSelect().
-		Model(&userCards).
-		Where("user_id = ?", userID).
-		Order("level DESC").
-		Order("id ASC").
-		Scan(ctx)
+    err := r.db.NewSelect().
+        Model(&userCards).
+        Where("user_id = ?", userID).
+        Where("amount > 0").
+        Order("level DESC").
+        Order("id ASC").
+        Scan(ctx)
 
 	if err != nil {
 		fmt.Printf("Database error: %v\n", err)

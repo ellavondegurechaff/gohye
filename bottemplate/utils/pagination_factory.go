@@ -68,30 +68,35 @@ func NewPaginationFactory(config PaginationFactoryConfig) *PaginationFactory {
 
 // CreateHandler creates a unified pagination handler
 func (pf *PaginationFactory) CreateHandler() handler.ComponentHandler {
-	return func(e *handler.ComponentEvent) error {
-		ctx := context.Background()
-		data := e.Data.(discord.ButtonInteractionData)
-		customID := data.CustomID()
+    return func(e *handler.ComponentEvent) error {
+        ctx := context.Background()
+        data := e.Data.(discord.ButtonInteractionData)
+        customID := data.CustomID()
 
-		// Parse component ID
-		params, err := pf.config.Parser.Parse(customID)
-		if err != nil {
-			return nil // Invalid component ID, ignore
-		}
+        // Parse component ID
+        params, err := pf.config.Parser.Parse(customID)
+        if err != nil {
+            return nil // Invalid component ID, ignore
+        }
 
-		// Validate user if validator provided
-		if pf.config.Validator != nil && !pf.config.Validator.ValidateUser(e.User().ID.String(), params) {
-			return EH.CreateEphemeralError(e, "Only the command user can navigate through these items.")
-		}
+        // Validate user if validator provided
+        if pf.config.Validator != nil && !pf.config.Validator.ValidateUser(e.User().ID.String(), params) {
+            return EH.CreateEphemeralError(e, "Only the command user can navigate through these items.")
+        }
 
-		// Handle copy button
-		if strings.Contains(customID, "/copy/") {
-			return pf.handleCopyButton(ctx, e, params)
-		}
+        // Handle copy button
+        if strings.Contains(customID, "/copy/") {
+            return pf.handleCopyButton(ctx, e, params)
+        }
 
-		// Handle navigation
-		return pf.handleNavigation(ctx, e, customID, params)
-	}
+        // Defer update to avoid 3s timeout on slow fetch/format (prevents Unknown interaction 10062)
+        if err := e.DeferUpdateMessage(); err != nil {
+            // If deferring fails, continue; UpdateMessage below may still work
+        }
+
+        // Handle navigation
+        return pf.handleNavigation(ctx, e, customID, params)
+    }
 }
 
 // handleCopyButton handles copy button interactions

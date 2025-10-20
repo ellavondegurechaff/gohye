@@ -403,6 +403,22 @@ func (cds *CardDisplayService) ConvertUserCardsToDisplayItemsWithUserAndContext(
 	return items, nil
 }
 
+// ConvertUserCardsToDisplayItemsWithUserAndContextFromMap converts without additional DB lookups using a provided card map
+func (cds *CardDisplayService) ConvertUserCardsToDisplayItemsWithUserAndContextFromMap(ctx context.Context, userCards []*models.UserCard, user *models.User, filters utils.SearchFilters, cardByID map[int64]*models.Card) ([]CardDisplayItem, error) {
+    items := make([]CardDisplayItem, 0, len(userCards))
+    for _, userCard := range userCards {
+        if card, ok := cardByID[userCard.CardID]; ok && card != nil {
+            items = append(items, &UserCardDisplayWithContext{
+                UserCard: userCard,
+                Card:     card,
+                User:     user,
+                Filters:  filters,
+            })
+        }
+    }
+    return items, nil
+}
+
 // ConvertCardsToMissingDisplayItems converts Card slice to CardDisplayItem slice for missing cards
 func (cds *CardDisplayService) ConvertCardsToMissingDisplayItems(cards []*models.Card) []CardDisplayItem {
 	items := make([]CardDisplayItem, 0, len(cards))

@@ -48,12 +48,13 @@ type LogConfig struct {
 }
 
 type DBConfig struct {
-	Host     string `toml:"host"`
-	Port     int    `toml:"port"`
-	User     string `toml:"user"`
-	Password string `toml:"password"`
-	Database string `toml:"database"`
-	PoolSize int    `toml:"pool_size"`
+    Host     string `toml:"host"`
+    Port     int    `toml:"port"`
+    User     string `toml:"user"`
+    Password string `toml:"password"`
+    Database string `toml:"database"`
+    PoolSize int    `toml:"pool_size"`
+    SSLMode  string `toml:"sslmode"`
 }
 
 type WebConfig struct {

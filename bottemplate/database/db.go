@@ -1,12 +1,13 @@
 package database
 
 import (
-	"context"
-	"database/sql"
-	"encoding/json"
-	"fmt"
-	"net"
-	"time"
+    "context"
+    "database/sql"
+    "encoding/json"
+    "fmt"
+    "net"
+    "os"
+    "time"
 
 	"log/slog"
 
@@ -38,26 +39,45 @@ type DBConfig struct {
 }
 
 type DB struct {
-	pool  *pgxpool.Pool
-	bunDB *bun.DB
+    pool  *pgxpool.Pool
+    bunDB *bun.DB
 }
 
 func New(ctx context.Context, cfg DBConfig) (*DB, error) {
-	// Add retry logic for initial connection
-	var conn net.Conn
-	var err error
+    // Add retry logic for initial connection
+    var conn net.Conn
+    var err error
 
-	for i := 0; i < defaultMaxRetries; i++ {
-		conn, err = net.DialTimeout("tcp", net.JoinHostPort(cfg.Host, fmt.Sprintf("%d", cfg.Port)), defaultConnTimeout)
-		if err == nil {
-			break
-		}
-		time.Sleep(defaultRetryInterval)
-	}
-	if err != nil {
-		return nil, fmt.Errorf("database server unreachable after %d attempts: %w", defaultMaxRetries, err)
-	}
-	defer conn.Close()
+    tryDial := func() (net.Conn, error) {
+        addr := net.JoinHostPort(cfg.Host, fmt.Sprintf("%d", cfg.Port))
+        force4 := os.Getenv("DB_DIAL_FORCE_IPV4") == "1"
+        force6 := os.Getenv("DB_DIAL_FORCE_IPV6") == "1"
+
+        if force4 {
+            return net.DialTimeout("tcp4", addr, defaultConnTimeout)
+        }
+        if force6 {
+            return net.DialTimeout("tcp6", addr, defaultConnTimeout)
+        }
+
+        // Prefer IPv4, then fall back to IPv6
+        if c, e := net.DialTimeout("tcp4", addr, defaultConnTimeout); e == nil {
+            return c, nil
+        }
+        return net.DialTimeout("tcp6", addr, defaultConnTimeout)
+    }
+
+    for i := 0; i < defaultMaxRetries; i++ {
+        conn, err = tryDial()
+        if err == nil {
+            break
+        }
+        time.Sleep(defaultRetryInterval)
+    }
+    if err != nil {
+        return nil, fmt.Errorf("database server unreachable after %d attempts: %w", defaultMaxRetries, err)
+    }
+    defer conn.Close()
 
 	poolConfig, err := pgxpool.ParseConfig(buildConnString(cfg))
 	if err != nil {
@@ -103,20 +123,115 @@ func (db *DB) GetPool() *pgxpool.Pool {
 
 // Add method to get the bun.DB instance
 func (db *DB) BunDB() *bun.DB {
-	return db.bunDB
+    return db.bunDB
 }
 
 func newBunDB(pool *pgxpool.Pool) *bun.DB {
-	dsn := fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=disable",
-		pool.Config().ConnConfig.User,
-		pool.Config().ConnConfig.Password,
-		pool.Config().ConnConfig.Host,
-		pool.Config().ConnConfig.Port,
-		pool.Config().ConnConfig.Database,
-	)
+    // Default to disabling SSL for Bun unless explicitly overridden by env
+    sslMode := os.Getenv("PG_SSLMODE")
+    if sslMode == "" {
+        sslMode = "disable"
+    }
 
-	sqldb := sql.OpenDB(pgdriver.NewConnector(pgdriver.WithDSN(dsn)))
-	return bun.NewDB(sqldb, pgdialect.New())
+    dsn := fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=%s",
+        pool.Config().ConnConfig.User,
+        pool.Config().ConnConfig.Password,
+        pool.Config().ConnConfig.Host,
+        pool.Config().ConnConfig.Port,
+        pool.Config().ConnConfig.Database,
+        sslMode,
+    )
+
+    sqldb := sql.OpenDB(pgdriver.NewConnector(pgdriver.WithDSN(dsn)))
+    return bun.NewDB(sqldb, pgdialect.New())
+}
+
+// ResetAppTables truncates application tables for a fresh start (PostgreSQL only)
+func (db *DB) ResetAppTables(ctx context.Context) error {
+    if db.bunDB == nil {
+        return fmt.Errorf("bun DB not initialized")
+    }
+
+    // Candidate tables managed by this application
+    candidates := []string{
+        "auction_bids",
+        "auctions",
+        "trades",
+        "user_quest_progress",
+        "quest_leaderboards",
+        "quest_definitions",
+        "quest_chains",
+        "user_effects",
+        "effect_items",
+        "user_inventory",
+        "user_items",
+        "items",
+        "card_market_history",
+        "collection_resets",
+        "collection_progress",
+        "claims",
+        "claim_stats",
+        "economy_stats",
+        "user_cards",
+        "user_quests",
+        "user_slots",
+        "user_stats",
+        "wishlists",
+        "users",
+        "cards",
+        "collections",
+    }
+
+    // Verify present tables to avoid failures on missing ones
+    rows, err := db.pool.Query(ctx, `SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'`)
+    if err != nil {
+        return fmt.Errorf("failed to list tables: %w", err)
+    }
+    defer rows.Close()
+
+    present := map[string]bool{}
+    for rows.Next() {
+        var name string
+        if err := rows.Scan(&name); err == nil {
+            present[name] = true
+        }
+    }
+
+    var toTruncate []string
+    for _, t := range candidates {
+        if present[t] {
+            toTruncate = append(toTruncate, t)
+        }
+    }
+
+    if len(toTruncate) == 0 {
+        slog.Warn("No app tables found to reset")
+        return nil
+    }
+
+    // Build TRUNCATE statement safely
+    stmt := "TRUNCATE TABLE " + joinIdentifiers(toTruncate) + " RESTART IDENTITY CASCADE;"
+    if _, err := db.ExecWithLog(ctx, stmt); err != nil {
+        return fmt.Errorf("failed to truncate tables: %w", err)
+    }
+
+    slog.Info("App tables truncated successfully", "tables", toTruncate)
+    return nil
+}
+
+// joinIdentifiers joins identifiers with proper quoting
+func joinIdentifiers(names []string) string {
+    if len(names) == 0 {
+        return ""
+    }
+    out := ""
+    for i, n := range names {
+        if i > 0 {
+            out += ", "
+        }
+        out += fmt.Sprintf("\"%s\"", n)
+    }
+    return out
 }
 
 func (db *DB) ExecWithLog(ctx context.Context, sql string, args ...interface{}) (pgconn.CommandTag, error) {
@@ -251,6 +366,7 @@ func (db *DB) InitializeSchema(ctx context.Context) error {
 		"CREATE INDEX IF NOT EXISTS idx_claim_stats_last_claim ON claim_stats(last_claim_at);",
 		// Critical performance indexes
 		"CREATE INDEX IF NOT EXISTS idx_user_cards_user_id_amount ON user_cards(user_id) WHERE amount > 0;",
+		"CREATE INDEX IF NOT EXISTS idx_user_cards_user_level ON user_cards(user_id, level DESC, id ASC) WHERE amount > 0;",
 		"CREATE INDEX IF NOT EXISTS idx_user_cards_compound_search ON user_cards(user_id, card_id, amount) WHERE amount > 0;",
 		"CREATE INDEX IF NOT EXISTS idx_auctions_status_end_time ON auctions(status, end_time);",
 		"CREATE INDEX IF NOT EXISTS idx_auctions_active ON auctions(end_time) WHERE status = 'active';",
