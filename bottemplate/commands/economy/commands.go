@@ -11,4 +11,6 @@ var Commands = []discord.ApplicationCommandCreate{
 	AuctionCommand,
 	PriceStats,
 	Fuse,
+	TradeCommand,
+	InboxCommand,
 }

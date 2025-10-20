@@ -95,28 +95,35 @@ func (h *ShopHandler) handleList(event *handler.CommandEvent) error {
 		title = "Shop - Effects"
 	}
 
-	// Check if we still have no items
-	if len(currentItems) == 0 {
-		return event.CreateMessage(discord.MessageCreate{
-			Content: "❌ No items available in the shop",
-			Flags:   discord.MessageFlagEphemeral,
-		})
-	}
-
 	components := []discord.ContainerComponent{
 		createShopComponents("active")[0],
 		createItemSelectMenu(currentItems, "active"),
 	}
 
-	return event.CreateMessage(discord.MessageCreate{
-		Embeds: []discord.Embed{{
+	// Handle empty shop case with appropriate messaging  
+	var embed discord.Embed
+	if len(currentItems) == 0 {
+		embed = discord.Embed{
+			Title:       "🛍️ Shop",
+			Description: "The shop is currently empty. No items are available for purchase at this time.",
+			Color:       config.WarningColor,
+			Footer: &discord.EmbedFooter{
+				Text: "💡 Come back later or contact an admin if this seems wrong",
+			},
+		}
+	} else {
+		embed = discord.Embed{
 			Title:       title,
 			Description: "Select an item to view details",
 			Color:       getColorByType(currentItems[0].Type),
 			Footer: &discord.EmbedFooter{
 				Text: "Prices update hourly",
 			},
-		}},
+		}
+	}
+
+	return event.CreateMessage(discord.MessageCreate{
+		Embeds:     []discord.Embed{embed},
 		Components: components,
 	})
 }
@@ -230,6 +237,12 @@ func (h *ShopHandler) HandleComponent(event *handler.ComponentEvent) error {
 	switch {
 	case customID == "/shop_category":
 		return h.handleCategorySelect(event)
+	case customID == "/shop_item_disabled":
+		// Handle disabled select menu interaction gracefully
+		return event.CreateMessage(discord.MessageCreate{
+			Content: "❌ This category is currently empty. Please try the other category.",
+			Flags:   discord.MessageFlagEphemeral,
+		})
 	case strings.HasPrefix(customID, "/shop_item"):
 		return h.handleItemSelect(event)
 	case strings.HasPrefix(customID, "/shop_buy/"):
@@ -283,27 +296,35 @@ func (h *ShopHandler) handleCategorySelect(event *handler.ComponentEvent) error 
 		title = "Shop - Effects"
 	}
 
-	if len(currentItems) == 0 {
-		return event.CreateMessage(discord.MessageCreate{
-			Content: "No items available in this category",
-			Flags:   discord.MessageFlagEphemeral,
-		})
-	}
-
 	components := []discord.ContainerComponent{
 		createShopComponents(selectedValue)[0],
 		createItemSelectMenu(currentItems, selectedValue),
 	}
 
-	return event.UpdateMessage(discord.MessageUpdate{
-		Embeds: &[]discord.Embed{{
+	// Handle empty category case with appropriate messaging
+	var embed discord.Embed
+	if len(currentItems) == 0 {
+		embed = discord.Embed{
+			Title:       title,
+			Description: "This category is currently empty. No items are available for purchase.",
+			Color:       config.WarningColor,
+			Footer: &discord.EmbedFooter{
+				Text: "💡 Try checking the other category or come back later",
+			},
+		}
+	} else {
+		embed = discord.Embed{
 			Title:       title,
 			Description: "Select an item to view details",
 			Color:       getColorByType(currentItems[0].Type),
 			Footer: &discord.EmbedFooter{
 				Text: "💡 Tip: Prices update hourly",
 			},
-		}},
+		}
+	}
+
+	return event.UpdateMessage(discord.MessageUpdate{
+		Embeds:     &[]discord.Embed{embed},
 		Components: &components,
 	})
 }
@@ -332,6 +353,21 @@ func createShopComponents(selectedValue string) []discord.ContainerComponent {
 }
 
 func createItemSelectMenu(items []*models.EffectItem, _ string) discord.ContainerComponent {
+	// Handle empty items array to prevent Discord API error
+	if len(items) == 0 {
+		// Return a disabled placeholder select menu
+		return discord.NewActionRow(
+			discord.NewStringSelectMenu("/shop_item_disabled", "No items available",
+				discord.StringSelectMenuOption{
+					Label:       "No items in this category",
+					Value:       "disabled",
+					Description: "This category is currently empty",
+					Emoji:       &discord.ComponentEmoji{Name: "❌"},
+				},
+			).WithDisabled(true),
+		)
+	}
+
 	options := make([]discord.StringSelectMenuOption, 0, len(items))
 	for _, item := range items {
 		options = append(options, discord.StringSelectMenuOption{

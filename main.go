@@ -121,6 +121,7 @@ func main() {
 	b.WishlistRepository = repositories.NewWishlistRepository(b.DB.BunDB())
 	b.ItemRepository = repositories.NewItemRepository(b.DB.BunDB())
 	b.QuestRepository = repositories.NewQuestRepository(b.DB.BunDB())
+	tradeRepository := repositories.NewTradeRepository(b.DB.BunDB())
 
 	// Initialize collection cache for promo filtering
 	collections, err := b.CollectionRepository.GetAll(ctx)
@@ -529,6 +530,10 @@ func main() {
 	// Initialize auction handler with the manager
 	auctionHandler := economyCommands.NewAuctionHandler(b, auctionManager, b.Client, b.CardRepository)
 	auctionHandler.Register(h)
+
+	// Initialize trade handler
+	tradeHandler := economyCommands.NewTradeHandler(b, b.Client, tradeRepository, b.UserCardRepository, b.CardRepository, b.UserRepository)
+	tradeHandler.Register(h)
 
 	defer func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)

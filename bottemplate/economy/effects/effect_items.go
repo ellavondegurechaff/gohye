@@ -48,46 +48,66 @@ var StaticEffectItems = []EffectItemData{
 			Thresholds: []int{100, 300, 700, 1500}, // Claims needed for next tier
 		},
 	},
-	{Description: "Get extra vials per liquify",
-		Type:     models.EffectTypeRecipe,
-		Price:    22500,
-		Currency: models.CurrencyTomato,
-		Recipe:   []int64{2, 2, 3, 3},
-		Duration: 210,
-		Passive:  true, TierData: &models.EffectTierData{
+	{
+		ID:          "holygrail",
+		Name:        "Holy Grail",
+		Description: "Get extra vials per liquify",
+		Type:        models.EffectTypeRecipe,
+		Price:       22500,
+		Currency:    models.CurrencyTomato,
+		Recipe:      []int64{2, 2, 3, 3},
+		Duration:    210,
+		Passive:     true,
+		Cooldown:    0,
+		TierData: &models.EffectTierData{
 			Values:     []int{5, 10, 20, 40, 70}, // Extra vials per liquify
 			Thresholds: []int{30, 80, 180, 350},  // Liquefies needed for next tier
 		},
 	},
-	{Description: "Gain cashback from winning auctions",
-		Type:     models.EffectTypeRecipe,
-		Price:    35000,
-		Currency: models.CurrencyTomato,
-		Recipe:   []int64{1, 2, 2, 2, 2},
-		Duration: 210,
-		Passive:  true, TierData: &models.EffectTierData{
+	{
+		ID:          "wolfofhyejoo",
+		Name:        "Wolf of Hyejoo",
+		Description: "Gain cashback from winning auctions",
+		Type:        models.EffectTypeRecipe,
+		Price:       35000,
+		Currency:    models.CurrencyTomato,
+		Recipe:      []int64{1, 2, 2, 2, 2},
+		Duration:    210,
+		Passive:     true,
+		Cooldown:    0,
+		TierData: &models.EffectTierData{
 			Values:     []int{2, 4, 6, 8, 10},               // Cashback percentage
 			Thresholds: []int{20000, 60000, 150000, 350000}, // Flakes spent on wins
 		},
 	},
-	{Description: "Reduce forge and ascend cost",
-		Type:     models.EffectTypeRecipe,
-		Price:    20000,
-		Currency: models.CurrencyTomato,
-		Recipe:   []int64{2, 2, 2, 3},
-		Duration: 210,
-		Passive:  true, TierData: &models.EffectTierData{
+	{
+		ID:          "cherrybloss",
+		Name:        "Cherry Blossom",
+		Description: "Reduce forge and ascend cost",
+		Type:        models.EffectTypeRecipe,
+		Price:       20000,
+		Currency:    models.CurrencyTomato,
+		Recipe:      []int64{2, 2, 2, 3},
+		Duration:    210,
+		Passive:     true,
+		Cooldown:    0,
+		TierData: &models.EffectTierData{
 			Values:     []int{20, 30, 40, 50, 60}, // Discount percentage
 			Thresholds: []int{10, 30, 70, 150},    // Forges + ascends
 		},
 	},
-	{Description: "Reduce daily cooldown",
-		Type:     models.EffectTypeRecipe,
-		Price:    30000,
-		Currency: models.CurrencyTomato,
-		Recipe:   []int64{3, 3, 3},
-		Duration: 210,
-		Passive:  true, TierData: &models.EffectTierData{
+	{
+		ID:          "rulerjeanne",
+		Name:        "Ruler Jeanne",
+		Description: "Reduce daily cooldown",
+		Type:        models.EffectTypeRecipe,
+		Price:       30000,
+		Currency:    models.CurrencyTomato,
+		Recipe:      []int64{3, 3, 3},
+		Duration:    210,
+		Passive:     true,
+		Cooldown:    0,
+		TierData: &models.EffectTierData{
 			Values:     []int{1170, 1140, 1110, 1080, 1020}, // Minutes (19.5h, 19h, 18.5h, 18h, 17h)
 			Thresholds: []int{10, 25, 50, 100},              // Dailies
 		},

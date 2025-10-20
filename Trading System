@@ -1,0 +1,17 @@
+for a new simplified trading system we scrap a lot of commands and only rely on 2 different ones.
+since selling cards to the bot wont work anymore the /sell command will become /trade.
+
+/trade "your card" "user" "other users card"
+This will create a trade offer
+
+/inbox (optional attribute open_offers:true/false)
+with /inbox you can view your recent trade offers but mainly the ones that are still open.
+instead of having an extra command the open trade offers will have 4 buttons total:
+2 buttons to scroll through the pages and 2 to either accept or decline the open offer.
+already accepted or declined offers will stay in the inbox until your next daily, for these there are no accept or decline buttons
+
+When you send out an offer and the other person accepts it, you will get a dm from hyejoo.
+
+Every offer has its own trade_id, this helps the players to know what trade offer got accepted as well as the auditing team to check transactions.
+
+This should break the trading system down to minimalize the knowledge required to trade cards. It also opens up possibilities to cross trade across servers where one of the players isnt a member of.

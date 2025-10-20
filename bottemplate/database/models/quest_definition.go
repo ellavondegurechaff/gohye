@@ -46,12 +46,13 @@ const (
 
 // Requirement type constants
 const (
-	RequirementTypeCommandCount         = "command_count"
-	RequirementTypeSpecificCommand      = "specific_command"
-	RequirementTypeCardClaim            = "card_claim"
-	RequirementTypeCardLevelUp          = "card_levelup"
-	RequirementTypeCardDraw             = "card_draw"
-	RequirementTypeCardTrade            = "card_trade"
+    RequirementTypeCommandCount         = "command_count"
+    RequirementTypeCommandUsage         = "command_usage"
+    RequirementTypeSpecificCommand      = "specific_command"
+    RequirementTypeCardClaim            = "card_claim"
+    RequirementTypeCardLevelUp          = "card_levelup"
+    RequirementTypeCardDraw             = "card_draw"
+    RequirementTypeCardTrade            = "card_trade"
 	RequirementTypeAuctionBid           = "auction_bid"
 	RequirementTypeAuctionWin           = "auction_win"
 	RequirementTypeAuctionCreate        = "auction_create"

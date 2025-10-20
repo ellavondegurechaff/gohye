@@ -279,6 +279,11 @@ func (qs *QuestService) UpdateProgress(ctx context.Context, userID string, actio
 					slog.Bool("should_update", shouldUpdate),
 					slog.Int("new_progress", quest.CurrentProgress))
 
+			case models.RequirementTypeCommandUsage:
+				// Count every command execution (optionally filtered by target)
+				quest.CurrentProgress++
+				shouldUpdate = true
+
 			case models.RequirementTypeCombo:
 				// Track multiple requirements for combo quests
 				shouldUpdate = qs.trackComboProgress(quest, action, metadata)
@@ -484,12 +489,37 @@ func (qs *QuestService) actionMatchesRequirement(action string, quest *models.Qu
 		_, hasCommand := metadata["command"]
 		return hasCommand
 
+	case models.RequirementTypeCommandUsage:
+		// Count every executed command via the central "command_count" action
+		if action != "command_count" {
+			return false
+		}
+		cmd, ok := metadata["command"].(string)
+		if !ok || cmd == "" {
+			return false
+		}
+		if quest.RequirementTarget != "" {
+			return cmd == quest.RequirementTarget
+		}
+		return true
+
 	case models.RequirementTypeCardClaim:
 		return action == "claim"
 
 	case models.RequirementTypeCardLevelUp:
-		// Check if quest requires max level only
+		// Check if quest requires specific levelup behavior
 		if quest.RequirementMetadata != nil {
+			// Only count combine-style levelups if requested
+			if onlyCombine, ok := quest.RequirementMetadata["only_combine"].(bool); ok && onlyCombine {
+				if metadata != nil {
+					if act, ok := metadata["action"].(string); ok && act == "combine" {
+						return action == "levelup"
+					}
+				}
+				return false
+			}
+
+			// Check if quest requires max level only
 			if maxLevelOnly, ok := quest.RequirementMetadata["max_level_only"].(bool); ok && maxLevelOnly {
 				// Check if the metadata indicates max level was reached
 				if metadata != nil {

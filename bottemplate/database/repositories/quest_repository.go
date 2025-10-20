@@ -107,15 +107,16 @@ func (r *questRepository) CreateQuestDefinition(ctx context.Context, quest *mode
 
 // User progress
 func (r *questRepository) GetActiveQuests(ctx context.Context, userID string) ([]*models.UserQuestProgress, error) {
-	var progress []*models.UserQuestProgress
-	err := r.db.NewSelect().
-		Model(&progress).
-		Relation("QuestDefinition").
-		Where("uqp.user_id = ?", userID).
-		Where("uqp.expires_at > ?", time.Now()).
-		// Removed the claimed = false filter to show completed quests too
-		Order("uqp.quest_id ASC").
-		Scan(ctx)
+    var progress []*models.UserQuestProgress
+    err := r.db.NewSelect().
+        Model(&progress).
+        Relation("QuestDefinition").
+        Where("uqp.user_id = ?", userID).
+        Where("uqp.expires_at > ?", time.Now()).
+        // Hide claimed quests from active view per product spec
+        Where("uqp.claimed = ?", false).
+        Order("uqp.quest_id ASC").
+        Scan(ctx)
 
 	if err != nil {
 		slog.Error("Failed to get active quests",
