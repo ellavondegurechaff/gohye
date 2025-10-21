@@ -173,31 +173,37 @@ type CardsDataFetcher struct {
 }
 
 func (cdf *CardsDataFetcher) FetchData(ctx context.Context, params utils.PaginationParams) ([]interface{}, error) {
-	// Get user data for new card detection
-	user, err := cdf.bot.UserRepository.GetByDiscordID(ctx, params.UserID)
-	if err != nil {
-		return nil, err
-	}
+    // Get user data for new card detection
+    user, err := cdf.bot.UserRepository.GetByDiscordID(ctx, params.UserID)
+    if err != nil {
+        return nil, err
+    }
 
-	// Use CardOperationsService to get user cards with details and filtering
-	displayCards, _, _, err := cdf.cardOperationsService.GetUserCardsWithDetailsAndFiltersWithUser(ctx, params.UserID, params.Query, user)
-	if err != nil {
-		return nil, err
-	}
+    // Use CardOperationsService to get user cards with details and filtering
+    displayCards, cardDetails, filters, err := cdf.cardOperationsService.GetUserCardsWithDetailsAndFiltersWithUser(ctx, params.UserID, params.Query, user)
+    if err != nil {
+        return nil, err
+    }
 
-	// Convert to CardDisplayItem slice with user data
-	displayItems, err := cdf.cardDisplayService.ConvertUserCardsToDisplayItemsWithUser(ctx, displayCards, user)
-	if err != nil {
-		return nil, err
-	}
+    // Build a map to avoid per-card DB lookups in display conversion
+    cardByID := make(map[int64]*models.Card, len(cardDetails))
+    for _, c := range cardDetails {
+        cardByID[c.ID] = c
+    }
 
-	// Convert to interface{} slice
-	items := make([]interface{}, len(displayItems))
-	for i, item := range displayItems {
-		items[i] = item
-	}
+    // Convert to CardDisplayItem slice with user data using preloaded cards
+    displayItems, err := cdf.cardDisplayService.ConvertUserCardsToDisplayItemsWithUserAndContextFromMap(ctx, displayCards, user, filters, cardByID)
+    if err != nil {
+        return nil, err
+    }
 
-	return items, nil
+    // Convert to interface{} slice
+    items := make([]interface{}, len(displayItems))
+    for i, item := range displayItems {
+        items[i] = item
+    }
+
+    return items, nil
 }
 
 // CardsFormatter implements ItemFormatter for cards pagination

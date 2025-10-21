@@ -40,10 +40,10 @@ type UserCardSearchResult struct {
 
 // SearchUserCards searches through a user's card collection
 func (ss *SearchService) SearchUserCards(ctx context.Context, userID, query string) (*UserCardSearchResult, error) {
-	userCards, err := ss.userCardRepo.GetAllByUserID(ctx, userID)
-	if err != nil {
-		return nil, err
-	}
+    userCards, err := ss.userCardRepo.GetAllByUserID(ctx, userID)
+    if err != nil {
+        return nil, err
+    }
 
 	if len(userCards) == 0 {
 		return &UserCardSearchResult{
@@ -63,21 +63,20 @@ func (ss *SearchService) SearchUserCards(ctx context.Context, userID, query stri
 		}, nil
 	}
 
-	// Parse search filters
-	filters := utils.ParseSearchQuery(query)
+    // Parse search filters
+    filters := utils.ParseSearchQuery(query)
 
-	// Convert UserCards to Cards for searching
-	var cards []*models.Card
-	cardMap := make(map[int64]*models.UserCard)
-
-	for _, userCard := range userCards {
-		card, err := ss.cardRepo.GetByID(ctx, userCard.CardID)
-		if err != nil {
-			continue
-		}
-		cards = append(cards, card)
-		cardMap[card.ID] = userCard
-	}
+    // Convert UserCards to Cards for searching in a single bulk call
+    cardIDs := make([]int64, 0, len(userCards))
+    cardMap := make(map[int64]*models.UserCard, len(userCards))
+    for _, uc := range userCards {
+        cardIDs = append(cardIDs, uc.CardID)
+        cardMap[uc.CardID] = uc
+    }
+    cards, err := ss.cardRepo.GetByIDs(ctx, cardIDs)
+    if err != nil {
+        return nil, err
+    }
 
 	// Apply search filters
 	var results []*models.Card
@@ -169,30 +168,26 @@ func (ss *SearchService) SearchCardsForDiff(ctx context.Context, user1ID, user2I
 	}
 
 	// Find cards where user1 has more than user2
-	var diffCards []*models.Card
-	var percentages []string
-
-	for cardID, user1Card := range user1CardMap {
-		user2Amount := user2CardMap[cardID]
-		if user1Card.Amount > user2Amount {
-			card, err := ss.cardRepo.GetByID(ctx, cardID)
-			if err != nil {
-				continue
-			}
-
-			diffCards = append(diffCards, card)
-
-			// Calculate percentage difference
-			percentage := ""
-			if user2Amount == 0 {
-				percentage = "∞%"
-			} else {
-				diff := float64(user1Card.Amount-user2Amount) / float64(user2Amount) * 100
-				percentage = strings.TrimSuffix(strings.TrimSuffix(fmt.Sprintf("%.1f", diff), "0"), ".") + "%"
-			}
-			percentages = append(percentages, percentage)
-		}
-	}
+    var diffIDs []int64
+    var percentages []string
+    // first compute IDs and percentages
+    for cardID, user1Card := range user1CardMap {
+        user2Amount := user2CardMap[cardID]
+        if user1Card.Amount > user2Amount {
+            diffIDs = append(diffIDs, cardID)
+            if user2Amount == 0 {
+                percentages = append(percentages, "∞%")
+            } else {
+                diff := float64(user1Card.Amount-user2Amount) / float64(user2Amount) * 100
+                percentages = append(percentages, strings.TrimSuffix(strings.TrimSuffix(fmt.Sprintf("%.1f", diff), "0"), ".")+"%")
+            }
+        }
+    }
+    // fetch all cards in one go
+    diffCards, err := ss.cardRepo.GetByIDs(ctx, diffIDs)
+    if err != nil {
+        return nil, nil, err
+    }
 
 	// Apply search filters if query exists
 	if strings.TrimSpace(query) != "" {
@@ -232,23 +227,31 @@ func (ss *SearchService) SearchWishlistCards(ctx context.Context, userID, query 
 
 // sortUserCardsByLevel sorts user cards by level (descending) then name (ascending)
 func (ss *SearchService) sortUserCardsByLevel(ctx context.Context, userCards []*models.UserCard) {
-	sort.Slice(userCards, func(i, j int) bool {
-		cardI, errI := ss.cardRepo.GetByID(ctx, userCards[i].CardID)
-		cardJ, errJ := ss.cardRepo.GetByID(ctx, userCards[j].CardID)
-
-		// Handle errors by putting cards with errors at the end
-		if errI != nil || errJ != nil {
-			return errJ != nil
-		}
-
-		// Primary sort by level (descending)
-		if cardI.Level != cardJ.Level {
-			return cardI.Level > cardJ.Level
-		}
-
-		// Secondary sort by name (ascending)
-		return strings.ToLower(cardI.Name) < strings.ToLower(cardJ.Name)
-	})
+    // Prefetch card details in one call
+    ids := make([]int64, 0, len(userCards))
+    for _, uc := range userCards {
+        ids = append(ids, uc.CardID)
+    }
+    cards, err := ss.cardRepo.GetByIDs(ctx, ids)
+    if err != nil {
+        // fallback: keep current order if fetch fails
+        return
+    }
+    cardMap := make(map[int64]*models.Card, len(cards))
+    for _, c := range cards {
+        cardMap[c.ID] = c
+    }
+    sort.Slice(userCards, func(i, j int) bool {
+        cardI := cardMap[userCards[i].CardID]
+        cardJ := cardMap[userCards[j].CardID]
+        if cardI == nil || cardJ == nil {
+            return cardJ == nil
+        }
+        if cardI.Level != cardJ.Level {
+            return cardI.Level > cardJ.Level
+        }
+        return strings.ToLower(cardI.Name) < strings.ToLower(cardJ.Name)
+    })
 }
 
 // sortCardsByLevel sorts cards by level (descending) then name (ascending)

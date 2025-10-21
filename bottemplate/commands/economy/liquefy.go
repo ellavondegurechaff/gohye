@@ -148,14 +148,14 @@ func (h *LiquefyHandler) showLiquefyConfirmation(e *handler.CommandEvent, card *
 		})
 	}
 
-	embed := discord.NewEmbedBuilder().
-		SetTitle("🍷 Confirm Liquefication").
-		SetColor(config.BackgroundColor).
-		SetDescription(fmt.Sprintf("```md\n## Card Details\n* Name: %s\n* Collection: %s\n* Level: %s\n* Vial Yield: %d 🍷\n```\n⚠️ Warning: This action cannot be undone!",
-			card.Name,
-			card.ColID,
-			utils.GetPromoRarityPlainText(card.ColID, card.Level),
-			vials)).
+    embed := discord.NewEmbedBuilder().
+        SetTitle("🍷 Confirm Liquefication").
+        SetColor(config.BackgroundColor).
+        SetDescription(fmt.Sprintf("```md\n## Card Details\n* Name: %s\n* Collection: %s\n* Level: %s\n* Vial Yield: %d 🍷\n```\n⚠️ Warning: This action cannot be undone!",
+            utils.FormatCardName(card.Name),
+            card.ColID,
+            utils.GetPromoRarityPlainText(card.ColID, card.Level),
+            vials)).
 		SetTimestamp(time.Now()).
 		Build()
 
@@ -279,53 +279,67 @@ func (h *LiquefyHandler) findCardByName(ctx context.Context, query, userID strin
 		}
 	}
 
-	// Fallback to comprehensive search within user's cards
-	userCards, err := h.bot.CardRepository.GetAllByUserID(ctx, userID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch user cards: %v", err)
-	}
+    // Fast path: single-query fuzzy search limited to owned cards
+    if strings.TrimSpace(query) != "" {
+        owned, err := h.bot.CardRepository.SearchOwnedByUserFuzzy(ctx, userID, query, 5)
+        if err == nil && len(owned) > 0 {
+            // pick first eligible
+            for _, c := range owned {
+                uc, _ := h.bot.CardRepository.GetUserCard(ctx, userID, c.ID)
+                if utils.IsCardLiquefyEligible(c, uc) {
+                    return c, nil
+                }
+            }
+        }
+    }
 
-	// Get card IDs and create lookup map
-	cardIDs := make([]int64, 0, len(userCards))
-	userCardMap := make(map[int64]*models.UserCard)
-	for _, uc := range userCards {
-		cardIDs = append(cardIDs, uc.CardID)
-		userCardMap[uc.CardID] = uc
-	}
+    // Fallback to comprehensive search within user's cards
+    userCards, err := h.bot.CardRepository.GetAllByUserID(ctx, userID)
+    if err != nil {
+        return nil, fmt.Errorf("failed to fetch user cards: %v", err)
+    }
 
-	if len(cardIDs) == 0 {
-		return nil, fmt.Errorf("you don't have any cards available")
-	}
+    // Get card IDs and create lookup map
+    cardIDs := make([]int64, 0, len(userCards))
+    userCardMap := make(map[int64]*models.UserCard)
+    for _, uc := range userCards {
+        cardIDs = append(cardIDs, uc.CardID)
+        userCardMap[uc.CardID] = uc
+    }
 
-	// Get card details
-	cards, err := h.bot.CardRepository.GetByIDs(ctx, cardIDs)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch card details: %v", err)
-	}
+    if len(cardIDs) == 0 {
+        return nil, fmt.Errorf("you don't have any cards available")
+    }
 
-	// Filter cards using centralized liquefy eligibility logic
-	var liquefyEligibleCards []*models.Card
-	eligibleUserCardMap := make(map[int64]*models.UserCard)
-	for _, card := range cards {
-		userCard := userCardMap[card.ID]
-		if utils.IsCardLiquefyEligible(card, userCard) {
-			liquefyEligibleCards = append(liquefyEligibleCards, card)
-			eligibleUserCardMap[card.ID] = userCard
-		}
-	}
+    // Get card details
+    cards, err := h.bot.CardRepository.GetByIDs(ctx, cardIDs)
+    if err != nil {
+        return nil, fmt.Errorf("failed to fetch card details: %v", err)
+    }
 
-	if len(liquefyEligibleCards) == 0 {
-		return nil, fmt.Errorf("no cards available for liquefying (cards may be locked, favorites, level 4+, or from restricted collections)")
-	}
+    // Filter cards using centralized liquefy eligibility logic
+    var liquefyEligibleCards []*models.Card
+    eligibleUserCardMap := make(map[int64]*models.UserCard)
+    for _, card := range cards {
+        userCard := userCardMap[card.ID]
+        if utils.IsCardLiquefyEligible(card, userCard) {
+            liquefyEligibleCards = append(liquefyEligibleCards, card)
+            eligibleUserCardMap[card.ID] = userCard
+        }
+    }
 
-	// Use enhanced search filters on eligible cards
-	filters := utils.ParseSearchQuery(query)
-	searchResults := utils.WeightedSearchWithMulti(liquefyEligibleCards, filters, eligibleUserCardMap)
+    if len(liquefyEligibleCards) == 0 {
+        return nil, fmt.Errorf("no cards available for liquefying (cards may be locked, favorites, level 4+, or from restricted collections)")
+    }
 
-	if len(searchResults) == 0 {
-		return nil, fmt.Errorf("no cards found matching '%s'", query)
-	}
+    // Use enhanced search filters on eligible cards
+    filters := utils.ParseSearchQuery(query)
+    searchResults := utils.WeightedSearchWithMulti(liquefyEligibleCards, filters, eligibleUserCardMap)
 
-	// Return the best match
-	return searchResults[0], nil
+    if len(searchResults) == 0 {
+        return nil, fmt.Errorf("no cards found matching '%s'", query)
+    }
+
+    // Return the best match
+    return searchResults[0], nil
 }

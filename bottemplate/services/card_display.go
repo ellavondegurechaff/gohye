@@ -1,16 +1,16 @@
 package services
 
 import (
-	"context"
-	"fmt"
-	"strings"
+    "context"
+    "fmt"
+    "strings"
 
-	"github.com/disgoorg/bot-template/bottemplate/cardleveling"
-	"github.com/disgoorg/bot-template/bottemplate/config"
-	"github.com/disgoorg/bot-template/bottemplate/database/models"
-	"github.com/disgoorg/bot-template/bottemplate/interfaces"
-	"github.com/disgoorg/bot-template/bottemplate/utils"
-	"github.com/disgoorg/disgo/discord"
+    "github.com/disgoorg/bot-template/bottemplate/cardleveling"
+    "github.com/disgoorg/bot-template/bottemplate/config"
+    "github.com/disgoorg/bot-template/bottemplate/database/models"
+    "github.com/disgoorg/bot-template/bottemplate/interfaces"
+    "github.com/disgoorg/bot-template/bottemplate/utils"
+    "github.com/disgoorg/disgo/discord"
 )
 
 // CardDisplayService provides unified card display functionality
@@ -242,15 +242,34 @@ func (dcd *DiffCardDisplay) GetExtraInfo() []string {
 
 // FormatCardDisplayItems formats a slice of CardDisplayItems into a description string
 func (cds *CardDisplayService) FormatCardDisplayItems(ctx context.Context, items []CardDisplayItem) (string, error) {
-	var description strings.Builder
+    var description strings.Builder
 
-	for _, item := range items {
-		card, err := cds.cardRepo.GetByID(ctx, item.GetCardID())
-		if err != nil {
-			continue // Skip cards we can't fetch
-		}
+    for _, item := range items {
+        // Prefer using already-attached card data to avoid N+1 DB queries
+        var card *models.Card
+        switch v := item.(type) {
+        case *UserCardDisplay:
+            card = v.Card
+        case *UserCardDisplayWithContext:
+            card = v.Card
+        case *MissingCardDisplay:
+            card = v.Card
+        case *DiffCardDisplay:
+            card = v.Card
+        case *LimitedCardDisplay:
+            card = v.Card
+        case *LimitedStatsDisplay:
+            card = v.Card
+        default:
+            // Fallback to repository lookup if type doesn't carry card
+            var err error
+            card, err = cds.cardRepo.GetByID(ctx, item.GetCardID())
+            if err != nil {
+                continue // Skip cards we can't fetch
+            }
+        }
 
-		groupType := utils.GetGroupType(card.Tags)
+        groupType := utils.GetGroupType(card.Tags)
 
 		// Always use base card level for star display (Card.Level = star rating 1-5)
 		// UserCard.Level is progression level which is different from star rating
@@ -264,30 +283,41 @@ func (cds *CardDisplayService) FormatCardDisplayItems(ctx context.Context, items
 			cds.spacesService.GetSpacesConfig(),
 		)
 
-		var entry string
-		// Check if this is a UserCardDisplay to show new and lock indicators
-		if userCardDisplay, ok := item.(*UserCardDisplay); ok {
-			entry = utils.FormatCardEntryWithIndicators(
-				displayInfo,
-				item.IsFavorite(),
-				item.IsAnimated(),
-				item.GetAmount(),
-				userCardDisplay.IsNewCard(),
-				userCardDisplay.IsLocked(),
-				item.GetExtraInfo()...,
-			)
-		} else {
-			entry = utils.FormatCardEntry(
-				displayInfo,
-				item.IsFavorite(),
-				item.IsAnimated(),
-				item.GetAmount(),
-				item.GetExtraInfo()...,
-			)
-		}
+        var entry string
+        // Support both UserCardDisplay and UserCardDisplayWithContext for new/lock indicators
+        switch u := item.(type) {
+        case *UserCardDisplay:
+            entry = utils.FormatCardEntryWithIndicators(
+                displayInfo,
+                item.IsFavorite(),
+                item.IsAnimated(),
+                item.GetAmount(),
+                u.IsNewCard(),
+                u.IsLocked(),
+                item.GetExtraInfo()...,
+            )
+        case *UserCardDisplayWithContext:
+            entry = utils.FormatCardEntryWithIndicators(
+                displayInfo,
+                item.IsFavorite(),
+                item.IsAnimated(),
+                item.GetAmount(),
+                u.IsNewCard(),
+                u.IsLocked(),
+                item.GetExtraInfo()...,
+            )
+        default:
+            entry = utils.FormatCardEntry(
+                displayInfo,
+                item.IsFavorite(),
+                item.IsAnimated(),
+                item.GetAmount(),
+                item.GetExtraInfo()...,
+            )
+        }
 
-		description.WriteString(entry + "\n")
-	}
+        description.WriteString(entry + "\n")
+    }
 
 	return description.String(), nil
 }
@@ -321,17 +351,35 @@ func (cds *CardDisplayService) CreateCardsEmbed(
 
 // FormatCopyText creates copy-friendly text for cards
 func (cds *CardDisplayService) FormatCopyText(ctx context.Context, items []CardDisplayItem, title string) (string, error) {
-	var sb strings.Builder
-	sb.WriteString(title + "\n")
+    var sb strings.Builder
+    sb.WriteString(title + "\n")
 
-	for _, item := range items {
-		card, err := cds.cardRepo.GetByID(ctx, item.GetCardID())
-		if err != nil {
-			continue
-		}
+    for _, item := range items {
+        // Reuse card attached to item when available to avoid extra DB calls
+        var card *models.Card
+        switch v := item.(type) {
+        case *UserCardDisplay:
+            card = v.Card
+        case *UserCardDisplayWithContext:
+            card = v.Card
+        case *MissingCardDisplay:
+            card = v.Card
+        case *DiffCardDisplay:
+            card = v.Card
+        case *LimitedCardDisplay:
+            card = v.Card
+        case *LimitedStatsDisplay:
+            card = v.Card
+        default:
+            var err error
+            card, err = cds.cardRepo.GetByID(ctx, item.GetCardID())
+            if err != nil {
+                continue
+            }
+        }
 
-		stars := utils.GetPromoRarityPlainText(card.ColID, card.Level)
-		line := fmt.Sprintf("%s %s [%s]", stars, utils.FormatCardName(card.Name), card.ColID)
+        stars := utils.GetPromoRarityPlainText(card.ColID, card.Level)
+        line := fmt.Sprintf("%s %s [%s]", stars, utils.FormatCardName(card.Name), card.ColID)
 
 		if item.GetAmount() > 1 {
 			line += fmt.Sprintf(" x%d", item.GetAmount())

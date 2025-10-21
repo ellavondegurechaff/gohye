@@ -256,57 +256,73 @@ func (h *ForgeHandler) findCard(ctx context.Context, query, userID string, exclu
 		}
 	}
 
-	// Fallback to comprehensive search within user's cards
-	userCards, err := h.bot.CardRepository.GetAllByUserID(ctx, userID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch user cards: %v", err)
-	}
+    // Fast path: single-query fuzzy search limited to owned cards
+    if strings.TrimSpace(query) != "" {
+        owned, err := h.bot.CardRepository.SearchOwnedByUserFuzzy(ctx, userID, query, 5)
+        if err == nil && len(owned) > 0 {
+            // pick first eligible and not excluded
+            for _, c := range owned {
+                if c.ID == excludeCardID { continue }
+                // ensure eligibility
+                uc, _ := h.bot.CardRepository.GetUserCard(ctx, userID, c.ID)
+                if utils.IsCardForgeEligible(c, uc) {
+                    return c, nil
+                }
+            }
+        }
+    }
 
-	// Get card IDs and create lookup map
-	cardIDs := make([]int64, 0, len(userCards))
-	userCardMap := make(map[int64]*models.UserCard)
-	for _, uc := range userCards {
-		if uc.CardID != excludeCardID {
-			cardIDs = append(cardIDs, uc.CardID)
-			userCardMap[uc.CardID] = uc
-		}
-	}
+    // Fallback to comprehensive in-memory search
+    userCards, err := h.bot.CardRepository.GetAllByUserID(ctx, userID)
+    if err != nil {
+        return nil, fmt.Errorf("failed to fetch user cards: %v", err)
+    }
 
-	if len(cardIDs) == 0 {
-		return nil, fmt.Errorf("you don't have any cards available for forging")
-	}
+    // Get card IDs and create lookup map
+    cardIDs := make([]int64, 0, len(userCards))
+    userCardMap := make(map[int64]*models.UserCard)
+    for _, uc := range userCards {
+        if uc.CardID != excludeCardID {
+            cardIDs = append(cardIDs, uc.CardID)
+            userCardMap[uc.CardID] = uc
+        }
+    }
 
-	// Get card details
-	cards, err := h.bot.CardRepository.GetByIDs(ctx, cardIDs)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch card details: %v", err)
-	}
+    if len(cardIDs) == 0 {
+        return nil, fmt.Errorf("you don't have any cards available for forging")
+    }
 
-	// Filter cards using centralized forge eligibility logic
-	var forgeEligibleCards []*models.Card
-	eligibleUserCardMap := make(map[int64]*models.UserCard)
-	for _, card := range cards {
-		userCard := userCardMap[card.ID]
-		if utils.IsCardForgeEligible(card, userCard) {
-			forgeEligibleCards = append(forgeEligibleCards, card)
-			eligibleUserCardMap[card.ID] = userCard
-		}
-	}
+    // Get card details
+    cards, err := h.bot.CardRepository.GetByIDs(ctx, cardIDs)
+    if err != nil {
+        return nil, fmt.Errorf("failed to fetch card details: %v", err)
+    }
 
-	if len(forgeEligibleCards) == 0 {
-		return nil, fmt.Errorf("no cards available for forging (cards may be locked, favorites, or from restricted collections)")
-	}
+    // Filter cards using centralized forge eligibility logic
+    var forgeEligibleCards []*models.Card
+    eligibleUserCardMap := make(map[int64]*models.UserCard)
+    for _, card := range cards {
+        userCard := userCardMap[card.ID]
+        if utils.IsCardForgeEligible(card, userCard) {
+            forgeEligibleCards = append(forgeEligibleCards, card)
+            eligibleUserCardMap[card.ID] = userCard
+        }
+    }
 
-	// Use enhanced search filters on eligible cards
-	filters := utils.ParseSearchQuery(query)
-	searchResults := utils.WeightedSearchWithMulti(forgeEligibleCards, filters, eligibleUserCardMap)
+    if len(forgeEligibleCards) == 0 {
+        return nil, fmt.Errorf("no cards available for forging (cards may be locked, favorites, or from restricted collections)")
+    }
 
-	if len(searchResults) == 0 {
-		return nil, fmt.Errorf("no cards found matching '%s'", query)
-	}
+    // Use enhanced search filters on eligible cards
+    filters := utils.ParseSearchQuery(query)
+    searchResults := utils.WeightedSearchWithMulti(forgeEligibleCards, filters, eligibleUserCardMap)
 
-	// Return the best match
-	return searchResults[0], nil
+    if len(searchResults) == 0 {
+        return nil, fmt.Errorf("no cards found matching '%s'", query)
+    }
+
+    // Return the best match
+    return searchResults[0], nil
 }
 
 func getSameCollectionBonus(card1, card2 *models.Card) string {

@@ -44,7 +44,8 @@ func NewUseEffectHandler(b *bottemplate.Bot, effectManager *effects.Manager) *Us
 }
 
 func (h *UseEffectHandler) Handle(event *handler.CommandEvent) error {
-	ctx := context.Background()
+    if err := event.DeferCreateMessage(false); err != nil { return err }
+    ctx := context.Background()
 
 	effectID := event.SlashCommandInteractionData().String("effect")
 	args := event.SlashCommandInteractionData().String("arguments")
@@ -54,18 +55,14 @@ func (h *UseEffectHandler) Handle(event *handler.CommandEvent) error {
 
 	// Use the effect through the manager to get full result data
 	resultMessage, err := h.effectManager.UseActiveEffect(enrichedCtx, event.User().ID.String(), effectID, args)
-	if err != nil {
-		return event.CreateMessage(discord.MessageCreate{
-			Embeds: []discord.Embed{
-				{
-					Title:       "❌ Effect Failed",
-					Description: err.Error(),
-					Color:       utils.ErrorColor,
-				},
-			},
-			// Removed ephemeral flag to make error messages public
-		})
-	}
+    if err != nil {
+        _, updErr := event.UpdateInteractionResponse(discord.MessageUpdate{Embeds: &[]discord.Embed{{
+            Title:       "❌ Effect Failed",
+            Description: err.Error(),
+            Color:       utils.ErrorColor,
+        }}})
+        return updErr
+    }
 
 	// Check if we need to get additional data for enhanced display
 	return h.createEffectResultMessage(enrichedCtx, event, effectID, args, resultMessage)
@@ -96,10 +93,8 @@ func (h *UseEffectHandler) createEffectResultMessage(ctx context.Context, event 
 		SetFooter(fmt.Sprintf("Used by %s • %s", event.User().Username, fmt.Sprintf("<t:%d:R>", time.Now().Unix())), event.User().EffectiveAvatarURL()).
 		Build()
 
-	return event.CreateMessage(discord.MessageCreate{
-		Embeds: []discord.Embed{embed},
-		// Removed ephemeral flag to make results public
-	})
+    _, updErr := event.UpdateInteractionResponse(discord.MessageUpdate{Embeds: &[]discord.Embed{embed}})
+    return updErr
 }
 
 // extractCardDataFromContext attempts to get card data from the effect result context
@@ -216,8 +211,6 @@ func (h *UseEffectHandler) createCardDisplayMessage(event *handler.CommandEvent,
 		},
 	}
 
-	return event.CreateMessage(discord.MessageCreate{
-		Embeds: []discord.Embed{embed},
-		// Public message - no ephemeral flag
-	})
+    _, updErr := event.UpdateInteractionResponse(discord.MessageUpdate{Embeds: &[]discord.Embed{embed}})
+    return updErr
 }

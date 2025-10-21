@@ -79,32 +79,36 @@ func NewClaimHandler(b *bottemplate.Bot) *ClaimHandler {
 }
 
 func (h *ClaimHandler) HandleCommand(e *handler.CommandEvent) error {
-	ctx := context.Background()
-	userID := e.User().ID.String()
+    ctx := context.Background()
+    // Defer immediately to avoid 3s Discord timeout (prevents Unknown interaction 10062)
+    if err := e.DeferCreateMessage(false); err != nil {
+        return err
+    }
+    userID := e.User().ID.String()
 
 	// Get current claim info
-	claimInfo, err := h.bot.ClaimRepository.GetClaimInfo(ctx, userID)
-	if err != nil {
-		return utils.EH.CreateError(e, "Error", "Failed to get claim info")
-	}
+    claimInfo, err := h.bot.ClaimRepository.GetClaimInfo(ctx, userID)
+    if err != nil {
+        return utils.EH.UpdateInteractionResponse(e, "Error", "Failed to get claim info")
+    }
 
 	// Get how many cards they want to claim
 	count := 1
 	if countOption, ok := e.SlashCommandInteractionData().OptInt("count"); ok {
 		count = int(countOption)
 	}
-	if count < 1 || count > 10 {
-		return utils.EH.CreateError(e, "Error", "Count must be between 1 and 10")
-	}
+    if count < 1 || count > 10 {
+        return utils.EH.UpdateInteractionResponse(e, "Error", "Count must be between 1 and 10")
+    }
 
 	// Get group type filter (following pattern from diff.go)
 	groupType := strings.TrimSpace(e.SlashCommandInteractionData().String("group_type"))
 
 	// How many claims user made so far (today)
-	currentDailyClaims, err := h.bot.ClaimRepository.GetUserClaimsInPeriod(ctx, userID, time.Now().Add(-config.DailyPeriod))
-	if err != nil {
-		return utils.EH.CreateError(e, "Error", "Failed to get claim count")
-	}
+    currentDailyClaims, err := h.bot.ClaimRepository.GetUserClaimsInPeriod(ctx, userID, time.Now().Add(-config.DailyPeriod))
+    if err != nil {
+        return utils.EH.UpdateInteractionResponse(e, "Error", "Failed to get claim count")
+    }
 	basePrice := h.bot.ClaimRepository.GetBasePrice()
 
 	slog.Info("Initial claim state",
@@ -126,10 +130,10 @@ func (h *ClaimHandler) HandleCommand(e *handler.CommandEvent) error {
 	}
 
 	// Check if user can afford all claims
-	if claimInfo.Balance < totalCost {
-		return utils.EH.CreateError(e, "Error",
-			fmt.Sprintf("Insufficient balance. You need %d ❄ for %d claims", totalCost, count))
-	}
+    if claimInfo.Balance < totalCost {
+        return utils.EH.UpdateInteractionResponse(e, "Error",
+            fmt.Sprintf("Insufficient balance. You need %d ❄ for %d claims", totalCost, count))
+    }
 
 	// Begin transaction
 	tx, err := h.bot.DB.BunDB().BeginTx(ctx, nil)
@@ -139,10 +143,10 @@ func (h *ClaimHandler) HandleCommand(e *handler.CommandEvent) error {
 	defer tx.Rollback()
 
 	// Retrieve all cards and filter out promo cards
-	allCards, err := h.bot.CardRepository.GetAll(ctx)
-	if err != nil {
-		return utils.EH.CreateError(e, "Error", "Failed to fetch cards")
-	}
+    allCards, err := h.bot.CardRepository.GetAll(ctx)
+    if err != nil {
+        return utils.EH.UpdateInteractionResponse(e, "Error", "Failed to fetch cards")
+    }
 
 	// List of collection IDs to exclude from normal claims
 	excludedCollections := map[string]bool{
@@ -193,9 +197,9 @@ func (h *ClaimHandler) HandleCommand(e *handler.CommandEvent) error {
 		}
 	}
 
-	if len(selectedCardsWithEXP) == 0 {
-		return utils.EH.CreateError(e, "Error", "No cards available")
-	}
+    if len(selectedCardsWithEXP) == 0 {
+        return utils.EH.UpdateInteractionResponse(e, "Error", "No cards available")
+    }
 
 	// Sort by level descending
 	sort.Slice(selectedCardsWithEXP, func(i, j int) bool {
@@ -270,10 +274,10 @@ func (h *ClaimHandler) HandleCommand(e *handler.CommandEvent) error {
 	}
 
 	// Get updated info & daily claims
-	updatedClaimInfo, err := h.bot.ClaimRepository.GetClaimInfo(ctx, userID)
-	if err != nil {
-		return utils.EH.CreateError(e, "Error", "Failed to get updated claim info")
-	}
+    updatedClaimInfo, err := h.bot.ClaimRepository.GetClaimInfo(ctx, userID)
+    if err != nil {
+        return utils.EH.UpdateInteractionResponse(e, "Error", "Failed to get updated claim info")
+    }
 
 	finalDailyClaims := currentDailyClaims + count
 
@@ -368,10 +372,11 @@ func (h *ClaimHandler) HandleCommand(e *handler.CommandEvent) error {
 		go h.bot.EffectManager.UpdateEffectProgress(context.Background(), userID, "cakeday", count)
 	}
 
-	return e.CreateMessage(discord.MessageCreate{
-		Embeds:     []discord.Embed{embed.Build()},
-		Components: components,
-	})
+    _, updErr := e.UpdateInteractionResponse(discord.MessageUpdate{
+        Embeds:     &[]discord.Embed{embed.Build()},
+        Components: &components,
+    })
+    return updErr
 }
 
 func (h *ClaimHandler) HandleComponent(e *handler.ComponentEvent) error {

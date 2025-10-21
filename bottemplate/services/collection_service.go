@@ -176,78 +176,66 @@ func (s *CollectionService) CalculateResetRequirements(ctx context.Context, user
 
 // CalculateProgressBatch calculates progress for multiple collections efficiently
 func (s *CollectionService) CalculateProgressBatch(ctx context.Context, userID string, collections []*models.Collection) (map[string]*models.CollectionProgress, error) {
-	// Load user cards once for all collections
-	userCards, err := s.userCardRepo.GetAllByUserID(ctx, userID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get user cards: %w", err)
-	}
+    // Load user cards once for all collections
+    userCards, err := s.userCardRepo.GetAllByUserID(ctx, userID)
+    if err != nil {
+        return nil, fmt.Errorf("failed to get user cards: %w", err)
+    }
 
-	// Create user card lookup map
-	userCardMap := make(map[int64]bool)
-	for _, userCard := range userCards {
-		if userCard.Amount > 0 {
-			userCardMap[userCard.CardID] = true
-		}
-	}
+    // Create user card lookup map
+    userCardMap := make(map[int64]bool, len(userCards))
+    for _, userCard := range userCards {
+        if userCard.Amount > 0 {
+            userCardMap[userCard.CardID] = true
+        }
+    }
 
-	// Get all collection IDs
-	var collectionIDs []string
-	for _, col := range collections {
-		collectionIDs = append(collectionIDs, col.ID)
-	}
+    // Load all cards once and group by collection id to avoid per-collection queries
+    allCards, err := s.cardRepo.GetAll(ctx)
+    if err != nil {
+        return nil, fmt.Errorf("failed to get all cards: %w", err)
+    }
+    cardsByCollection := make(map[string][]*models.Card)
+    for _, c := range allCards {
+        cardsByCollection[c.ColID] = append(cardsByCollection[c.ColID], c)
+    }
 
-	// Load all cards for these collections in one query (we need to implement this)
-	// For now, we'll use the existing method but it's still better than loading all cards
-	result := make(map[string]*models.CollectionProgress)
+    // Compute progress for requested collections
+    result := make(map[string]*models.CollectionProgress, len(collections))
+    for _, collection := range collections {
+        colCards := cardsByCollection[collection.ID]
 
-	for _, collection := range collections {
-		// Get cards for this collection only
-		colCards, err := s.cardRepo.GetByCollectionID(ctx, collection.ID)
-		if err != nil {
-			continue // Skip this collection on error
-		}
+        // Filter cards based on collection type
+        ownedCount := 0
+        totalCards := 0
+        for _, card := range colCards {
+            if collection.Fragments {
+                if card.Level != 1 { continue }
+            } else {
+                if card.Level >= 5 { continue }
+            }
+            totalCards++
+            if userCardMap[card.ID] { ownedCount++ }
+        }
 
-		// Filter cards based on collection type
-		var filteredCards []*models.Card
-		for _, card := range colCards {
-			if collection.Fragments {
-				if card.Level == 1 {
-					filteredCards = append(filteredCards, card)
-				}
-			} else {
-				if card.Level < 5 {
-					filteredCards = append(filteredCards, card)
-				}
-			}
-		}
+        percentage := 0.0
+        if totalCards > 0 {
+            percentage = (float64(ownedCount) / float64(totalCards)) * 100
+        }
 
-		// Calculate progress
-		ownedCount := 0
-		for _, card := range filteredCards {
-			if userCardMap[card.ID] {
-				ownedCount++
-			}
-		}
+        result[collection.ID] = &models.CollectionProgress{
+            UserID:       userID,
+            CollectionID: collection.ID,
+            TotalCards:   totalCards,
+            OwnedCards:   ownedCount,
+            Percentage:   percentage,
+            IsCompleted:  percentage >= 100.0,
+            IsFragment:   collection.Fragments,
+            LastUpdated:  time.Now(),
+        }
+    }
 
-		totalCards := len(filteredCards)
-		percentage := 0.0
-		if totalCards > 0 {
-			percentage = (float64(ownedCount) / float64(totalCards)) * 100
-		}
-
-		result[collection.ID] = &models.CollectionProgress{
-			UserID:       userID,
-			CollectionID: collection.ID,
-			TotalCards:   totalCards,
-			OwnedCards:   ownedCount,
-			Percentage:   percentage,
-			IsCompleted:  percentage >= 100.0,
-			IsFragment:   collection.Fragments,
-			LastUpdated:  time.Now(),
-		}
-	}
-
-	return result, nil
+    return result, nil
 }
 
 func (s *CollectionService) GetCollectionLeaderboard(ctx context.Context, collectionID string, limit int) ([]*models.CollectionProgressResult, error) {

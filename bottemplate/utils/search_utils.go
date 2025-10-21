@@ -1,12 +1,12 @@
 package utils
 
 import (
-	"sort"
-	"strconv"
-	"strings"
-	"sync"
+    "sort"
+    "strconv"
+    "strings"
+    "sync"
 
-	"github.com/disgoorg/bot-template/bottemplate/database/models"
+    "github.com/disgoorg/bot-template/bottemplate/database/models"
 )
 
 type SearchMode int
@@ -801,12 +801,13 @@ func MatchesCollection(cardColID, searchTerm string) bool {
 
 // WeightedSearch performs an enhanced search with better matching
 func WeightedSearch(cards []*models.Card, filters SearchFilters) []*models.Card {
-	if len(cards) == 0 {
-		return nil
-	}
+    if len(cards) == 0 {
+        return nil
+    }
 
-	var results []SearchResult
-	searchTerms := strings.Fields(strings.ToLower(filters.Name))
+    var results []SearchResult
+    normalizedName := normalizeQuery(filters.Name)
+    searchTerms := strings.Fields(normalizedName)
 
 	for _, card := range cards {
 		// Check tag filters first
@@ -866,39 +867,41 @@ func WeightedSearch(cards []*models.Card, filters SearchFilters) []*models.Card 
 }
 
 func calculateEnhancedWeight(card *models.Card, terms []string) int {
-	if len(terms) == 0 {
-		return WeightPartialMatch // Return all cards when no search terms
-	}
+    if len(terms) == 0 {
+        return WeightPartialMatch // Return all cards when no search terms
+    }
 
-	weight := 0
-	cardName := strings.ToLower(card.Name)
-	cardNameNorm := strings.NewReplacer("_", " ", "-", " ").Replace(cardName)
+    weight := 0
+    cardNameLower := strings.ToLower(card.Name)
+    cardNameSp := strings.NewReplacer("_", " ", "-", " ").Replace(cardNameLower)
+    cardNameUnd := strings.NewReplacer(" ", "_", "-", "_").Replace(cardNameLower)
 
 	// Use strings.Builder for efficient string concatenation
 	var searchQueryBuilder strings.Builder
-	for i, term := range terms {
-		if i > 0 {
-			searchQueryBuilder.WriteByte(' ')
-		}
-		searchQueryBuilder.WriteString(strings.ToLower(term))
-	}
-	searchQuery := searchQueryBuilder.String()
+    for i, term := range terms {
+        if i > 0 {
+            searchQueryBuilder.WriteByte(' ')
+        }
+        searchQueryBuilder.WriteString(strings.ToLower(term))
+    }
+    searchQuery := searchQueryBuilder.String()
+    searchQueryUnd := strings.ReplaceAll(searchQuery, " ", "_")
 
-	if cardNameNorm == searchQuery {
-		return WeightExactMatch
-	}
+    if cardNameSp == searchQuery || cardNameUnd == searchQueryUnd {
+        return WeightExactMatch
+    }
 
-	if strings.Contains(cardNameNorm, searchQuery) {
-		weight += WeightNameMatch
-	}
+    if strings.Contains(cardNameSp, searchQuery) || strings.Contains(cardNameUnd, searchQueryUnd) {
+        weight += WeightNameMatch
+    }
 
-	matchedTerms := 0
-	for _, term := range terms {
-		if strings.Contains(cardNameNorm, term) {
-			weight += WeightPartialMatch
-			matchedTerms++
-		}
-	}
+    matchedTerms := 0
+    for _, term := range terms {
+        if strings.Contains(cardNameSp, term) || strings.Contains(cardNameUnd, strings.ReplaceAll(term, " ", "_")) {
+            weight += WeightPartialMatch
+            matchedTerms++
+        }
+    }
 
 	// Give significant bonus for matching all terms to prioritize complete matches
 	if matchedTerms == len(terms) {
@@ -906,11 +909,23 @@ func calculateEnhancedWeight(card *models.Card, terms []string) int {
 	}
 
 	// Only give prefix bonus if at least one term matches
-	if matchedTerms > 0 && strings.HasPrefix(cardNameNorm, terms[0]) {
-		weight += WeightPrefixMatch
-	}
+    if matchedTerms > 0 {
+        term0Sp := terms[0]
+        term0Und := strings.ReplaceAll(terms[0], " ", "_")
+        if strings.HasPrefix(cardNameSp, term0Sp) || strings.HasPrefix(cardNameUnd, term0Und) {
+            weight += WeightPrefixMatch
+        }
+    }
 
-	return weight
+    return weight
+}
+
+// normalizeQuery lowercases, treats '_' and '-' as spaces, and collapses whitespace
+func normalizeQuery(q string) string {
+    q = strings.ToLower(q)
+    q = strings.NewReplacer("_", " ", "-", " ").Replace(q)
+    fields := strings.Fields(q)
+    return strings.Join(fields, " ")
 }
 
 func sortResults(results []SearchResult, sortBy string, desc bool) {

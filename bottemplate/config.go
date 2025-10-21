@@ -55,6 +55,7 @@ type DBConfig struct {
     Database string `toml:"database"`
     PoolSize int    `toml:"pool_size"`
     SSLMode  string `toml:"sslmode"`
+    FastInit bool   `toml:"fast_init"`
 }
 
 type WebConfig struct {

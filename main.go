@@ -59,6 +59,16 @@ func main() {
 	}
 	slog.Info("Configuration loaded successfully")
 
+	// Apply fast DB init from config (dev convenience)
+	if cfg.DB.FastInit {
+		_ = os.Setenv("DB_FAST_INIT", "1")
+	} else {
+		// ensure disabled if previously set in env
+		if os.Getenv("DB_FAST_INIT") != "" {
+			_ = os.Unsetenv("DB_FAST_INIT")
+		}
+	}
+
 	slog.Info("Initializing database connection...")
 	dbStartTime := time.Now()
 

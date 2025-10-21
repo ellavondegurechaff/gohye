@@ -31,7 +31,11 @@ func SummonHandler(b *bottemplate.Bot) handler.CommandHandler {
 	cardOperationsService := services.NewCardOperationsService(b.CardRepository, b.UserCardRepository)
 	cardDisplayService := services.NewCardDisplayService(b.CardRepository, b.SpacesService)
 
-	return func(e *handler.CommandEvent) error {
+    return func(e *handler.CommandEvent) error {
+        // Defer to avoid 3s timeout on search
+        if err := e.DeferCreateMessage(false); err != nil {
+            return err
+        }
 		cardName := e.SlashCommandInteractionData().String("name")
 		userID := e.User().ID.String()
 
@@ -74,12 +78,12 @@ func SummonHandler(b *bottemplate.Bot) handler.CommandHandler {
 			}
 		}
 
-		if matchedCard == nil {
-			return utils.EH.CreateNotFoundError(e, "card", cardName)
-		}
+        if matchedCard == nil {
+            return utils.EH.UpdateInteractionResponse(e, "Card Not Found", fmt.Sprintf("Could not find a card matching '%s' in your collection.", cardName))
+        }
 
-		return displayCard(e, matchedCard, b, cardDisplayService)
-	}
+        return displayCard(e, matchedCard, b, cardDisplayService)
+    }
 }
 
 // displayCard handles the card display logic
@@ -122,9 +126,8 @@ func displayCard(e *handler.CommandEvent, card *models.Card, b *bottemplate.Bot,
 		},
 	}
 
-	return e.CreateMessage(discord.MessageCreate{
-		Embeds: []discord.Embed{embed},
-	})
+    _, err := e.UpdateInteractionResponse(discord.MessageUpdate{Embeds: &[]discord.Embed{embed}})
+    return err
 }
 
 // getCardQuote returns an inspirational quote based on card level

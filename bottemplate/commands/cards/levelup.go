@@ -62,8 +62,8 @@ func (c *LevelUpCommand) Handle(event *handler.CommandEvent) error {
 
 	cardQuery := event.SlashCommandInteractionData().String("card_name")
 
-	// Search only within user's owned cards
-	card, err := c.findCard(ctx, event.User().ID.String(), cardQuery)
+    // Search only within user's owned cards (fast join search)
+    card, err := c.findCard(ctx, event.User().ID.String(), cardQuery)
 	if err != nil {
 		return createErrorEmbed(event, "Card Not Found", fmt.Sprintf("Could not find a card matching '%s' in your collection. Use /cards to see your cards.", cardQuery))
 	}
@@ -106,16 +106,8 @@ func (c *LevelUpCommand) Handle(event *handler.CommandEvent) error {
 		go c.bot.EffectManager.UpdateEffectProgress(context.Background(), event.User().ID.String(), "kisslater", 1)
 	}
 
-	// Get card details for name display
-	cardDetails, err := c.cardRepo.GetByID(ctx, userCard.CardID)
-	if err != nil {
-		return createErrorEmbed(event, "Error", "Failed to fetch card details")
-	}
-
-	// Safety check to prevent nil pointer dereference
-	if cardDetails == nil {
-		return createErrorEmbed(event, "Card Details Error", "Card details are invalid.")
-	}
+    // Use card details we already have from search (avoid extra DB call)
+    cardDetails := card
 
 	// Safety check for bot services
 	if c.bot == nil || c.bot.SpacesService == nil {
@@ -176,10 +168,9 @@ func (c *LevelUpCommand) Handle(event *handler.CommandEvent) error {
 		embed.SetDescription(description)
 	}
 
-	_, err = event.CreateFollowupMessage(discord.MessageCreate{
-		Embeds: []discord.Embed{embed.Build()},
-	})
-	return err
+    // Send followup asynchronously to keep handler fast
+    go func() { _, _ = event.CreateFollowupMessage(discord.MessageCreate{Embeds: []discord.Embed{embed.Build()}}) }()
+    return nil
 }
 
 func (c *LevelUpCommand) handleCombine(event *handler.CommandEvent, mainCard *models.UserCard, fodderCardQuery string) error {
@@ -283,10 +274,9 @@ func (c *LevelUpCommand) handleCombine(event *handler.CommandEvent, mainCard *mo
 		SetThumbnail(cardInfo.ImageURL).
 		SetDescription(description)
 
-	_, err = event.CreateFollowupMessage(discord.MessageCreate{
-		Embeds: []discord.Embed{embed.Build()},
-	})
-	return err
+    // Send followup asynchronously to keep handler fast
+    go func() { _, _ = event.CreateFollowupMessage(discord.MessageCreate{Embeds: []discord.Embed{embed.Build()}}) }()
+    return nil
 }
 
 func createErrorEmbed(event *handler.CommandEvent, title, description string) error {
@@ -353,42 +343,40 @@ func (c *LevelUpCommand) findCard(ctx context.Context, userID, query string) (*m
 		}
 	}
 
-	// Fallback to comprehensive search within user's cards
-	userCards, err := c.cardRepo.GetAllByUserID(ctx, userID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch user cards: %v", err)
-	}
+    // Fallback to single-query owned fuzzy search
+    ownedCards, err := c.cardRepo.SearchOwnedByUserFuzzy(ctx, userID, query, 3)
+    if err == nil && len(ownedCards) > 0 {
+        return ownedCards[0], nil
+    }
 
-	// Get card IDs and create lookup map for cards with amount > 0
-	cardIDs := make([]int64, 0, len(userCards))
-	userCardMap := make(map[int64]*models.UserCard)
-	for _, uc := range userCards {
-		if uc.Amount > 0 {
-			cardIDs = append(cardIDs, uc.CardID)
-			userCardMap[uc.CardID] = uc
-		}
-	}
+    // Final resilient fallback: weighted search within user's cards
+    userCards, err2 := c.cardRepo.GetAllByUserID(ctx, userID)
+    if err2 != nil {
+        return nil, fmt.Errorf("failed to fetch user cards: %v", err2)
+    }
 
-	if len(cardIDs) == 0 {
-		return nil, fmt.Errorf("you don't have any cards available")
-	}
-
-	// Get card details
-	cards, err := c.cardRepo.GetByIDs(ctx, cardIDs)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch card details: %v", err)
-	}
-
-	// Use enhanced search filters
-	filters := utils.ParseSearchQuery(query)
-	searchResults := utils.WeightedSearchWithMulti(cards, filters, userCardMap)
-
-	if len(searchResults) == 0 {
-		return nil, fmt.Errorf("no cards found matching '%s'", query)
-	}
-
-	// Return the best match
-	return searchResults[0], nil
+    // Collect IDs and map
+    cardIDs := make([]int64, 0, len(userCards))
+    userCardMap := make(map[int64]*models.UserCard, len(userCards))
+    for _, uc := range userCards {
+        if uc.Amount > 0 {
+            cardIDs = append(cardIDs, uc.CardID)
+            userCardMap[uc.CardID] = uc
+        }
+    }
+    if len(cardIDs) == 0 {
+        return nil, fmt.Errorf("you don't have any cards available")
+    }
+    cards, err3 := c.cardRepo.GetByIDs(ctx, cardIDs)
+    if err3 != nil {
+        return nil, fmt.Errorf("failed to fetch card details: %v", err3)
+    }
+    filters := utils.ParseSearchQuery(query)
+    results := utils.WeightedSearchWithMulti(cards, filters, userCardMap)
+    if len(results) == 0 {
+        return nil, fmt.Errorf("no cards found matching '%s'", query)
+    }
+    return results[0], nil
 }
 
 func LevelUpHandler(b *bottemplate.Bot) handler.CommandHandler {

@@ -23,7 +23,7 @@ var AnalyzeEconomy = discord.SlashCommandCreate{
 }
 
 func AnalyzeEconomyHandler(b *bottemplate.Bot) handler.CommandHandler {
-	return func(event *handler.CommandEvent) error {
+    return func(event *handler.CommandEvent) error {
 		start := time.Now()
 		defer func() {
 			slog.Info("Command completed",
@@ -37,110 +37,72 @@ func AnalyzeEconomyHandler(b *bottemplate.Bot) handler.CommandHandler {
 			return fmt.Errorf("failed to defer message: %w", err)
 		}
 
-		ctx, cancel := context.WithTimeout(context.Background(), config.DefaultQueryTimeout)
-		defer cancel()
+        go func() {
+            ctx, cancel := context.WithTimeout(context.Background(), config.DefaultQueryTimeout)
+            defer cancel()
 
-		// Get latest stats
-		stats, err := b.EconomyStatsRepository.GetLatest(ctx)
-		if err != nil {
-			slog.Info("No existing economic stats found, initializing...")
+            // Get latest stats
+            stats, err := b.EconomyStatsRepository.GetLatest(ctx)
+            if err != nil {
+                slog.Info("No existing economic stats found, initializing...")
+                monitor := economy.NewEconomyMonitor(b.EconomyStatsRepository, b.PriceCalculator, b.UserRepository)
+                stats, err = monitor.CollectStats(ctx)
+                if err != nil {
+                    slog.Error("Failed to collect economic statistics", slog.String("error", err.Error()))
+                    _, _ = event.UpdateInteractionResponse(discord.MessageUpdate{Embeds: &[]discord.Embed{{
+                        Title:       "Error",
+                        Description: "Failed to initialize economic statistics. Please try again later.",
+                        Color:       utils.ErrorColor,
+                    }}})
+                    return
+                }
+                if err := b.EconomyStatsRepository.Create(ctx, stats); err != nil {
+                    slog.Error("Failed to store economic statistics", slog.String("error", err.Error()))
+                    _, _ = event.UpdateInteractionResponse(discord.MessageUpdate{Embeds: &[]discord.Embed{{
+                        Title:       "Error",
+                        Description: "Failed to store economic statistics. Please try again later.",
+                        Color:       utils.ErrorColor,
+                    }}})
+                    return
+                }
+            }
 
-			// Create initial stats
-			monitor := economy.NewEconomyMonitor(b.EconomyStatsRepository, b.PriceCalculator, b.UserRepository)
-			stats, err = monitor.CollectStats(ctx)
-			if err != nil {
-				slog.Error("Failed to collect economic statistics",
-					slog.String("error", err.Error()))
-				_, err = event.UpdateInteractionResponse(discord.MessageUpdate{
-					Embeds: &[]discord.Embed{{
-						Title:       "Error",
-						Description: "Failed to initialize economic statistics. Please try again later.",
-						Color:       utils.ErrorColor,
-					}},
-				})
-				return err
-			}
+            trends := map[string]float64{"wealth_change": 0, "activity_change": 0, "market_volume_change": 0, "inequality_change": 0}
+            if historicalTrends, err := b.EconomyStatsRepository.GetTrends(ctx); err == nil {
+                trends = historicalTrends
+            }
 
-			// Store initial stats
-			if err := b.EconomyStatsRepository.Create(ctx, stats); err != nil {
-				slog.Error("Failed to store economic statistics",
-					slog.String("error", err.Error()))
-				_, err = event.UpdateInteractionResponse(discord.MessageUpdate{
-					Embeds: &[]discord.Embed{{
-						Title:       "Error",
-						Description: "Failed to store economic statistics. Please try again later.",
-						Color:       utils.ErrorColor,
-					}},
-				})
-				return err
-			}
-		}
+            var healthStatus string
+            switch {
+            case stats.EconomicHealth >= 90:
+                healthStatus = "🟢 Excellent"
+            case stats.EconomicHealth >= 75:
+                healthStatus = "🟡 Good"
+            case stats.EconomicHealth >= 60:
+                healthStatus = "🟠 Fair"
+            default:
+                healthStatus = "🔴 Poor"
+            }
 
-		// Initialize trends with zeros if no historical data
-		trends := map[string]float64{
-			"wealth_change":        0.0,
-			"activity_change":      0.0,
-			"market_volume_change": 0.0,
-			"inequality_change":    0.0,
-		}
+            distribution := createDistributionGraph(stats)
+            trendAnalysis := formatTrends(trends)
 
-		// Try to get historical trends if available
-		historicalTrends, err := b.EconomyStatsRepository.GetTrends(ctx)
-		if err == nil {
-			trends = historicalTrends
-		}
+            embed := discord.NewEmbedBuilder().
+                SetTitle("📊 Economic Analysis Report").
+                AddField("Economic Health", fmt.Sprintf("```\nScore: %.1f/100\nStatus: %s\nNeeds Correction: %v\n```", stats.EconomicHealth, healthStatus, stats.NeedsCorrection), false).
+                AddField("Wealth Statistics", fmt.Sprintf("```\nTotal Wealth: %s\nAverage Wealth: %s\nMedian Wealth: %s\nGini Coefficient: %.3f\n```", utils.FormatNumber(stats.TotalWealth), utils.FormatNumber(stats.AverageWealth), utils.FormatNumber(stats.MedianWealth), stats.GiniCoefficient), false).
+                AddField("User Activity", fmt.Sprintf("```\nTotal Users: %d\nActive Users: %d\nDaily Transactions: %d\nMarket Volume: %s\n```", stats.TotalUsers, stats.ActiveUsers, stats.DailyTransactions, utils.FormatNumber(stats.MarketVolume)), false).
+                AddField("Wealth Distribution", distribution, false).
+                AddField("30-Day Trends", trendAnalysis, false).
+                SetColor(getHealthColor(stats.EconomicHealth)).
+                SetTimestamp(time.Now()).
+                SetFooter("Last updated", "")
 
-		// Format health status
-		var healthStatus string
-		switch {
-		case stats.EconomicHealth >= 90:
-			healthStatus = "🟢 Excellent"
-		case stats.EconomicHealth >= 75:
-			healthStatus = "🟡 Good"
-		case stats.EconomicHealth >= 60:
-			healthStatus = "🟠 Fair"
-		default:
-			healthStatus = "🔴 Poor"
-		}
+            _, _ = event.UpdateInteractionResponse(discord.MessageUpdate{Embeds: &[]discord.Embed{embed.Build()}})
+        }()
 
-		// Create wealth distribution graph
-		distribution := createDistributionGraph(stats)
-
-		// Format trends
-		trendAnalysis := formatTrends(trends)
-
-		// Create the response embed
-		embed := discord.NewEmbedBuilder().
-			SetTitle("📊 Economic Analysis Report").
-			AddField("Economic Health", fmt.Sprintf("```\nScore: %.1f/100\nStatus: %s\nNeeds Correction: %v\n```",
-				stats.EconomicHealth,
-				healthStatus,
-				stats.NeedsCorrection,
-			), false).
-			AddField("Wealth Statistics", fmt.Sprintf("```\nTotal Wealth: %s\nAverage Wealth: %s\nMedian Wealth: %s\nGini Coefficient: %.3f\n```",
-				utils.FormatNumber(stats.TotalWealth),
-				utils.FormatNumber(stats.AverageWealth),
-				utils.FormatNumber(stats.MedianWealth),
-				stats.GiniCoefficient,
-			), false).
-			AddField("User Activity", fmt.Sprintf("```\nTotal Users: %d\nActive Users: %d\nDaily Transactions: %d\nMarket Volume: %s\n```",
-				stats.TotalUsers,
-				stats.ActiveUsers,
-				stats.DailyTransactions,
-				utils.FormatNumber(stats.MarketVolume),
-			), false).
-			AddField("Wealth Distribution", distribution, false).
-			AddField("30-Day Trends", trendAnalysis, false).
-			SetColor(getHealthColor(stats.EconomicHealth)).
-			SetTimestamp(time.Now()).
-			SetFooter("Last updated", "")
-
-		// Update the deferred response instead of creating a follow-up
-		_, err = event.UpdateInteractionResponse(discord.MessageUpdate{
-			Embeds: &[]discord.Embed{embed.Build()},
-		})
-		return err
-	}
+        return nil
+    }
 }
 
 func createDistributionGraph(stats *models.EconomyStats) string {

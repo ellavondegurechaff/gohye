@@ -22,9 +22,10 @@ import (
 )
 
 const (
-	defaultConnTimeout   = 5 * time.Second
-	defaultMaxRetries    = 3
-	defaultRetryInterval = time.Second
+    defaultConnTimeout   = 5 * time.Second
+    defaultMaxRetries    = 3
+    defaultRetryInterval = time.Second
+    schemaVersion        = 1 // bump when schema/migrations change
 )
 
 type DBConfig struct {
@@ -300,6 +301,18 @@ func (db *DB) Close() {
 
 // InitializeSchema creates all required database tables and indexes
 func (db *DB) InitializeSchema(ctx context.Context) error {
+    // Fast init path for development: skip when schema version matches
+    fastInit := os.Getenv("DB_FAST_INIT") == "1"
+    if fastInit {
+        if err := db.ensureAppMeta(ctx); err == nil {
+            if v, _ := db.getAppMeta(ctx, "schema_version"); v == fmt.Sprintf("%d", schemaVersion) {
+                slog.Info("Fast DB init: schema up-to-date, skipping initialization",
+                    slog.String("mode", "DB_FAST_INIT"),
+                    slog.Int("schema_version", schemaVersion))
+                return nil
+            }
+        }
+    }
 	// First, ensure the database is using UTF-8 encoding
 	if err := db.ensureUTF8Encoding(ctx); err != nil {
 		return fmt.Errorf("failed to ensure UTF-8 encoding: %w", err)
@@ -396,11 +409,11 @@ func (db *DB) InitializeSchema(ctx context.Context) error {
 		"CREATE INDEX IF NOT EXISTS idx_quest_leaderboards_user ON quest_leaderboards(user_id, period_type, period_start);",
 	}
 
-	for _, idx := range indexes {
-		if _, err := db.ExecWithLog(ctx, idx); err != nil {
-			return fmt.Errorf("failed to create index: %w", err)
-		}
-	}
+    for _, idx := range indexes {
+        if _, err := db.ExecWithLog(ctx, idx); err != nil {
+            return fmt.Errorf("failed to create index: %w", err)
+        }
+    }
 
 	// Initialize item data
 	if err := db.InitializeItemData(ctx); err != nil {
@@ -408,11 +421,38 @@ func (db *DB) InitializeSchema(ctx context.Context) error {
 	}
 
 	// Initialize quest data
-	if err := db.InitializeQuestData(ctx); err != nil {
-		return fmt.Errorf("failed to initialize quest data: %w", err)
-	}
+    if err := db.InitializeQuestData(ctx); err != nil {
+        return fmt.Errorf("failed to initialize quest data: %w", err)
+    }
 
-	return nil
+    // Update schema version marker (safe upsert)
+    if err := db.ensureAppMeta(ctx); err == nil {
+        _ = db.setAppMeta(ctx, "schema_version", fmt.Sprintf("%d", schemaVersion))
+    }
+
+    return nil
+}
+
+// ensureAppMeta creates the app_meta table if not exists
+func (db *DB) ensureAppMeta(ctx context.Context) error {
+    _, err := db.ExecWithLog(ctx, `CREATE TABLE IF NOT EXISTS app_meta (key TEXT PRIMARY KEY, value TEXT)`)
+    return err
+}
+
+func (db *DB) getAppMeta(ctx context.Context, key string) (string, error) {
+    row := db.pool.QueryRow(ctx, `SELECT value FROM app_meta WHERE key = $1`, key)
+    var v string
+    if err := row.Scan(&v); err != nil {
+        return "", err
+    }
+    return v, nil
+}
+
+func (db *DB) setAppMeta(ctx context.Context, key, value string) error {
+    sql := `INSERT INTO app_meta(key, value) VALUES($1, $2)
+            ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`
+    _, err := db.pool.Exec(ctx, sql, key, value)
+    return err
 }
 
 // MigrateSchema applies necessary schema changes to existing tables

@@ -22,9 +22,9 @@ var Profile = discord.SlashCommandCreate{
 func ProfileHandler(b *bottemplate.Bot) handler.CommandHandler {
 	imageService := services.NewProfileImageService()
 
-	return func(event *handler.CommandEvent) error {
-		start := time.Now()
-		userID := event.User().ID.String()
+    return func(event *handler.CommandEvent) error {
+        start := time.Now()
+        userID := event.User().ID.String()
 
 		slog.Info("Profile command started",
 			slog.String("type", "cmd"),
@@ -39,8 +39,12 @@ func ProfileHandler(b *bottemplate.Bot) handler.CommandHandler {
 				slog.Duration("total_time", time.Since(start)))
 		}()
 
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
+        // Defer immediately to avoid 3s timeout
+        if err := event.DeferCreateMessage(false); err != nil {
+            return err
+        }
+        ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+        defer cancel()
 
 		// Get user data
 		user, err := b.UserRepository.GetByDiscordID(ctx, userID)
@@ -48,7 +52,7 @@ func ProfileHandler(b *bottemplate.Bot) handler.CommandHandler {
 			slog.Error("Failed to get user data",
 				slog.String("user_id", userID),
 				slog.String("error", err.Error()))
-			return utils.EH.CreateErrorEmbed(event, "Failed to get your profile data. Please try again later.")
+            return utils.EH.UpdateInteractionResponse(event, "Error", "Failed to get your profile data. Please try again later.")
 		}
 
 		// Get actual card count from user_cards table
@@ -57,7 +61,7 @@ func ProfileHandler(b *bottemplate.Bot) handler.CommandHandler {
 			slog.Error("Failed to get user cards",
 				slog.String("user_id", userID),
 				slog.String("error", err.Error()))
-			return utils.EH.CreateErrorEmbed(event, "Failed to get your card data. Please try again later.")
+            return utils.EH.UpdateInteractionResponse(event, "Error", "Failed to get your card data. Please try again later.")
 		}
 		cardCount := len(userCards)
 
@@ -94,7 +98,7 @@ func ProfileHandler(b *bottemplate.Bot) handler.CommandHandler {
 			slog.Error("Failed to generate profile image",
 				slog.String("user_id", userID),
 				slog.String("error", err.Error()))
-			return utils.EH.CreateErrorEmbed(event, "Failed to generate your profile image. Please try again later.")
+            return utils.EH.UpdateInteractionResponse(event, "Error", "Failed to generate your profile image. Please try again later.")
 		}
 
 		// Create Discord file attachment
@@ -105,11 +109,13 @@ func ProfileHandler(b *bottemplate.Bot) handler.CommandHandler {
 		}
 
 		// Send the profile image
-		return event.CreateMessage(discord.MessageCreate{
-			Content: fmt.Sprintf("🎯 **%s's Profile**", user.Username),
-			Files:   []*discord.File{&file},
-		})
-	}
+        // Discord doesn't support editing attachments in interaction response directly; send a follow-up with the file
+        _, err = event.CreateFollowupMessage(discord.MessageCreate{
+            Content: fmt.Sprintf("🎯 **%s's Profile**", user.Username),
+            Files:   []*discord.File{&file},
+        })
+        return err
+    }
 }
 
 func calculateUserRank(cardCount int) string {

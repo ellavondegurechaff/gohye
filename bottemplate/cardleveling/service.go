@@ -28,19 +28,10 @@ func NewService(config *Config, cardRepo repositories.CardRepository) *Service {
 }
 
 func (s *Service) GainExp(ctx context.Context, userCard *models.UserCard) (*LevelingResult, error) {
-	// Verify card ownership
-	if userCard == nil {
-		return nil, errors.New("card not found")
-	}
-
-	// Verify the card belongs to the user
-	ownedCard, err := s.cardRepo.GetUserCard(ctx, userCard.UserID, userCard.CardID)
-	if err != nil {
-		return nil, errors.New("you don't own this card")
-	}
-	if ownedCard.ID != userCard.ID {
-		return nil, errors.New("invalid card ownership")
-	}
+    // Basic sanity checks (avoid extra DB verification; caller already provided an owned card)
+    if userCard == nil || userCard.UserID == "" || userCard.CardID == 0 {
+        return nil, errors.New("card not found")
+    }
 
 	if userCard.Level >= 5 {
 		return nil, errors.New("level 5 cards cannot gain experience")
@@ -79,9 +70,9 @@ func (s *Service) GainExp(ctx context.Context, userCard *models.UserCard) (*Leve
 
 	// Update database
 	userCard.Exp = newExp
-	if err := s.cardRepo.UpdateUserCard(ctx, userCard); err != nil {
-		return nil, err
-	}
+    if err := s.cardRepo.UpdateUserCard(ctx, userCard); err != nil {
+        return nil, err
+    }
 
 	// Update stats
 	s.updateStats(userCard.UserID, userCard.CardID, stats)

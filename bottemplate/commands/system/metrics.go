@@ -17,7 +17,8 @@ var Metrics = discord.SlashCommandCreate{
 }
 
 func MetricsHandler(b *bottemplate.Bot) handler.CommandHandler {
-	return func(e *handler.CommandEvent) error {
+    return func(e *handler.CommandEvent) error {
+        if err := e.DeferCreateMessage(false); err != nil { return err }
 		// Get memory statistics
 		var m runtime.MemStats
 		runtime.ReadMemStats(&m)
@@ -79,8 +80,7 @@ func MetricsHandler(b *bottemplate.Bot) handler.CommandHandler {
 			SetTimestamp(time.Now()).
 			SetFooter("Requested by "+e.User().Username, e.User().EffectiveAvatarURL())
 
-		return e.CreateMessage(discord.MessageCreate{
-			Embeds: []discord.Embed{embed.Build()},
-		})
-	}
+        _, err := e.UpdateInteractionResponse(discord.MessageUpdate{Embeds: &[]discord.Embed{embed.Build()}})
+        return err
+    }
 }

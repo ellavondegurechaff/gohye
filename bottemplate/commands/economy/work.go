@@ -89,8 +89,13 @@ type CardBonus struct {
 }
 
 func (h *WorkHandler) HandleWork(e *handler.CommandEvent) error {
-	ctx, cancel := context.WithTimeout(context.Background(), config.DefaultQueryTimeout)
-	defer cancel()
+    ctx, cancel := context.WithTimeout(context.Background(), config.DefaultQueryTimeout)
+    defer cancel()
+
+    // Defer immediately to avoid 3s timeout and 10062
+    if err := e.DeferCreateMessage(false); err != nil {
+        return err
+    }
 
 	// Check cooldown - DISABLED FOR TESTING
 	// user, err := h.bot.UserRepository.GetByDiscordID(ctx, e.User().ID.String())
@@ -111,19 +116,22 @@ func (h *WorkHandler) HandleWork(e *handler.CommandEvent) error {
 	embed := h.createJobScenarioEmbedWithCollection(scenario, enhancedScenario)
 	components := h.createScenarioComponentsWithCollection(scenario, enhancedScenario, e.User().ID.String())
 
-	return e.CreateMessage(discord.MessageCreate{
-		Embeds:     []discord.Embed{embed},
-		Components: components,
-	})
+    _, err := e.UpdateInteractionResponse(discord.MessageUpdate{
+        Embeds:     &[]discord.Embed{embed},
+        Components: &components,
+    })
+    return err
 }
 
 func (h *WorkHandler) HandleComponent(e *handler.ComponentEvent) error {
-	parts := strings.Split(e.Data.CustomID(), "/")
-	if len(parts) < 2 {
-		return e.UpdateMessage(discord.MessageUpdate{
-			Content: utils.Ptr("❌ Invalid interaction"),
-		})
-	}
+    // Acknowledge immediately to prevent 3s timeout (10062)
+    _ = e.DeferUpdateMessage()
+
+    parts := strings.Split(e.Data.CustomID(), "/")
+    if len(parts) < 2 {
+        _, err := e.UpdateInteractionResponse(discord.MessageUpdate{Content: utils.Ptr("❌ Invalid interaction")})
+        return err
+    }
 
 	action := parts[1]
 	switch action {
@@ -146,7 +154,9 @@ func (h *WorkHandler) HandleComponent(e *handler.ComponentEvent) error {
 			if collectionID == "none" {
 				collectionID = ""
 			}
-			return h.HandleWorkAnswer(e, correctIdx, chosenIdx, JobRarity(rarity), collectionID)
+            // After deferring, don't return REST call result; return nil
+            _ = h.HandleWorkAnswer(e, correctIdx, chosenIdx, JobRarity(rarity), collectionID)
+            return nil
 		} else if len(parts) >= 7 {
 			// New format with user validation
 			var correctIdx, chosenIdx, rarity int
@@ -157,24 +167,27 @@ func (h *WorkHandler) HandleComponent(e *handler.ComponentEvent) error {
 			originalUserID := parts[6]
 
 			// Validate that only the command author can click
-			if e.User().ID.String() != originalUserID {
-				return utils.EH.CreateEphemeralError(e, "Only the person who used the /work command can answer this question.")
-			}
+            if e.User().ID.String() != originalUserID {
+                // After deferring, send ephemeral follow-up instead of a second interaction response
+                _, _ = e.CreateFollowupMessage(discord.MessageCreate{
+                    Content: "Only the person who used the /work command can answer this question.",
+                    Flags:   discord.MessageFlagEphemeral,
+                })
+                return nil
+            }
 
 			if collectionID == "none" {
 				collectionID = ""
 			}
 			return h.HandleWorkAnswer(e, correctIdx, chosenIdx, JobRarity(rarity), collectionID)
 		} else {
-			return e.UpdateMessage(discord.MessageUpdate{
-				Content: utils.Ptr("❌ Invalid answer format"),
-			})
-		}
-	default:
-		return e.UpdateMessage(discord.MessageUpdate{
-			Content: utils.Ptr("❌ Invalid action"),
-		})
-	}
+            _, err := e.UpdateInteractionResponse(discord.MessageUpdate{Content: utils.Ptr("❌ Invalid answer format")})
+            return err
+        }
+    default:
+        _, err := e.UpdateInteractionResponse(discord.MessageUpdate{Content: utils.Ptr("❌ Invalid action")})
+        return err
+    }
 }
 
 func (h *WorkHandler) generateJobScenarioWithCollection(ctx context.Context) (JobScenario, EnhancedJobScenario) {
@@ -630,29 +643,26 @@ func (h *WorkHandler) HandleWorkAnswer(e *handler.ComponentEvent, correctIdx, ch
 	rewards := calculateRewardsWithBonus(rarity, success, cardBonus)
 
 	// Update user balance and work timestamp
-	user, err := h.bot.UserRepository.GetByDiscordID(ctx, userID)
-	if err != nil {
-		return e.UpdateMessage(discord.MessageUpdate{
-			Content: utils.Ptr("❌ Failed to process rewards"),
-		})
-	}
+    user, err := h.bot.UserRepository.GetByDiscordID(ctx, userID)
+    if err != nil {
+        _, uerr := e.UpdateInteractionResponse(discord.MessageUpdate{Content: utils.Ptr("❌ Failed to process rewards")})
+        return uerr
+    }
 
 	// Update balance
-	if err := h.bot.UserRepository.UpdateBalance(ctx, user.DiscordID, rewards.Flakes); err != nil {
-		return e.UpdateMessage(discord.MessageUpdate{
-			Content: utils.Ptr("❌ Failed to update balance"),
-		})
-	}
+    if err := h.bot.UserRepository.UpdateBalance(ctx, user.DiscordID, rewards.Flakes); err != nil {
+        _, uerr := e.UpdateInteractionResponse(discord.MessageUpdate{Content: utils.Ptr("❌ Failed to update balance")})
+        return uerr
+    }
 
 	// Update vials (you'll need to add this method to UserRepository)
 	// For now, we'll skip vials update
 
 	// Update work timestamp
-	if err := h.bot.UserRepository.UpdateLastWork(ctx, user.DiscordID); err != nil {
-		return e.UpdateMessage(discord.MessageUpdate{
-			Content: utils.Ptr("❌ Failed to update work timestamp"),
-		})
-	}
+    if err := h.bot.UserRepository.UpdateLastWork(ctx, user.DiscordID); err != nil {
+        _, uerr := e.UpdateInteractionResponse(discord.MessageUpdate{Content: utils.Ptr("❌ Failed to update work timestamp")})
+        return uerr
+    }
 
 	// Track effect progress for Youth Youth By Young
 	if h.bot.EffectManager != nil {
@@ -672,10 +682,8 @@ func (h *WorkHandler) HandleWorkAnswer(e *handler.ComponentEvent, correctIdx, ch
 	// Create result embed with card bonus info
 	embed := h.createWorkResultEmbedWithBonus(success, rarity, rewards, cardBonus, scenario)
 
-	return e.UpdateMessage(discord.MessageUpdate{
-		Embeds:     &[]discord.Embed{embed},
-		Components: &[]discord.ContainerComponent{},
-	})
+    _, uerr := e.UpdateInteractionResponse(discord.MessageUpdate{Embeds: &[]discord.Embed{embed}, Components: &[]discord.ContainerComponent{}})
+    return uerr
 }
 
 func calculateRewards(rarity JobRarity, success bool) WorkRewards {

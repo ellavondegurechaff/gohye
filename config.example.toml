@@ -17,6 +17,9 @@ user = "username"
 password = "password"
 database = "database_name"
 pool_size = 10
+# Dev convenience: when true, skip schema initialization on restart if schema is unchanged.
+# Safe for development; disable in production.
+fast_init = true
 
 [web]
 host = "localhost"

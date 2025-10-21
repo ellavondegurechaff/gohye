@@ -8,6 +8,7 @@ import (
 
 	"github.com/disgoorg/bot-template/bottemplate/config"
 	"github.com/disgoorg/bot-template/bottemplate/services"
+	"github.com/disgoorg/bot-template/bottemplate/utils"
 	"github.com/disgoorg/disgo/handler"
 )
 
@@ -121,8 +122,8 @@ func WrapWithLoggingAndQuests(name string, h handler.CommandHandler, b interface
 
 // WrapComponentWithLogging wraps a component handler with logging functionality
 func WrapComponentWithLogging(name string, h handler.ComponentHandler) handler.ComponentHandler {
-	return func(e *handler.ComponentEvent) error {
-		start := time.Now()
+    return func(e *handler.ComponentEvent) error {
+        start := time.Now()
 
 		// Log component interaction start only for debug level
 		if slog.Default().Enabled(nil, slog.LevelDebug) {
@@ -136,11 +137,25 @@ func WrapComponentWithLogging(name string, h handler.ComponentHandler) handler.C
 			)
 		}
 
-		// Execute the component handler with timeout tracking
-		done := make(chan error, 1)
-		go func() {
-			done <- h(e)
-		}()
+        // Execute the component handler with timeout tracking & panic safety
+        done := make(chan error, 1)
+        go func() {
+            defer func() {
+                if r := recover(); r != nil {
+                    // Log and provide a graceful user-facing error
+                    slog.Error("Component panic recovered",
+                        slog.String("type", "component"),
+                        slog.String("name", name),
+                        slog.String("user_id", e.User().ID.String()),
+                        slog.Any("panic", r),
+                    )
+                    // Best-effort ephemeral error (ignore result)
+                    _ = utils.EH.CreateEphemeralError(e, "Something went wrong while handling your action. Please try again.")
+                    done <- fmt.Errorf("component panic: %v", r)
+                }
+            }()
+            done <- h(e)
+        }()
 
 		// Wait for component completion or timeout
 		select {

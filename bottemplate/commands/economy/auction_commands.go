@@ -136,16 +136,16 @@ func (h *AuctionHandler) HandleCreate(event *handler.CommandEvent) error {
 	}
 
 	// Create confirmation embed
-	embed := discord.NewEmbedBuilder().
-		SetTitle("🏛️ Confirm Auction Creation").
-		SetDescription(fmt.Sprintf("Please confirm that you want to create an auction for **%s**", card.Name)).
-		AddField("Card", fmt.Sprintf("%s %s", utils.GetPromoRarityPlainText(card.ColID, card.Level), card.Name), false).
-		AddField("Start Price", fmt.Sprintf("%d 💰", startPrice), true).
-		AddField("Duration", formatDuration(duration), true).
-		AddField("Collection", strings.ToUpper(card.ColID), true).
-		SetColor(config.BackgroundColor).
-		SetFooter("This auction will be visible to all users", "").
-		Build()
+    embed := discord.NewEmbedBuilder().
+        SetTitle("🏛️ Confirm Auction Creation").
+        SetDescription(fmt.Sprintf("Please confirm that you want to create an auction for **%s**", utils.FormatCardName(card.Name))).
+        AddField("Card", fmt.Sprintf("%s %s", utils.GetPromoRarityPlainText(card.ColID, card.Level), utils.FormatCardName(card.Name)), false).
+        AddField("Start Price", fmt.Sprintf("%d 💰", startPrice), true).
+        AddField("Duration", formatDuration(duration), true).
+        AddField("Collection", strings.ToUpper(card.ColID), true).
+        SetColor(config.BackgroundColor).
+        SetFooter("This auction will be visible to all users", "").
+        Build()
 
 	// Create confirmation buttons
 	components := []discord.ContainerComponent{
@@ -372,13 +372,8 @@ func (f *AuctionListDataFetcher) FetchData(ctx context.Context, params utils.Pag
 type AuctionListFormatter struct{}
 
 func (f *AuctionListFormatter) FormatItems(allItems []interface{}, page, totalPages int, params utils.PaginationParams) (discord.Embed, error) {
-	// Calculate pagination indices
-	itemsPerPage := 10
-	startIdx := page * itemsPerPage
-	endIdx := min(startIdx+itemsPerPage, len(allItems))
-
-	// Get items for this page only
-	pageItems := allItems[startIdx:endIdx]
+    // Items are already page-scoped by PaginationFactory
+    pageItems := allItems
 
 	var description strings.Builder
 	description.WriteString("```ansi\n")
@@ -391,12 +386,8 @@ func (f *AuctionListFormatter) FormatItems(allItems []interface{}, page, totalPa
 		timeLeft := time.Until(auction.EndTime).Round(time.Second)
 		timeStr := formatDuration(timeLeft)
 
-		// Format card name by capitalizing each word
-		words := strings.Split(strings.ReplaceAll(card.Name, "_", " "), " ")
-		for i, word := range words {
-			words[i] = strings.Title(strings.ToLower(word))
-		}
-		cardName := strings.Join(words, " ")
+        // Format card display name (no underscores)
+        cardName := utils.FormatCardName(card.Name)
 
 		// Format auction entry with enhanced colors and show current price
 		priceDisplay := fmt.Sprintf("%d 💰", auction.CurrentPrice)
@@ -435,14 +426,14 @@ func min(a, b int) int {
 }
 
 func (f *AuctionListFormatter) FormatCopy(items []interface{}, params utils.PaginationParams) string {
-	var result []string
-	for _, item := range items {
-		auctionItem := item.(AuctionListItem)
-		auction := auctionItem.Auction
-		card := auctionItem.Card
-		result = append(result, fmt.Sprintf("%s: %s - %d 💰", auction.AuctionID, card.Name, auction.CurrentPrice))
-	}
-	return strings.Join(result, "\n")
+    var result []string
+    for _, item := range items {
+        auctionItem := item.(AuctionListItem)
+        auction := auctionItem.Auction
+        card := auctionItem.Card
+        result = append(result, fmt.Sprintf("%s: %s - %d 💰", auction.AuctionID, utils.FormatCardName(card.Name), auction.CurrentPrice))
+    }
+    return strings.Join(result, "\n")
 }
 
 // AuctionListValidator implements UserValidator for auction list

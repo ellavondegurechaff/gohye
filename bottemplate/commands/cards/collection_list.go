@@ -103,31 +103,50 @@ func CollectionListHandler(b *bottemplate.Bot) handler.CommandHandler {
 			CompletedOnly:  completedOnly,
 		}
 
-		// Create initial embed and components
-		embed, components, err := factory.CreateInitialPaginationEmbed(ctx, params)
-		if err != nil {
-			if err.Error() == "no items found" {
-				return event.CreateMessage(discord.MessageCreate{
-					Embeds: []discord.Embed{{
-						Title:       "No Collections Found",
-						Description: "No collections match your search criteria.",
-						Color:       config.ErrorColor,
-					}},
-				})
-			}
-			slog.Error("Failed to create collection display",
-				slog.String("type", "cmd"),
-				slog.String("name", "collection-list"),
-				slog.String("user_id", userID),
-				slog.String("error", err.Error()))
-			return utils.EH.CreateErrorEmbed(event, "Failed to create collection display")
-		}
+        // Defer immediately to avoid Discord's 3s timeout
+        if err := event.DeferCreateMessage(false); err != nil {
+            return fmt.Errorf("failed to defer: %w", err)
+        }
 
-		return event.CreateMessage(discord.MessageCreate{
-			Embeds:     []discord.Embed{embed},
-			Components: components,
-		})
-	}
+        // Provide immediate placeholder to replace "thinking" state
+        _, _ = event.UpdateInteractionResponse(discord.MessageUpdate{Embeds: &[]discord.Embed{{
+            Title:       "Collections",
+            Description: "Loading your collection progress...",
+            Color:       config.BackgroundColor,
+        }}})
+
+        // Run expensive work asynchronously to avoid 10s wrapper timeout
+        go func() {
+            embed, components, err := factory.CreateInitialPaginationEmbed(ctx, params)
+            if err != nil {
+                if err.Error() == "no items found" {
+                    _, _ = event.UpdateInteractionResponse(discord.MessageUpdate{Embeds: &[]discord.Embed{{
+                        Title:       "No Collections Found",
+                        Description: "No collections match your search criteria.",
+                        Color:       config.ErrorColor,
+                    }}})
+                    return
+                }
+                slog.Error("Failed to create collection display",
+                    slog.String("type", "cmd"),
+                    slog.String("name", "collection-list"),
+                    slog.String("user_id", userID),
+                    slog.String("error", err.Error()))
+                _, _ = event.UpdateInteractionResponse(discord.MessageUpdate{Embeds: &[]discord.Embed{{
+                    Title:       "Error",
+                    Description: "Failed to create collection display",
+                    Color:       config.ErrorColor,
+                }}})
+                return
+            }
+
+            _, _ = event.UpdateInteractionResponse(discord.MessageUpdate{
+                Embeds:     &[]discord.Embed{embed},
+                Components: &components,
+            })
+        }()
+        return nil
+    }
 }
 
 func min(a, b int) int {
@@ -262,15 +281,10 @@ func (f *CollectionListDataFetcher) FetchData(ctx context.Context, params utils.
 type CollectionListFormatter struct{}
 
 func (f *CollectionListFormatter) FormatItems(allItems []interface{}, page, totalPages int, params utils.PaginationParams) (discord.Embed, error) {
-	// Calculate pagination indices
-	itemsPerPage := 10
-	startIdx := page * itemsPerPage
-	endIdx := min(startIdx+itemsPerPage, len(allItems))
+    // Items provided by PaginationFactory are already page-scoped
+    pageItems := allItems
 
-	// Get items for this page only
-	pageItems := allItems[startIdx:endIdx]
-
-	var fields []discord.EmbedField
+    var fields []discord.EmbedField
 
 	for _, item := range pageItems {
 		collectionItem := item.(CollectionProgressItem)
@@ -303,10 +317,10 @@ func (f *CollectionListFormatter) FormatItems(allItems []interface{}, page, tota
 		})
 	}
 
-	title := fmt.Sprintf("Collections - Page %d/%d", page+1, totalPages)
-	if params.Query != "" {
-		title = fmt.Sprintf("Collections matching '%s' - Page %d/%d", params.Query, page+1, totalPages)
-	}
+    title := fmt.Sprintf("Collections - Page %d/%d", page+1, totalPages)
+    if params.Query != "" {
+        title = fmt.Sprintf("Collections matching '%s' - Page %d/%d", params.Query, page+1, totalPages)
+    }
 
 	return discord.Embed{
 		Title:       title,

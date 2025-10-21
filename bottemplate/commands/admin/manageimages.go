@@ -145,7 +145,7 @@ var ManageImages = discord.SlashCommandCreate{
 }
 
 func ManageImagesHandler(b *bottemplate.Bot) handler.CommandHandler {
-	return func(e *handler.CommandEvent) error {
+    return func(e *handler.CommandEvent) error {
 		start := time.Now()
 
 		// Setup logger with request ID for tracing
@@ -168,30 +168,27 @@ func ManageImagesHandler(b *bottemplate.Bot) handler.CommandHandler {
 			return fmt.Errorf("failed to defer message: %w", err)
 		}
 
-		// Add timeout channel
-		done := make(chan struct{})
-		var result *services.ImageManagementResult
-		var cmdErr error
+        // Kick off work asynchronously and return immediately to avoid slow logs
+        go func() {
+            defer func() {
+                if r := recover(); r != nil {
+                    logger.Error("panic in image command",
+                        slog.Any("panic", r),
+                        slog.Duration("elapsed", time.Since(start)),
+                    )
+                    _ = createErrorEmbed(e, "Unexpected Error", "An unexpected error occurred while processing images")
+                }
+            }()
+            result, cmdErr := executeImageCommand(ctx, e, b, logger)
+            if cmdErr != nil {
+                _ = createErrorEmbed(e, "Error", cmdErr.Error())
+                return
+            }
+            _ = createImageManagementResponse(e, result)
+        }()
 
-		go func() {
-			defer close(done)
-			result, cmdErr = executeImageCommand(ctx, e, b, logger)
-		}()
-
-		// Wait for either completion or timeout
-		select {
-		case <-ctx.Done():
-			logger.Error("Command timed out",
-				slog.Duration("elapsed", time.Since(start)),
-			)
-			return createErrorEmbed(e, "Timeout", "The operation took too long to complete")
-		case <-done:
-			if cmdErr != nil {
-				return createImageManagementResponse(e, result)
-			}
-			return createImageManagementResponse(e, result)
-		}
-	}
+        return nil
+    }
 }
 
 // Helper function for int64 min
@@ -414,9 +411,9 @@ func createImageManagementResponse(e *handler.CommandEvent, result *services.Ima
 	description.WriteString("# Operation Details\n")
 	description.WriteString(fmt.Sprintf("* Operation: %s\n", result.Operation))
 
-	if result.CardName != "" {
-		description.WriteString(fmt.Sprintf("* Card Name: %s\n", result.CardName))
-	}
+    if result.CardName != "" {
+        description.WriteString(fmt.Sprintf("* Card Name: %s\n", utils.FormatCardName(result.CardName)))
+    }
 	if result.CollectionID != "" {
 		description.WriteString(fmt.Sprintf("* Collection: %s\n", result.CollectionID))
 	}

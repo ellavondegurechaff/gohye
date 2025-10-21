@@ -21,94 +21,76 @@ var FixDuplicates = discord.SlashCommandCreate{
 }
 
 func FixDuplicatesHandler(b *bottemplate.Bot) handler.CommandHandler {
-	return func(e *handler.CommandEvent) error {
-		if err := e.DeferCreateMessage(false); err != nil {
-			return fmt.Errorf("failed to defer response: %w", err)
-		}
+    return func(e *handler.CommandEvent) error {
+        if err := e.DeferCreateMessage(false); err != nil {
+            return fmt.Errorf("failed to defer response: %w", err)
+        }
 
-		ctx, cancel := context.WithTimeout(context.Background(), 300*time.Second)
-		defer cancel()
+        go func() {
+            ctx, cancel := context.WithTimeout(context.Background(), 300*time.Second)
+            defer cancel()
 
-		var userIDs []string
-		err := b.DB.BunDB().NewSelect().
-			ColumnExpr("DISTINCT user_id").
-			TableExpr("user_cards").
-			Scan(ctx, &userIDs)
+            var userIDs []string
+            err := b.DB.BunDB().NewSelect().
+                ColumnExpr("DISTINCT user_id").
+                TableExpr("user_cards").
+                Scan(ctx, &userIDs)
 
-		if err != nil {
-			log.Printf("[ERROR] Failed to fetch user IDs: %v", err)
-			_, err := e.CreateFollowupMessage(discord.MessageCreate{
-				Content: "❌ Failed to fetch users",
-			})
-			if err != nil {
-				return fmt.Errorf("failed to send error message: %w", err)
-			}
-			return nil
-		}
+            if err != nil {
+                log.Printf("[ERROR] Failed to fetch user IDs: %v", err)
+                _, _ = e.CreateFollowupMessage(discord.MessageCreate{Content: "❌ Failed to fetch users"})
+                return
+            }
 
-		var totalUsersFixed atomic.Int64
-		var totalCardsFixed atomic.Int64
+            var totalUsersFixed atomic.Int64
+            var totalCardsFixed atomic.Int64
 
-		const maxWorkers = 10
-		userChan := make(chan string, len(userIDs))
-		var wg sync.WaitGroup
+            const maxWorkers = 10
+            userChan := make(chan string, len(userIDs))
+            var wg sync.WaitGroup
 
-		for i := 0; i < maxWorkers; i++ {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				for userID := range userChan {
-					if fixed, cards := processUser(ctx, b, userID); fixed {
-						totalUsersFixed.Add(1)
-						totalCardsFixed.Add(cards)
-					}
-				}
-			}()
-		}
+            for i := 0; i < maxWorkers; i++ {
+                wg.Add(1)
+                go func() {
+                    defer wg.Done()
+                    for userID := range userChan {
+                        if fixed, cards := processUser(ctx, b, userID); fixed {
+                            totalUsersFixed.Add(1)
+                            totalCardsFixed.Add(cards)
+                        }
+                    }
+                }()
+            }
 
-		for _, userID := range userIDs {
-			userChan <- userID
-		}
-		close(userChan)
+            for _, userID := range userIDs {
+                userChan <- userID
+            }
+            close(userChan)
 
-		wg.Wait()
+            wg.Wait()
 
-		now := time.Now()
-		_, err = e.CreateFollowupMessage(discord.MessageCreate{
-			Embeds: []discord.Embed{
-				{
-					Title:       "🛠️ Global Duplicate Fix Results",
-					Description: fmt.Sprintf("Fixed %d duplicate card entries across %d users!", totalCardsFixed.Load(), totalUsersFixed.Load()),
-					Color:       utils.SuccessColor,
-					Fields: []discord.EmbedField{
-						{
-							Name:   "Total Users Processed",
-							Value:  fmt.Sprintf("%d", len(userIDs)),
-							Inline: nil,
-						},
-						{
-							Name:   "Users With Fixes",
-							Value:  fmt.Sprintf("%d", totalUsersFixed.Load()),
-							Inline: nil,
-						},
-						{
-							Name:   "Total Cards Fixed",
-							Value:  fmt.Sprintf("%d", totalCardsFixed.Load()),
-							Inline: nil,
-						},
-					},
-					Footer: &discord.EmbedFooter{
-						Text: "All collections have been cleaned up!",
-					},
-					Timestamp: &now,
-				},
-			},
-		})
-		if err != nil {
-			return fmt.Errorf("failed to send success message: %w", err)
-		}
-		return nil
-	}
+            now := time.Now()
+            _, _ = e.CreateFollowupMessage(discord.MessageCreate{Embeds: []discord.Embed{{
+                Title:       "🛠️ Global Duplicate Fix Results",
+                Description: fmt.Sprintf("Fixed %d duplicate card entries across %d users!", totalCardsFixed.Load(), totalUsersFixed.Load()),
+                Color:       utils.SuccessColor,
+                Fields: []discord.EmbedField{{
+                    Name:  "Total Users Processed",
+                    Value: fmt.Sprintf("%d", len(userIDs)),
+                }, {
+                    Name:  "Users With Fixes",
+                    Value: fmt.Sprintf("%d", totalUsersFixed.Load()),
+                }, {
+                    Name:  "Total Cards Fixed",
+                    Value: fmt.Sprintf("%d", totalCardsFixed.Load()),
+                }},
+                Footer: &discord.EmbedFooter{Text: "All collections have been cleaned up!"},
+                Timestamp: &now,
+            }}})
+        }()
+
+        return nil
+    }
 }
 
 func processUser(ctx context.Context, b *bottemplate.Bot, userID string) (bool, int64) {
