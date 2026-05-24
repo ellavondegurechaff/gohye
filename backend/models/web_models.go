@@ -21,16 +21,16 @@ type UserSession struct {
 
 // CardDTO represents a card data transfer object for web UI
 type CardDTO struct {
-	ID           int64     `json:"id"`
-	Name         string    `json:"name"`
-	Level        int       `json:"level"`
-	Animated     bool      `json:"animated"`
-	ColID        string    `json:"col_id"`
-	CollectionName string  `json:"collection_name"`
-	Tags         []string  `json:"tags"`
-	ImageURL     string    `json:"image_url"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	ID             int64     `json:"id"`
+	Name           string    `json:"name"`
+	Level          int       `json:"level"`
+	Animated       bool      `json:"animated"`
+	ColID          string    `json:"col_id"`
+	CollectionName string    `json:"collection_name"`
+	Tags           []string  `json:"tags"`
+	ImageURL       string    `json:"image_url"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
 }
 
 // CollectionDTO represents a collection data transfer object
@@ -52,26 +52,26 @@ type CollectionDTO struct {
 
 // CardSearchRequest represents search parameters for cards
 type CardSearchRequest struct {
-	Query      string `json:"query" form:"query"`
-	Collection string `json:"collection" form:"collection"`
-	Level      int    `json:"level" form:"level"`
-	Animated   *bool  `json:"animated" form:"animated"`
+	Query      string   `json:"query" form:"query"`
+	Collection string   `json:"collection" form:"collection"`
+	Level      int      `json:"level" form:"level"`
+	Animated   *bool    `json:"animated" form:"animated"`
 	Tags       []string `json:"tags" form:"tags"`
-	Page       int    `json:"page" form:"page"`
-	Limit      int    `json:"limit" form:"limit"`
-	SortBy     string `json:"sort_by" form:"sort_by"`
-	SortOrder  string `json:"sort_order" form:"sort_order"`
+	Page       int      `json:"page" form:"page"`
+	Limit      int      `json:"limit" form:"limit"`
+	SortBy     string   `json:"sort_by" form:"sort_by"`
+	SortOrder  string   `json:"sort_order" form:"sort_order"`
 }
 
 // CardCreateRequest represents a request to create a new card
 type CardCreateRequest struct {
-	Name       string   `json:"name" validate:"required,min=1,max=100"`
-	Level      int      `json:"level" validate:"required,min=1,max=5"`
-	Animated   bool     `json:"animated"`
-	ColID      string   `json:"col_id" validate:"required"`
-	Tags       []string `json:"tags"`
-	ImageData  []byte   `json:"image_data,omitempty"`
-	ImageName  string   `json:"image_name,omitempty"`
+	Name      string   `json:"name" validate:"required,min=1,max=100"`
+	Level     int      `json:"level" validate:"required,min=1,max=5"`
+	Animated  bool     `json:"animated"`
+	ColID     string   `json:"col_id" validate:"required"`
+	Tags      []string `json:"tags"`
+	ImageData []byte   `json:"image_data,omitempty"`
+	ImageName string   `json:"image_name,omitempty"`
 }
 
 // CardUpdateRequest represents a request to update a card
@@ -87,18 +87,18 @@ type CardUpdateRequest struct {
 
 // CardBulkOperation represents a bulk operation request
 type CardBulkOperation struct {
-	Operation string   `json:"operation" validate:"required,oneof=delete update move export"`
-	CardIDs   []int64  `json:"card_ids" validate:"required,min=1"`
-	Updates   *CardUpdateRequest `json:"updates,omitempty"`
-	TargetCollection string `json:"target_collection,omitempty"`
+	Operation        string             `json:"operation" validate:"required,oneof=delete update move export"`
+	CardIDs          []int64            `json:"card_ids" validate:"required,min=1"`
+	Updates          *CardUpdateRequest `json:"updates,omitempty"`
+	TargetCollection string             `json:"target_collection,omitempty"`
 }
 
 // CollectionImportRequest represents a collection import request
 type CollectionImportRequest struct {
-	CollectionID string     `json:"collection_id" validate:"required"`
-	DisplayName  string     `json:"display_name" validate:"required"`
-	GroupType    string     `json:"group_type" validate:"required,oneof=girlgroups boygroups"`
-	IsPromo      bool       `json:"is_promo"`
+	CollectionID string        `json:"collection_id" validate:"required"`
+	DisplayName  string        `json:"display_name" validate:"required"`
+	GroupType    string        `json:"group_type" validate:"required,oneof=girlgroups boygroups"`
+	IsPromo      bool          `json:"is_promo"`
 	Files        []*FileUpload `json:"files" validate:"required,min=1"`
 }
 
@@ -136,48 +136,48 @@ type ParsedFilename struct {
 // ValidationError represents a file validation error
 type ValidationError struct {
 	FileName    string `json:"file_name"`
-	ErrorType   string `json:"error_type"`   // format, size, duplicate, invalid_level, etc.
+	ErrorType   string `json:"error_type"` // format, size, duplicate, invalid_level, etc.
 	Description string `json:"description"`
-	Severity    string `json:"severity"`     // low, medium, high, critical
+	Severity    string `json:"severity"` // low, medium, high, critical
 	Suggestion  string `json:"suggestion,omitempty"`
 }
 
 // CardImportRequest represents an enhanced card import request
 type CardImportRequest struct {
-	CollectionID   string         `json:"collection_id" validate:"required"`
-	DisplayName    string         `json:"display_name" validate:"required"`
-	GroupType      string         `json:"group_type" validate:"required,oneof=girlgroups boygroups"`
-	IsPromo        bool           `json:"is_promo"`
-	Files          []*FileUpload  `json:"files" validate:"required,min=1"`
-	ValidateOnly   bool           `json:"validate_only"`
-	OverwriteMode  string         `json:"overwrite_mode" validate:"oneof=skip overwrite update"` // skip, overwrite, update
-	CreateCollection bool         `json:"create_collection"` // Auto-create collection if not exists
+	CollectionID     string        `json:"collection_id" validate:"required"`
+	DisplayName      string        `json:"display_name" validate:"required"`
+	GroupType        string        `json:"group_type" validate:"required,oneof=girlgroups boygroups"`
+	IsPromo          bool          `json:"is_promo"`
+	Files            []*FileUpload `json:"files" validate:"required,min=1"`
+	ValidateOnly     bool          `json:"validate_only"`
+	OverwriteMode    string        `json:"overwrite_mode" validate:"oneof=skip overwrite update"` // skip, overwrite, update
+	CreateCollection bool          `json:"create_collection"`                                     // Auto-create collection if not exists
 }
 
 // CardImportResult represents enhanced import results
 type CardImportResult struct {
-	CollectionID       string             `json:"collection_id"`
-	CollectionCreated  bool               `json:"collection_created"`
-	CardsCreated       int                `json:"cards_created"`
-	CardsSkipped       int                `json:"cards_skipped"`
-	CardsUpdated       int                `json:"cards_updated"`
-	FirstCardID        int64              `json:"first_card_id"`
-	LastCardID         int64              `json:"last_card_id"`
-	FilesUploaded      []string           `json:"files_uploaded"`
-	FilesSkipped       []string           `json:"files_skipped"`
-	ValidationErrors   []ValidationError  `json:"validation_errors"`
-	ProcessingErrors   []ProcessingError  `json:"processing_errors"`
-	Success            bool               `json:"success"`
-	PartialSuccess     bool               `json:"partial_success"`
-	ErrorMessage       string             `json:"error_message,omitempty"`
-	ProcessingTimeMs   int64              `json:"processing_time_ms"`
-	ImportSummary      *ImportSummary     `json:"import_summary,omitempty"`
+	CollectionID      string            `json:"collection_id"`
+	CollectionCreated bool              `json:"collection_created"`
+	CardsCreated      int               `json:"cards_created"`
+	CardsSkipped      int               `json:"cards_skipped"`
+	CardsUpdated      int               `json:"cards_updated"`
+	FirstCardID       int64             `json:"first_card_id"`
+	LastCardID        int64             `json:"last_card_id"`
+	FilesUploaded     []string          `json:"files_uploaded"`
+	FilesSkipped      []string          `json:"files_skipped"`
+	ValidationErrors  []ValidationError `json:"validation_errors"`
+	ProcessingErrors  []ProcessingError `json:"processing_errors"`
+	Success           bool              `json:"success"`
+	PartialSuccess    bool              `json:"partial_success"`
+	ErrorMessage      string            `json:"error_message,omitempty"`
+	ProcessingTimeMs  int64             `json:"processing_time_ms"`
+	ImportSummary     *ImportSummary    `json:"import_summary,omitempty"`
 }
 
 // ProcessingError represents an error during processing
 type ProcessingError struct {
 	FileName    string `json:"file_name"`
-	Stage       string `json:"stage"`       // validation, upload, database
+	Stage       string `json:"stage"` // validation, upload, database
 	ErrorType   string `json:"error_type"`
 	Description string `json:"description"`
 	Recoverable bool   `json:"recoverable"`
@@ -185,15 +185,15 @@ type ProcessingError struct {
 
 // ImportSummary provides a summary of the import operation
 type ImportSummary struct {
-	TotalFiles     int                    `json:"total_files"`
-	ValidFiles     int                    `json:"valid_files"`
-	InvalidFiles   int                    `json:"invalid_files"`
-	ProcessedFiles int                    `json:"processed_files"`
-	FailedFiles    int                    `json:"failed_files"`
-	LevelStats     map[int]int            `json:"level_stats"`    // level -> count
-	FileTypeStats  map[string]int         `json:"file_type_stats"` // extension -> count
-	Duplicates     []string               `json:"duplicates"`
-	LargeFiles     []string               `json:"large_files"`    // Files over size limit
+	TotalFiles     int            `json:"total_files"`
+	ValidFiles     int            `json:"valid_files"`
+	InvalidFiles   int            `json:"invalid_files"`
+	ProcessedFiles int            `json:"processed_files"`
+	FailedFiles    int            `json:"failed_files"`
+	LevelStats     map[int]int    `json:"level_stats"`     // level -> count
+	FileTypeStats  map[string]int `json:"file_type_stats"` // extension -> count
+	Duplicates     []string       `json:"duplicates"`
+	LargeFiles     []string       `json:"large_files"` // Files over size limit
 }
 
 // CardBatchOperation represents enhanced bulk operations
@@ -208,14 +208,14 @@ type CardBatchOperation struct {
 
 // CardBatchResult represents the result of batch operations
 type CardBatchResult struct {
-	Operation       string               `json:"operation"`
-	TotalCards      int                  `json:"total_cards"`
-	ProcessedCards  int                  `json:"processed_cards"`
-	FailedCards     int                  `json:"failed_cards"`
-	Errors          []CardOperationError `json:"errors"`
-	Success         bool                 `json:"success"`
-	DryRun          bool                 `json:"dry_run"`
-	PreviewResults  []CardPreview        `json:"preview_results,omitempty"`
+	Operation      string               `json:"operation"`
+	TotalCards     int                  `json:"total_cards"`
+	ProcessedCards int                  `json:"processed_cards"`
+	FailedCards    int                  `json:"failed_cards"`
+	Errors         []CardOperationError `json:"errors"`
+	Success        bool                 `json:"success"`
+	DryRun         bool                 `json:"dry_run"`
+	PreviewResults []CardPreview        `json:"preview_results,omitempty"`
 }
 
 // CardOperationError represents an error in card operations
@@ -228,10 +228,10 @@ type CardOperationError struct {
 
 // CardPreview represents a preview of what will happen to a card
 type CardPreview struct {
-	CardID     int64                  `json:"card_id"`
-	CardName   string                 `json:"card_name"`
-	Changes    map[string]interface{} `json:"changes"`
-	Warnings   []string               `json:"warnings"`
+	CardID   int64                  `json:"card_id"`
+	CardName string                 `json:"card_name"`
+	Changes  map[string]interface{} `json:"changes"`
+	Warnings []string               `json:"warnings"`
 }
 
 // ImportAuditLog represents audit logging for import operations
@@ -250,16 +250,15 @@ type ImportAuditLog struct {
 	CreatedAt    time.Time `json:"created_at"`
 }
 
-
 // SyncStatus represents synchronization status between database and storage
 type SyncStatus struct {
-	CollectionID   string    `json:"collection_id"`
-	CollectionName string    `json:"collection_name"`
-	DatabaseCards  int       `json:"database_cards"`
-	StorageFiles   int       `json:"storage_files"`
-	Status         string    `json:"status"` // synced, missing_files, extra_files, inconsistent
+	CollectionID   string      `json:"collection_id"`
+	CollectionName string      `json:"collection_name"`
+	DatabaseCards  int         `json:"database_cards"`
+	StorageFiles   int         `json:"storage_files"`
+	Status         string      `json:"status"` // synced, missing_files, extra_files, inconsistent
 	Issues         []SyncIssue `json:"issues"`
-	LastChecked    time.Time `json:"last_checked"`
+	LastChecked    time.Time   `json:"last_checked"`
 }
 
 // SyncIssue represents a synchronization issue
@@ -273,12 +272,12 @@ type SyncIssue struct {
 
 // DashboardStats represents dashboard statistics
 type DashboardStats struct {
-	TotalCards      int64   `json:"total_cards"`
-	TotalCollections int64  `json:"total_collections"`
-	TotalUsers      int64   `json:"total_users"`
-	SyncPercentage  float64 `json:"sync_percentage"`
-	IssueCount      int     `json:"issue_count"`
-	RecentActivity  []ActivityItem `json:"recent_activity"`
+	TotalCards       int64          `json:"total_cards"`
+	TotalCollections int64          `json:"total_collections"`
+	TotalUsers       int64          `json:"total_users"`
+	SyncPercentage   float64        `json:"sync_percentage"`
+	IssueCount       int            `json:"issue_count"`
+	RecentActivity   []ActivityItem `json:"recent_activity"`
 }
 
 // ActivityItem represents a recent activity item
@@ -302,11 +301,11 @@ func ConvertCardToDTO(card *models.Card, collection *models.Collection, imageURL
 		CreatedAt: card.CreatedAt,
 		UpdatedAt: card.UpdatedAt,
 	}
-	
+
 	if collection != nil {
 		dto.CollectionName = collection.Name
 	}
-	
+
 	return dto
 }
 
@@ -383,13 +382,13 @@ func (f *FileUpload) Validate() error {
 	if f.ContentType == "" {
 		return fmt.Errorf("content type is required")
 	}
-	
+
 	// Check file size limit (10MB)
 	const maxFileSize = 10 * 1024 * 1024
 	if f.Size > maxFileSize {
 		return fmt.Errorf("file size exceeds 10MB limit")
 	}
-	
+
 	return nil
 }
 
@@ -406,11 +405,11 @@ func (r *CardBatchOperation) Validate() error {
 	if !validOp {
 		return fmt.Errorf("operation must be one of: %v", validOps)
 	}
-	
+
 	if len(r.CardIDs) == 0 {
 		return fmt.Errorf("at least one card ID is required")
 	}
-	
+
 	// Validate operation-specific requirements
 	switch r.Operation {
 	case "move":
@@ -429,7 +428,7 @@ func (r *CardBatchOperation) Validate() error {
 			return fmt.Errorf("updates are required for update operation")
 		}
 	}
-	
+
 	return nil
 }
 

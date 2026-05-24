@@ -3,12 +3,12 @@
 package utils
 
 import (
-    "fmt"
-    "strings"
+	"fmt"
+	"strings"
 
-    "github.com/disgoorg/bot-template/bottemplate/config"
-    "github.com/disgoorg/disgo/discord"
-    "github.com/disgoorg/disgo/handler"
+	"github.com/disgoorg/bot-template/bottemplate/config"
+	"github.com/disgoorg/disgo/discord"
+	"github.com/disgoorg/disgo/handler"
 )
 
 // ResponseHandler provides standardized response methods for commands and components
@@ -109,42 +109,42 @@ func (h *ResponseHandler) CreateInfoEmbed(event *handler.CommandEvent, message s
 
 // CreateEphemeralError creates an ephemeral error message for component events
 func (h *ResponseHandler) CreateEphemeralError(event *handler.ComponentEvent, message string) error {
-    if err := event.CreateMessage(discord.MessageCreate{Content: message, Flags: discord.MessageFlagEphemeral}); err != nil {
-        // If the interaction was already acknowledged (e.g., via DeferUpdateMessage),
-        // fall back to a follow-up message.
-        if isAlreadyAcknowledgedError(err) {
-            _, ferr := event.CreateFollowupMessage(discord.MessageCreate{Content: message, Flags: discord.MessageFlagEphemeral})
-            return ferr
-        }
-        return err
-    }
-    return nil
+	if err := event.CreateMessage(discord.MessageCreate{Content: message, Flags: discord.MessageFlagEphemeral}); err != nil {
+		// If the interaction was already acknowledged (e.g., via DeferUpdateMessage),
+		// fall back to a follow-up message.
+		if isAlreadyAcknowledgedError(err) {
+			_, ferr := event.CreateFollowupMessage(discord.MessageCreate{Content: message, Flags: discord.MessageFlagEphemeral})
+			return ferr
+		}
+		return err
+	}
+	return nil
 }
 
 // CreateEphemeralSuccess creates an ephemeral success message for component events
 func (h *ResponseHandler) CreateEphemeralSuccess(event *handler.ComponentEvent, message string) error {
-    content := "✅ " + message
-    if err := event.CreateMessage(discord.MessageCreate{Content: content, Flags: discord.MessageFlagEphemeral}); err != nil {
-        if isAlreadyAcknowledgedError(err) {
-            _, ferr := event.CreateFollowupMessage(discord.MessageCreate{Content: content, Flags: discord.MessageFlagEphemeral})
-            return ferr
-        }
-        return err
-    }
-    return nil
+	content := "✅ " + message
+	if err := event.CreateMessage(discord.MessageCreate{Content: content, Flags: discord.MessageFlagEphemeral}); err != nil {
+		if isAlreadyAcknowledgedError(err) {
+			_, ferr := event.CreateFollowupMessage(discord.MessageCreate{Content: content, Flags: discord.MessageFlagEphemeral})
+			return ferr
+		}
+		return err
+	}
+	return nil
 }
 
 // CreateEphemeralInfo creates an ephemeral info message for component events
 func (h *ResponseHandler) CreateEphemeralInfo(event *handler.ComponentEvent, message string) error {
-    content := "ℹ️ " + message
-    if err := event.CreateMessage(discord.MessageCreate{Content: content, Flags: discord.MessageFlagEphemeral}); err != nil {
-        if isAlreadyAcknowledgedError(err) {
-            _, ferr := event.CreateFollowupMessage(discord.MessageCreate{Content: content, Flags: discord.MessageFlagEphemeral})
-            return ferr
-        }
-        return err
-    }
-    return nil
+	content := "ℹ️ " + message
+	if err := event.CreateMessage(discord.MessageCreate{Content: content, Flags: discord.MessageFlagEphemeral}); err != nil {
+		if isAlreadyAcknowledgedError(err) {
+			_, ferr := event.CreateFollowupMessage(discord.MessageCreate{Content: content, Flags: discord.MessageFlagEphemeral})
+			return ferr
+		}
+		return err
+	}
+	return nil
 }
 
 // UpdateInteractionResponse updates the interaction response with an error
@@ -240,40 +240,40 @@ func (h *ResponseHandler) CreateBusinessLogicError(event *handler.CommandEvent, 
 
 // CreateClassifiedComponentError creates an ephemeral error for component interactions
 func (h *ResponseHandler) CreateClassifiedComponentError(event *handler.ComponentEvent, errorType ErrorType, message string) error {
-    prefix := getErrorPrefix(errorType)
-    content := prefix + " " + message
-    if err := event.CreateMessage(discord.MessageCreate{Content: content, Flags: discord.MessageFlagEphemeral}); err != nil {
-        if isAlreadyAcknowledgedError(err) {
-            _, ferr := event.CreateFollowupMessage(discord.MessageCreate{Content: content, Flags: discord.MessageFlagEphemeral})
-            return ferr
-        }
-        return err
-    }
-    return nil
+	prefix := getErrorPrefix(errorType)
+	content := prefix + " " + message
+	if err := event.CreateMessage(discord.MessageCreate{Content: content, Flags: discord.MessageFlagEphemeral}); err != nil {
+		if isAlreadyAcknowledgedError(err) {
+			_, ferr := event.CreateFollowupMessage(discord.MessageCreate{Content: content, Flags: discord.MessageFlagEphemeral})
+			return ferr
+		}
+		return err
+	}
+	return nil
 }
 
 // AutoClassifyError attempts to automatically classify errors based on message content
 func (h *ResponseHandler) AutoClassifyError(event interface{}, message string) error {
-    errorType := h.classifyErrorByMessage(message)
+	errorType := h.classifyErrorByMessage(message)
 
-    switch e := event.(type) {
-    case *handler.CommandEvent:
-        return h.CreateClassifiedError(e, errorType, message)
-    case *handler.ComponentEvent:
-        return h.CreateClassifiedComponentError(e, errorType, message)
-    default:
-        return fmt.Errorf("unsupported event type for error handling")
-    }
+	switch e := event.(type) {
+	case *handler.CommandEvent:
+		return h.CreateClassifiedError(e, errorType, message)
+	case *handler.ComponentEvent:
+		return h.CreateClassifiedComponentError(e, errorType, message)
+	default:
+		return fmt.Errorf("unsupported event type for error handling")
+	}
 }
 
 // isAlreadyAcknowledgedError returns true if the error indicates the
 // interaction has already been acknowledged (Discord error code 40060).
 func isAlreadyAcknowledgedError(err error) bool {
-    if err == nil {
-        return false
-    }
-    s := err.Error()
-    return strings.Contains(s, "40060") || strings.Contains(strings.ToLower(s), "already been acknowledged")
+	if err == nil {
+		return false
+	}
+	s := err.Error()
+	return strings.Contains(s, "40060") || strings.Contains(strings.ToLower(s), "already been acknowledged")
 }
 
 // classifyErrorByMessage attempts to classify error type based on message content

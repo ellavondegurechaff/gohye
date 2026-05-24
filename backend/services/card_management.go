@@ -6,11 +6,11 @@ import (
 	"log/slog"
 	"time"
 
+	webmodels "github.com/disgoorg/bot-template/backend/models"
 	"github.com/disgoorg/bot-template/bottemplate/database/models"
 	"github.com/disgoorg/bot-template/bottemplate/database/repositories"
 	"github.com/disgoorg/bot-template/bottemplate/services"
 	"github.com/disgoorg/bot-template/bottemplate/utils"
-	webmodels "github.com/disgoorg/bot-template/backend/models"
 )
 
 // CardManagementService provides card management operations for the web interface
@@ -58,7 +58,7 @@ func (cms *CardManagementService) SearchCards(ctx context.Context, req *webmodel
 	// Optimize: Batch fetch collections to avoid N+1 query problem
 	collectionIDs := make([]string, 0, len(cards))
 	collectionMap := make(map[string]*models.Collection)
-	
+
 	// Collect unique collection IDs
 	seen := make(map[string]bool)
 	for _, card := range cards {
@@ -67,7 +67,7 @@ func (cms *CardManagementService) SearchCards(ctx context.Context, req *webmodel
 			seen[card.ColID] = true
 		}
 	}
-	
+
 	// Batch fetch collections
 	if len(collectionIDs) > 0 {
 		collections, err := cms.repos.Collection.GetByIDs(ctx, collectionIDs)
@@ -84,7 +84,7 @@ func (cms *CardManagementService) SearchCards(ctx context.Context, req *webmodel
 	cardDTOs := make([]*webmodels.CardDTO, len(cards))
 	for i, card := range cards {
 		collection := collectionMap[card.ColID]
-		
+
 		// Generate image URL (optimize: determine format based on animated flag)
 		groupType := utils.GetGroupType(card.Tags)
 		imageURL := cms.getOptimizedImageURL(card, groupType)

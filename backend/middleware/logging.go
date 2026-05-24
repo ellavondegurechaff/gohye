@@ -4,8 +4,8 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
 	"github.com/disgoorg/bot-template/backend/utils"
+	"github.com/gofiber/fiber/v2"
 )
 
 // LoggingMiddleware logs HTTP requests in a structured format

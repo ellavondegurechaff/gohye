@@ -160,14 +160,16 @@ func (h *EffectsHandler) formatEffectValue(effectID string, value int) string {
 		return fmt.Sprintf("+%d flakes/claim", value)
 	case "holygrail":
 		return fmt.Sprintf("+%d vials/liquify", value)
-	case "wolfofhyejoo", "lambofhyejoo":
+	case "wolfofhyejoo":
 		return fmt.Sprintf("%d%% cashback", value)
+	case "lambhyejoo":
+		return fmt.Sprintf("%d%% sale bonus", value)
 	case "cherrybloss":
 		return fmt.Sprintf("%d%% cheaper", value)
 	case "rulerjeanne":
-		hours := float64(value) / 100.0
+		hours := float64(value) / 60.0
 		return fmt.Sprintf("%.1fh cooldown", hours)
-	case "youthyouthbyyoung":
+	case "youthyouth":
 		return fmt.Sprintf("+%d%% work bonus", value)
 	case "kisslater":
 		return fmt.Sprintf("+%d%% XP bonus", value)

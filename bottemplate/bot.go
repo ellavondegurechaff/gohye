@@ -86,8 +86,18 @@ func (b *Bot) SetupBot(listeners ...bot.EventListener) error {
 	return nil
 }
 
-func (b *Bot) OnReady(_ *events.Ready) {
+func (b *Bot) OnReady(event *events.Ready) {
+	botGlobalName := ""
+	if event.User.GlobalName != nil {
+		botGlobalName = *event.User.GlobalName
+	}
+
 	slog.Info("GoHYE Bot is now ready",
+		slog.String("bot_username", event.User.Username),
+		slog.String("bot_global_name", botGlobalName),
+		slog.String("bot_tag", event.User.Tag()),
+		slog.String("bot_id", event.User.ID.String()),
+		slog.String("application_id", event.Application.ID.String()),
 		slog.String("version", b.Version),
 		slog.String("commit", b.Commit))
 

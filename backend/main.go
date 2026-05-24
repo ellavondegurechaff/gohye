@@ -14,17 +14,17 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/recover"
 
+	"github.com/disgoorg/bot-template/backend/config"
+	"github.com/disgoorg/bot-template/backend/handlers"
+	"github.com/disgoorg/bot-template/backend/middleware"
+	webmodels "github.com/disgoorg/bot-template/backend/models"
+	webservices "github.com/disgoorg/bot-template/backend/services"
 	"github.com/disgoorg/bot-template/bottemplate"
 	"github.com/disgoorg/bot-template/bottemplate/database"
 	"github.com/disgoorg/bot-template/bottemplate/database/repositories"
 	economyutils "github.com/disgoorg/bot-template/bottemplate/economy/utils"
 	"github.com/disgoorg/bot-template/bottemplate/logger"
 	"github.com/disgoorg/bot-template/bottemplate/services"
-	"github.com/disgoorg/bot-template/backend/config"
-	"github.com/disgoorg/bot-template/backend/handlers"
-	"github.com/disgoorg/bot-template/backend/middleware"
-	webmodels "github.com/disgoorg/bot-template/backend/models"
-	webservices "github.com/disgoorg/bot-template/backend/services"
 )
 
 var (
@@ -133,17 +133,17 @@ func main() {
 
 	// Create web app instance
 	webApp := &handlers.WebApp{
-		Config:                    webCfg,
-		DB:                        db,
-		Repos:                     repos,
-		SpacesService:             spacesService,
-		CardMgmtService:           cardMgmtService,
-		SyncMgrService:            syncMgrService,
-		CollectionImportService:   collectionImportService,
-		OAuthService:              oauthService,
-		SessionService:            sessionService,
-		Version:                   version,
-		Commit:                    commit,
+		Config:                  webCfg,
+		DB:                      db,
+		Repos:                   repos,
+		SpacesService:           spacesService,
+		CardMgmtService:         cardMgmtService,
+		SyncMgrService:          syncMgrService,
+		CollectionImportService: collectionImportService,
+		OAuthService:            oauthService,
+		SessionService:          sessionService,
+		Version:                 version,
+		Commit:                  commit,
 	}
 
 	// Setup routes
@@ -258,7 +258,7 @@ func setupRoutes(app *fiber.App, webApp *handlers.WebApp) {
 			slog.String("ip", c.IP()),
 		)
 		return c.Status(404).JSON(fiber.Map{
-			"error": "Not Found",
+			"error":   "Not Found",
 			"message": "The requested endpoint does not exist",
 		})
 	})

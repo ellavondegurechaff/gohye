@@ -22,30 +22,19 @@ type EffectItemData struct {
 var StaticEffectItems = []EffectItemData{
 	// Passive Effects
 	{
-		ID:          "tohrugift",
-		Name:        "Gift From Tohru",
-		Description: "Increase chances of getting a 3-star card every first claim per day",
-		Type:        models.EffectTypeRecipe,
-		Price:       4500,
-		Currency:    models.CurrencyTomato,
-		Recipe:      []int64{2, 2, 2},
-		Duration:    210,
-		Passive:     true,
-		Cooldown:    0,
-	},
-	{
 		ID:          "cakeday",
 		Name:        "Cake Day",
 		Description: "Get extra flakes per daily for every claim you did",
 		Type:        models.EffectTypeRecipe,
-		Price:       20000,
+		Price:       15000,
 		Currency:    models.CurrencyTomato,
 		Recipe:      []int64{2, 2, 2, 2, 2},
 		Duration:    210,
 		Passive:     true,
-		Cooldown:    0, TierData: &models.EffectTierData{
-			Values:     []int{10, 25, 45, 70, 100}, // Flakes per claim
-			Thresholds: []int{100, 300, 700, 1500}, // Claims needed for next tier
+		Cooldown:    0,
+		TierData: &models.EffectTierData{
+			Values:     []int{10, 25, 45, 70, 100},  // Flakes per claim
+			Thresholds: []int{250, 500, 1000, 1500}, // Claims needed for next tier
 		},
 	},
 	{
@@ -53,7 +42,7 @@ var StaticEffectItems = []EffectItemData{
 		Name:        "Holy Grail",
 		Description: "Get extra vials per liquify",
 		Type:        models.EffectTypeRecipe,
-		Price:       22500,
+		Price:       15000,
 		Currency:    models.CurrencyTomato,
 		Recipe:      []int64{2, 2, 3, 3},
 		Duration:    210,
@@ -61,7 +50,7 @@ var StaticEffectItems = []EffectItemData{
 		Cooldown:    0,
 		TierData: &models.EffectTierData{
 			Values:     []int{5, 10, 20, 40, 70}, // Extra vials per liquify
-			Thresholds: []int{30, 80, 180, 350},  // Liquefies needed for next tier
+			Thresholds: []int{70, 150, 250, 500}, // Liquefies needed for next tier
 		},
 	},
 	{
@@ -69,7 +58,7 @@ var StaticEffectItems = []EffectItemData{
 		Name:        "Wolf of Hyejoo",
 		Description: "Gain cashback from winning auctions",
 		Type:        models.EffectTypeRecipe,
-		Price:       35000,
+		Price:       25000,
 		Currency:    models.CurrencyTomato,
 		Recipe:      []int64{1, 2, 2, 2, 2},
 		Duration:    210,
@@ -77,7 +66,7 @@ var StaticEffectItems = []EffectItemData{
 		Cooldown:    0,
 		TierData: &models.EffectTierData{
 			Values:     []int{2, 4, 6, 8, 10},               // Cashback percentage
-			Thresholds: []int{20000, 60000, 150000, 350000}, // Flakes spent on wins
+			Thresholds: []int{30000, 75000, 150000, 350000}, // Flakes spent on wins
 		},
 	},
 	{
@@ -85,15 +74,15 @@ var StaticEffectItems = []EffectItemData{
 		Name:        "Cherry Blossom",
 		Description: "Reduce forge and ascend cost",
 		Type:        models.EffectTypeRecipe,
-		Price:       20000,
+		Price:       15000,
 		Currency:    models.CurrencyTomato,
 		Recipe:      []int64{2, 2, 2, 3},
 		Duration:    210,
 		Passive:     true,
 		Cooldown:    0,
 		TierData: &models.EffectTierData{
-			Values:     []int{20, 30, 40, 50, 60}, // Discount percentage
-			Thresholds: []int{10, 30, 70, 150},    // Forges + ascends
+			Values:     []int{20, 30, 40, 50, 50}, // Discount percentage
+			Thresholds: []int{20, 50, 5, 10},      // Forge/ascend milestones from effects.txt
 		},
 	},
 	{
@@ -101,7 +90,7 @@ var StaticEffectItems = []EffectItemData{
 		Name:        "Ruler Jeanne",
 		Description: "Reduce daily cooldown",
 		Type:        models.EffectTypeRecipe,
-		Price:       30000,
+		Price:       20000,
 		Currency:    models.CurrencyTomato,
 		Recipe:      []int64{3, 3, 3},
 		Duration:    210,
@@ -109,33 +98,10 @@ var StaticEffectItems = []EffectItemData{
 		Cooldown:    0,
 		TierData: &models.EffectTierData{
 			Values:     []int{1170, 1140, 1110, 1080, 1020}, // Minutes (19.5h, 19h, 18.5h, 18h, 17h)
-			Thresholds: []int{10, 25, 50, 100},              // Dailies
+			Thresholds: []int{20, 40, 65, 85},               // Dailies
 		},
 	},
 	{
-		ID:          "spellcard",
-		Name:        "Impossible Spell Card",
-		Description: "Usable effects have 40% less cooldown",
-		Type:        models.EffectTypeRecipe,
-		Price:       5000,
-		Currency:    models.CurrencyTomato,
-		Recipe:      []int64{2, 2, 2, 3, 3, 3},
-		Duration:    210,
-		Passive:     true,
-		Cooldown:    0,
-	},
-	{
-		ID:          "walpurgisnight",
-		Name:        "Walpurgis Night",
-		Description: "Draw few times per daily, maximum of 3 star per daily",
-		Type:        models.EffectTypeRecipe,
-		Price:       15000,
-		Currency:    models.CurrencyTomato,
-		Recipe:      []int64{2, 3, 3, 3, 3},
-		Duration:    50,
-		Passive:     true,
-		Cooldown:    0,
-	}, {
 		ID:          "lambhyejoo",
 		Name:        "Lamb of Hyejoo",
 		Description: "Gain extra flakes from selling cards on auction",
@@ -149,7 +115,7 @@ var StaticEffectItems = []EffectItemData{
 
 		TierData: &models.EffectTierData{
 			Values:     []int{2, 4, 6, 8, 10},               // Sale bonus percentage
-			Thresholds: []int{20000, 60000, 150000, 350000}, // Flakes earned from sales
+			Thresholds: []int{30000, 75000, 150000, 350000}, // Flakes earned from sales
 		},
 	},
 	{
@@ -166,7 +132,7 @@ var StaticEffectItems = []EffectItemData{
 
 		TierData: &models.EffectTierData{
 			Values:     []int{10, 20, 30, 40, 50}, // Work bonus percentage
-			Thresholds: []int{50, 150, 350, 700},  // Works needed
+			Thresholds: []int{150, 300, 500, 750}, // Works needed
 		},
 	},
 	{
@@ -182,42 +148,18 @@ var StaticEffectItems = []EffectItemData{
 		Cooldown:    0,
 
 		TierData: &models.EffectTierData{
-			Values:     []int{5, 10, 15, 20, 30}, // XP bonus percentage
-			Thresholds: []int{30, 80, 180, 400},  // Levelups needed
+			Values:     []int{5, 10, 15, 20, 30},       // XP bonus percentage
+			Thresholds: []int{150, 300, 450, 600, 850}, // Levelups needed
 		},
 	},
 
-	// Active Effects
-	{
-		ID:          "enayano",
-		Name:        "Enlightened Ayano",
-		Description: "Completes tier 1 quest when used",
-		Type:        models.EffectTypeRecipe,
-		Price:       5500,
-		Currency:    models.CurrencyTomato,
-		Recipe:      []int64{1, 1, 2, 2},
-		Duration:    14,
-		Passive:     false,
-		Cooldown:    20,
-	},
-	{
-		ID:          "pbocchi",
-		Name:        "Powerful Bocchi",
-		Description: "Generates tier 1 quest when used",
-		Type:        models.EffectTypeRecipe,
-		Price:       7000,
-		Currency:    models.CurrencyTomato,
-		Recipe:      []int64{2, 2, 3, 3},
-		Duration:    14,
-		Passive:     false,
-		Cooldown:    32,
-	},
+	// Items
 	{
 		ID:          "spaceunity",
-		Name:        "The Space Unity",
-		Description: "Gives random unique card from non-promo collection",
+		Name:        "Space Unity",
+		Description: "Gives a random unique card from a non-promo collection of choice, excluding 4 and 5 star cards",
 		Type:        models.EffectTypeRecipe,
-		Price:       15000,
+		Price:       12000,
 		Currency:    models.CurrencyTomato,
 		Recipe:      []int64{2, 2, 3, 3},
 		Duration:    8,
@@ -226,24 +168,36 @@ var StaticEffectItems = []EffectItemData{
 	},
 	{
 		ID:          "judgeday",
-		Name:        "The Judgment Day",
-		Description: "Grants effect of almost any usable card",
+		Name:        "Judgement Day",
+		Description: "Can be used as any other item",
 		Type:        models.EffectTypeRecipe,
-		Price:       12000,
+		Price:       16000,
 		Currency:    models.CurrencyTomato,
-		Recipe:      []int64{2, 3, 3, 3},
+		Recipe:      []int64{2, 2, 3, 3, 3},
 		Duration:    14,
 		Passive:     false,
 		Cooldown:    48,
 	},
 	{
-		ID:          "claimrecall",
-		Name:        "Claim Recall",
-		Description: "Claim cost gets recalled by 4 claims, as if they never happened",
+		ID:          "walpurgisnight",
+		Name:        "Walpurgis Night",
+		Description: "Grants an extra draw",
 		Type:        models.EffectTypeRecipe,
 		Price:       10000,
 		Currency:    models.CurrencyTomato,
-		Recipe:      []int64{1, 1, 1, 2, 2, 2},
+		Recipe:      []int64{1, 2, 3, 3},
+		Duration:    20,
+		Passive:     false,
+		Cooldown:    24,
+	},
+	{
+		ID:          "claimrecall",
+		Name:        "Claim Recall",
+		Description: "Claim cost gets reset by 4 claims",
+		Type:        models.EffectTypeRecipe,
+		Price:       10000,
+		Currency:    models.CurrencyTomato,
+		Recipe:      []int64{1, 1, 1, 2, 2},
 		Duration:    20,
 		Passive:     false,
 		Cooldown:    15,

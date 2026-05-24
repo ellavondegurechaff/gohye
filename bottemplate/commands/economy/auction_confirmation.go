@@ -14,32 +14,32 @@ import (
 )
 
 func (h *AuctionHandler) HandleConfirmation(event *handler.ComponentEvent) error {
-    // Parse the custom ID
-    parts := strings.Split(event.Data.CustomID(), "/")
-    if len(parts) != 7 { // /auction/confirm/{ownerID}/{cardID}/{startPrice}/{duration}
-        return fmt.Errorf("invalid confirmation ID format")
-    }
+	// Parse the custom ID
+	parts := strings.Split(event.Data.CustomID(), "/")
+	if len(parts) != 7 { // /auction/confirm/{ownerID}/{cardID}/{startPrice}/{duration}
+		return fmt.Errorf("invalid confirmation ID format")
+	}
 
-    // Validate only the original user can confirm
-    ownerID := parts[3]
-    if ownerID != event.User().ID.String() {
-        return utils.EH.CreateEphemeralError(event, "Only the command user can confirm this action.")
-    }
+	// Validate only the original user can confirm
+	ownerID := parts[3]
+	if ownerID != event.User().ID.String() {
+		return utils.EH.CreateEphemeralError(event, "Only the command user can confirm this action.")
+	}
 
-    cardID, err := strconv.ParseInt(parts[4], 10, 64)
-    if err != nil {
-        return err
-    }
+	cardID, err := strconv.ParseInt(parts[4], 10, 64)
+	if err != nil {
+		return err
+	}
 
-    startPrice, err := strconv.ParseInt(parts[5], 10, 64)
-    if err != nil {
-        return err
-    }
+	startPrice, err := strconv.ParseInt(parts[5], 10, 64)
+	if err != nil {
+		return err
+	}
 
-    durationSecs, err := strconv.ParseInt(parts[6], 10, 64)
-    if err != nil {
-        return err
-    }
+	durationSecs, err := strconv.ParseInt(parts[6], 10, 64)
+	if err != nil {
+		return err
+	}
 	duration := time.Duration(durationSecs) * time.Second
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

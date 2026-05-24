@@ -2,10 +2,13 @@ package economy
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"math"
 	"math/rand"
 	"strings"
+	"time"
 
 	"github.com/disgoorg/bot-template/bottemplate"
 	"github.com/disgoorg/bot-template/bottemplate/config"
@@ -13,6 +16,7 @@ import (
 	"github.com/disgoorg/bot-template/bottemplate/utils"
 	"github.com/disgoorg/disgo/discord"
 	"github.com/disgoorg/disgo/handler"
+	"github.com/uptrace/bun"
 )
 
 var Work = discord.SlashCommandCreate{
@@ -56,6 +60,14 @@ type WorkRewards struct {
 	ItemDrops []string // Item IDs that were dropped
 }
 
+type workCooldownError struct {
+	remaining time.Duration
+}
+
+func (e *workCooldownError) Error() string {
+	return fmt.Sprintf("work cooldown active: %s remaining", e.remaining)
+}
+
 // Industry scenario types
 type ScenarioType string
 
@@ -89,25 +101,26 @@ type CardBonus struct {
 }
 
 func (h *WorkHandler) HandleWork(e *handler.CommandEvent) error {
-    ctx, cancel := context.WithTimeout(context.Background(), config.DefaultQueryTimeout)
-    defer cancel()
+	ctx, cancel := context.WithTimeout(context.Background(), config.DefaultQueryTimeout)
+	defer cancel()
 
-    // Defer immediately to avoid 3s timeout and 10062
-    if err := e.DeferCreateMessage(false); err != nil {
-        return err
-    }
+	// Defer immediately to avoid 3s timeout and 10062
+	if err := e.DeferCreateMessage(false); err != nil {
+		return err
+	}
 
-	// Check cooldown - DISABLED FOR TESTING
-	// user, err := h.bot.UserRepository.GetByDiscordID(ctx, e.User().ID.String())
-	// if err != nil {
-	// 	return utils.EH.CreateErrorEmbed(e, "Failed to fetch user data")
-	// }
+	user, err := h.bot.UserRepository.GetByDiscordID(ctx, e.User().ID.String())
+	if err != nil {
+		_, uerr := e.UpdateInteractionResponse(discord.MessageUpdate{Content: utils.Ptr("❌ Failed to fetch user data")})
+		return uerr
+	}
 
-	// Cooldown check disabled for testing
-	// if time.Since(user.LastWork) < workCooldown {
-	// 	remaining := time.Until(user.LastWork.Add(workCooldown)).Round(time.Second)
-	// 	return utils.EH.CreateErrorEmbed(e, fmt.Sprintf("You need to rest for %s before working again!", remaining))
-	// }
+	if remaining, onCooldown := remainingWorkCooldown(user.LastWork); onCooldown {
+		_, uerr := e.UpdateInteractionResponse(discord.MessageUpdate{
+			Content: utils.Ptr(fmt.Sprintf("⏰ You need to rest for %s before working again!", remaining)),
+		})
+		return uerr
+	}
 
 	// Generate job scenario with collection bonus resolved
 	scenario, enhancedScenario := h.generateJobScenarioWithCollection(ctx)
@@ -116,22 +129,24 @@ func (h *WorkHandler) HandleWork(e *handler.CommandEvent) error {
 	embed := h.createJobScenarioEmbedWithCollection(scenario, enhancedScenario)
 	components := h.createScenarioComponentsWithCollection(scenario, enhancedScenario, e.User().ID.String())
 
-    _, err := e.UpdateInteractionResponse(discord.MessageUpdate{
-        Embeds:     &[]discord.Embed{embed},
-        Components: &components,
-    })
-    return err
+	_, err := e.UpdateInteractionResponse(discord.MessageUpdate{
+		Embeds:     &[]discord.Embed{embed},
+		Components: &components,
+	})
+	return err
 }
 
 func (h *WorkHandler) HandleComponent(e *handler.ComponentEvent) error {
-    // Acknowledge immediately to prevent 3s timeout (10062)
-    _ = e.DeferUpdateMessage()
+	// Acknowledge immediately to prevent 3s timeout (10062)
+	if err := e.DeferUpdateMessage(); err != nil {
+		return err
+	}
 
-    parts := strings.Split(e.Data.CustomID(), "/")
-    if len(parts) < 2 {
-        _, err := e.UpdateInteractionResponse(discord.MessageUpdate{Content: utils.Ptr("❌ Invalid interaction")})
-        return err
-    }
+	parts := strings.Split(e.Data.CustomID(), "/")
+	if len(parts) < 2 {
+		_, err := e.UpdateInteractionResponse(discord.MessageUpdate{Content: utils.Ptr("❌ Invalid interaction")})
+		return err
+	}
 
 	action := parts[1]
 	switch action {
@@ -154,9 +169,9 @@ func (h *WorkHandler) HandleComponent(e *handler.ComponentEvent) error {
 			if collectionID == "none" {
 				collectionID = ""
 			}
-            // After deferring, don't return REST call result; return nil
-            _ = h.HandleWorkAnswer(e, correctIdx, chosenIdx, JobRarity(rarity), collectionID)
-            return nil
+			// After deferring, don't return REST call result; return nil
+			_ = h.HandleWorkAnswer(e, correctIdx, chosenIdx, JobRarity(rarity), collectionID)
+			return nil
 		} else if len(parts) >= 7 {
 			// New format with user validation
 			var correctIdx, chosenIdx, rarity int
@@ -167,27 +182,27 @@ func (h *WorkHandler) HandleComponent(e *handler.ComponentEvent) error {
 			originalUserID := parts[6]
 
 			// Validate that only the command author can click
-            if e.User().ID.String() != originalUserID {
-                // After deferring, send ephemeral follow-up instead of a second interaction response
-                _, _ = e.CreateFollowupMessage(discord.MessageCreate{
-                    Content: "Only the person who used the /work command can answer this question.",
-                    Flags:   discord.MessageFlagEphemeral,
-                })
-                return nil
-            }
+			if e.User().ID.String() != originalUserID {
+				// After deferring, send ephemeral follow-up instead of a second interaction response
+				_, _ = e.CreateFollowupMessage(discord.MessageCreate{
+					Content: "Only the person who used the /work command can answer this question.",
+					Flags:   discord.MessageFlagEphemeral,
+				})
+				return nil
+			}
 
 			if collectionID == "none" {
 				collectionID = ""
 			}
 			return h.HandleWorkAnswer(e, correctIdx, chosenIdx, JobRarity(rarity), collectionID)
 		} else {
-            _, err := e.UpdateInteractionResponse(discord.MessageUpdate{Content: utils.Ptr("❌ Invalid answer format")})
-            return err
-        }
-    default:
-        _, err := e.UpdateInteractionResponse(discord.MessageUpdate{Content: utils.Ptr("❌ Invalid action")})
-        return err
-    }
+			_, err := e.UpdateInteractionResponse(discord.MessageUpdate{Content: utils.Ptr("❌ Invalid answer format")})
+			return err
+		}
+	default:
+		_, err := e.UpdateInteractionResponse(discord.MessageUpdate{Content: utils.Ptr("❌ Invalid action")})
+		return err
+	}
 }
 
 func (h *WorkHandler) generateJobScenarioWithCollection(ctx context.Context) (JobScenario, EnhancedJobScenario) {
@@ -391,7 +406,7 @@ func getEnhancedJobScenarios(rarity JobRarity) []EnhancedJobScenario {
 }
 
 // Calculate card bonus for a scenario
-func (h *WorkHandler) calculateCardBonusWithCollection(ctx context.Context, userID string, scenario EnhancedJobScenario, userCards []*models.UserCard, allCards []*models.Card) CardBonus {
+func (h *WorkHandler) calculateCardBonusWithCollection(ctx context.Context, scenario EnhancedJobScenario, userCards []*models.UserCard, allCards []*models.Card) CardBonus {
 	bonus := CardBonus{
 		HasTagBonus:          false,
 		HasCollectionBonus:   false,
@@ -637,53 +652,142 @@ func (h *WorkHandler) HandleWorkAnswer(e *handler.ComponentEvent, correctIdx, ch
 	}
 
 	// Calculate card bonus
-	cardBonus := h.calculateCardBonusWithCollection(ctx, userID, scenario, userCards, allCards)
+	cardBonus := h.calculateCardBonusWithCollection(ctx, scenario, userCards, allCards)
 
 	// Calculate rewards with card bonus
 	rewards := calculateRewardsWithBonus(rarity, success, cardBonus)
+	if h.bot.EffectIntegrator != nil {
+		rewards.Flakes = h.bot.EffectIntegrator.ApplyWorkReward(ctx, userID, rewards.Flakes)
+		rewards.Vials = h.bot.EffectIntegrator.ApplyWorkReward(ctx, userID, rewards.Vials)
+		rewards.XP = h.bot.EffectIntegrator.ApplyWorkReward(ctx, userID, rewards.XP)
+	}
 
-	// Update user balance and work timestamp
-    user, err := h.bot.UserRepository.GetByDiscordID(ctx, userID)
-    if err != nil {
-        _, uerr := e.UpdateInteractionResponse(discord.MessageUpdate{Content: utils.Ptr("❌ Failed to process rewards")})
-        return uerr
-    }
+	if err := h.applyWorkRewardsTx(ctx, userID, rewards); err != nil {
+		var cooldownErr *workCooldownError
+		if errors.As(err, &cooldownErr) {
+			_, uerr := e.UpdateInteractionResponse(discord.MessageUpdate{
+				Content:    utils.Ptr(fmt.Sprintf("⏰ You need to rest for %s before working again!", cooldownErr.remaining)),
+				Components: &[]discord.ContainerComponent{},
+			})
+			return uerr
+		}
 
-	// Update balance
-    if err := h.bot.UserRepository.UpdateBalance(ctx, user.DiscordID, rewards.Flakes); err != nil {
-        _, uerr := e.UpdateInteractionResponse(discord.MessageUpdate{Content: utils.Ptr("❌ Failed to update balance")})
-        return uerr
-    }
-
-	// Update vials (you'll need to add this method to UserRepository)
-	// For now, we'll skip vials update
-
-	// Update work timestamp
-    if err := h.bot.UserRepository.UpdateLastWork(ctx, user.DiscordID); err != nil {
-        _, uerr := e.UpdateInteractionResponse(discord.MessageUpdate{Content: utils.Ptr("❌ Failed to update work timestamp")})
-        return uerr
-    }
+		_, uerr := e.UpdateInteractionResponse(discord.MessageUpdate{
+			Content:    utils.Ptr("❌ Failed to process rewards"),
+			Components: &[]discord.ContainerComponent{},
+		})
+		return uerr
+	}
 
 	// Track effect progress for Youth Youth By Young
 	if h.bot.EffectManager != nil {
-		go h.bot.EffectManager.UpdateEffectProgress(context.Background(), user.DiscordID, "youthyouth", 1)
+		go h.bot.EffectManager.UpdateEffectProgress(context.Background(), userID, "youthyouth", 1)
 	}
 
-	// Process item drops
-	if len(rewards.ItemDrops) > 0 {
-		for _, itemID := range rewards.ItemDrops {
-			if err := h.bot.ItemRepository.AddUserItem(ctx, user.DiscordID, itemID, 1); err != nil {
-				// Log error but don't fail the whole operation
-				fmt.Printf("Failed to add item %s to user %s: %v\n", itemID, user.DiscordID, err)
-			}
+	if h.bot.QuestTracker != nil {
+		go h.bot.QuestTracker.TrackWork(context.Background(), userID)
+		if rewards.Flakes > 0 {
+			go h.bot.QuestTracker.TrackSnowflakesEarned(context.Background(), userID, rewards.Flakes, "work")
 		}
 	}
 
 	// Create result embed with card bonus info
 	embed := h.createWorkResultEmbedWithBonus(success, rarity, rewards, cardBonus, scenario)
 
-    _, uerr := e.UpdateInteractionResponse(discord.MessageUpdate{Embeds: &[]discord.Embed{embed}, Components: &[]discord.ContainerComponent{}})
-    return uerr
+	_, uerr := e.UpdateInteractionResponse(discord.MessageUpdate{Embeds: &[]discord.Embed{embed}, Components: &[]discord.ContainerComponent{}})
+	return uerr
+}
+
+func remainingWorkCooldown(lastWork time.Time) (time.Duration, bool) {
+	if lastWork.IsZero() {
+		return 0, false
+	}
+
+	remaining := time.Until(lastWork.Add(workCooldown))
+	if remaining <= 0 {
+		return 0, false
+	}
+
+	rounded := remaining.Round(time.Second)
+	if rounded < time.Second {
+		rounded = time.Second
+	}
+	return rounded, true
+}
+
+func (h *WorkHandler) applyWorkRewardsTx(ctx context.Context, userID string, rewards WorkRewards) error {
+	tx, err := h.bot.DB.BunDB().BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
+	if err != nil {
+		return fmt.Errorf("failed to start work reward transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	var user models.User
+	if err := tx.NewSelect().
+		Model(&user).
+		Where("discord_id = ?", userID).
+		For("UPDATE").
+		Scan(ctx); err != nil {
+		return fmt.Errorf("failed to lock user for work reward: %w", err)
+	}
+
+	if remaining, onCooldown := remainingWorkCooldown(user.LastWork); onCooldown {
+		return &workCooldownError{remaining: remaining}
+	}
+
+	now := time.Now()
+	result, err := tx.NewUpdate().
+		Model((*models.User)(nil)).
+		Set("balance = balance + ?", rewards.Flakes).
+		Set(
+			"user_stats = jsonb_set(jsonb_set(COALESCE(user_stats, '{}'::jsonb), '{vials}', (COALESCE((user_stats->>'vials')::bigint, 0) + ?)::text::jsonb), '{xp}', (COALESCE((user_stats->>'xp')::bigint, 0) + ?)::text::jsonb)",
+			rewards.Vials,
+			rewards.XP,
+		).
+		Set("last_work = ?", now).
+		Set("updated_at = ?", now).
+		Where("discord_id = ?", userID).
+		Exec(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to apply work rewards: %w", err)
+	}
+	if rowsAffected, err := result.RowsAffected(); err != nil {
+		return fmt.Errorf("failed to verify work reward update: %w", err)
+	} else if rowsAffected == 0 {
+		return fmt.Errorf("user not found while applying work rewards: %s", userID)
+	}
+
+	if err := addWorkItemDropsTx(ctx, tx, userID, rewards.ItemDrops, now); err != nil {
+		return err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit work reward transaction: %w", err)
+	}
+
+	return nil
+}
+
+func addWorkItemDropsTx(ctx context.Context, tx bun.Tx, userID string, itemIDs []string, now time.Time) error {
+	for _, itemID := range itemIDs {
+		_, err := tx.NewInsert().
+			Model(&models.UserItem{
+				UserID:     userID,
+				ItemID:     itemID,
+				Quantity:   1,
+				ObtainedAt: now,
+				UpdatedAt:  now,
+			}).
+			On("CONFLICT (user_id, item_id) DO UPDATE").
+			Set("quantity = user_items.quantity + EXCLUDED.quantity").
+			Set("updated_at = EXCLUDED.updated_at").
+			Exec(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to add work item drop %s: %w", itemID, err)
+		}
+	}
+
+	return nil
 }
 
 func calculateRewards(rarity JobRarity, success bool) WorkRewards {
@@ -768,55 +872,6 @@ func calculateItemDrops(rarity JobRarity) []string {
 	return drops
 }
 
-func createWorkResultEmbed(success bool, rarity JobRarity, rewards WorkRewards) discord.Embed {
-	var title, description string
-	var color int
-
-	if success {
-		title = "✅ Job Completed Successfully!"
-		color = config.SuccessColor
-		description = "Great work! You've earned:"
-	} else {
-		title = "❌ Job Failed"
-		color = config.ErrorColor
-		description = "Better luck next time! You still earned:"
-	}
-
-	embed := discord.NewEmbedBuilder().
-		SetTitle(title).
-		SetDescription(description).
-		SetColor(color)
-
-	// Add reward fields
-	embed.AddField("❄️ Flakes", fmt.Sprintf("`%d`", rewards.Flakes), true)
-	embed.AddField("🍷 Vials", fmt.Sprintf("`%d`", rewards.Vials), true)
-	embed.AddField("✨ XP", fmt.Sprintf("`%d`", rewards.XP), true)
-
-	// Add item drops if any
-	if len(rewards.ItemDrops) > 0 {
-		itemMap := map[string]string{
-			models.ItemBrokenDisc:    "💿 Broken Disc",
-			models.ItemMicrophone:    "🎤 Microphone",
-			models.ItemForgottenSong: "📜 Forgotten Song",
-		}
-
-		var itemList []string
-		for _, itemID := range rewards.ItemDrops {
-			if name, ok := itemMap[itemID]; ok {
-				itemList = append(itemList, name)
-			}
-		}
-
-		embed.AddField("🎁 Bonus Items", strings.Join(itemList, "\n"), false)
-	}
-
-	// Add rarity info
-	stars := strings.Repeat("⭐", int(rarity))
-	embed.SetFooter(fmt.Sprintf("Job Rarity: %s", stars), "") // Cooldown disabled for testing
-
-	return embed.Build()
-}
-
 // Calculate rewards with card bonus applied
 func calculateRewardsWithBonus(rarity JobRarity, success bool, cardBonus CardBonus) WorkRewards {
 	rewards := calculateRewards(rarity, success)
@@ -868,6 +923,9 @@ func (h *WorkHandler) createWorkResultEmbedWithBonus(success bool, rarity JobRar
 
 	// Build description with rewards
 	var description strings.Builder
+	if scenario.Title != "" {
+		description.WriteString(fmt.Sprintf("**%s**\n\n", scenario.Title))
+	}
 	description.WriteString(rewardText + "\n")
 	description.WriteString(vialText + "\n")
 	description.WriteString(xpText)

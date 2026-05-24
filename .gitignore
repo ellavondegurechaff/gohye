@@ -1,5 +1,8 @@
 .idea/
 config.toml
+.env.migration
+mongo-backups/
+migration-reports/
 # Ignore BSON files
 *.bson
 

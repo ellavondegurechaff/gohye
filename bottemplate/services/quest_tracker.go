@@ -32,17 +32,10 @@ func (qt *QuestTracker) TrackCommand(ctx context.Context, userID string, command
 		"command": commandName,
 	}
 
-	// First update for RequirementTypeCommandCount
+	// Command logging only feeds "used commands" quests. Domain-specific quest
+	// progress is tracked by the commands after their game action succeeds.
 	if err := qt.questService.UpdateProgress(ctx, userID, "command_count", metadata); err != nil {
 		slog.Debug("Failed to track quest progress for command count",
-			slog.String("user_id", userID),
-			slog.String("command", commandName),
-			slog.Any("error", err))
-	}
-
-	// Also update for specific command quests
-	if err := qt.questService.UpdateProgress(ctx, userID, commandName, metadata); err != nil {
-		slog.Debug("Failed to track quest progress for specific command",
 			slog.String("user_id", userID),
 			slog.String("command", commandName),
 			slog.Any("error", err))
@@ -114,12 +107,20 @@ func (qt *QuestTracker) TrackCardLevelUpWithMetadata(ctx context.Context, userID
 
 // TrackCardDraw tracks card drawing for quest progress
 func (qt *QuestTracker) TrackCardDraw(ctx context.Context, userID string) {
+	qt.TrackCardDrawWithCardID(ctx, userID, 0)
+}
+
+// TrackCardDrawWithCardID tracks drawing/summoning a specific card for unique-card quests.
+func (qt *QuestTracker) TrackCardDrawWithCardID(ctx context.Context, userID string, cardID int64) {
 	if qt.questService == nil {
 		return
 	}
 
 	metadata := map[string]interface{}{
 		"action": "draw",
+	}
+	if cardID > 0 {
+		metadata["card_id"] = cardID
 	}
 
 	if err := qt.questService.UpdateProgress(ctx, userID, "draw", metadata); err != nil {

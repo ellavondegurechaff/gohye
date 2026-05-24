@@ -1,13 +1,13 @@
 package repositories
 
 import (
-    "context"
-    "database/sql"
-    "errors"
-    "fmt"
-    "log/slog"
-    "strings"
-    "time"
+	"context"
+	"database/sql"
+	"errors"
+	"fmt"
+	"log/slog"
+	"strings"
+	"time"
 
 	"github.com/disgoorg/bot-template/bottemplate/database/models"
 	"github.com/uptrace/bun"
@@ -19,6 +19,8 @@ type UserRepository interface {
 	Update(ctx context.Context, user *models.User) error
 	Delete(ctx context.Context, discordID string) error
 	UpdateBalance(ctx context.Context, discordID string, balance int64) error
+	AddVials(ctx context.Context, discordID string, amount int64) error
+	AddXP(ctx context.Context, discordID string, amount int64) error
 	UpdateLastDaily(ctx context.Context, discordID string) error
 	GetTopUsers(ctx context.Context, limit int) ([]*models.User, error)
 	GetUsers(ctx context.Context) ([]*models.User, error)
@@ -50,21 +52,21 @@ func (r *userRepository) GetByDiscordID(ctx context.Context, discordID string) (
 		slog.String("discord_id", discordID))
 
 	user := new(models.User)
-    var err error
-    for attempt := 0; attempt < 2; attempt++ {
-        err = r.db.NewSelect().
-            Model(user).
-            Where("discord_id = ?", discordID).
-            Scan(ctx)
-        if err == nil || errors.Is(err, sql.ErrNoRows) {
-            break
-        }
-        // Retry once on transient EOF-like errors
-        if strings.Contains(err.Error(), "EOF") {
-            continue
-        }
-        break
-    }
+	var err error
+	for attempt := 0; attempt < 2; attempt++ {
+		err = r.db.NewSelect().
+			Model(user).
+			Where("discord_id = ?", discordID).
+			Scan(ctx)
+		if err == nil || errors.Is(err, sql.ErrNoRows) {
+			break
+		}
+		// Retry once on transient EOF-like errors
+		if strings.Contains(err.Error(), "EOF") {
+			continue
+		}
+		break
+	}
 
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -114,6 +116,26 @@ func (r *userRepository) UpdateBalance(ctx context.Context, discordID string, ba
 	_, err := r.db.NewUpdate().
 		Model((*models.User)(nil)).
 		Set("balance = balance + ?", balance).
+		Set("updated_at = ?", time.Now()).
+		Where("discord_id = ?", discordID).
+		Exec(ctx)
+	return err
+}
+
+func (r *userRepository) AddVials(ctx context.Context, discordID string, amount int64) error {
+	_, err := r.db.NewUpdate().
+		Model((*models.User)(nil)).
+		Set("user_stats = jsonb_set(COALESCE(user_stats, '{}'::jsonb), '{vials}', (COALESCE((user_stats->>'vials')::bigint, 0) + ?)::text::jsonb)", amount).
+		Set("updated_at = ?", time.Now()).
+		Where("discord_id = ?", discordID).
+		Exec(ctx)
+	return err
+}
+
+func (r *userRepository) AddXP(ctx context.Context, discordID string, amount int64) error {
+	_, err := r.db.NewUpdate().
+		Model((*models.User)(nil)).
+		Set("user_stats = jsonb_set(COALESCE(user_stats, '{}'::jsonb), '{xp}', (COALESCE((user_stats->>'xp')::bigint, 0) + ?)::text::jsonb)", amount).
 		Set("updated_at = ?", time.Now()).
 		Where("discord_id = ?", discordID).
 		Exec(ctx)

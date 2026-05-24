@@ -18,13 +18,13 @@ var Daily = discord.SlashCommandCreate{
 }
 
 func DailyHandler(b *bottemplate.Bot) handler.CommandHandler {
-    return func(e *handler.CommandEvent) error {
-        // Defer immediately to avoid 3s timeout
-        if err := e.DeferCreateMessage(false); err != nil {
-            return err
-        }
-        ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-        defer cancel()
+	return func(e *handler.CommandEvent) error {
+		// Defer immediately to avoid 3s timeout
+		if err := e.DeferCreateMessage(false); err != nil {
+			return err
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
 
 		user, err := b.UserRepository.GetByDiscordID(ctx, e.User().ID.String())
 		if err != nil {
@@ -33,17 +33,17 @@ func DailyHandler(b *bottemplate.Bot) handler.CommandHandler {
 				slog.String("discord_id", e.User().ID.String()),
 				slog.Any("error", err),
 			)
-            return utils.EH.UpdateInteractionResponse(e, "Error", "Failed to get user data. Please try again later.")
+			return utils.EH.UpdateInteractionResponse(e, "Error", "Failed to get user data. Please try again later.")
 		}
 
-		// Get dynamic daily cooldown (affected by rulerjeanne effect)
-		cooldownHours := b.EffectIntegrator.GetDailyCooldown(ctx, e.User().ID.String())
-		cooldownDuration := time.Duration(cooldownHours) * time.Hour
+		// Get dynamic daily cooldown in minutes (affected by Ruler Jeanne).
+		cooldownMinutes := b.EffectIntegrator.GetDailyCooldown(ctx, e.User().ID.String())
+		cooldownDuration := time.Duration(cooldownMinutes) * time.Minute
 
 		// Check cooldown
 		if time.Since(user.LastDaily) < cooldownDuration {
 			remaining := time.Until(user.LastDaily.Add(cooldownDuration)).Round(time.Second)
-            return utils.EH.UpdateInteractionResponse(e, "Daily Cooldown", fmt.Sprintf("You can claim your daily reward again in %s.", remaining))
+			return utils.EH.UpdateInteractionResponse(e, "Daily Cooldown", fmt.Sprintf("You can claim your daily reward again in %s.", remaining))
 		}
 
 		// Calculate reward (consider streaks, bonuses, etc.)
@@ -60,7 +60,7 @@ func DailyHandler(b *bottemplate.Bot) handler.CommandHandler {
 				slog.String("type", "db"),
 				slog.Any("error", err),
 			)
-            return utils.EH.UpdateInteractionResponse(e, "Error", "Failed to claim daily reward. Please try again later.")
+			return utils.EH.UpdateInteractionResponse(e, "Error", "Failed to claim daily reward. Please try again later.")
 		}
 		defer tx.Rollback()
 
@@ -71,16 +71,20 @@ func DailyHandler(b *bottemplate.Bot) handler.CommandHandler {
 				slog.String("discord_id", user.DiscordID),
 				slog.Any("error", err),
 			)
-            return utils.EH.UpdateInteractionResponse(e, "Error", "Failed to claim daily reward. Please try again later.")
+			return utils.EH.UpdateInteractionResponse(e, "Error", "Failed to claim daily reward. Please try again later.")
 		}
 
-		if err := b.UserRepository.UpdateBalance(ctx, user.DiscordID, user.Balance+reward); err != nil {
+		if err := b.UserRepository.UpdateBalance(ctx, user.DiscordID, reward); err != nil {
 			slog.Error("Failed to update user balance",
 				slog.String("type", "db"),
 				slog.String("discord_id", user.DiscordID),
 				slog.Any("error", err),
 			)
-            return utils.EH.UpdateInteractionResponse(e, "Error", "Failed to claim daily reward. Please try again later.")
+			return utils.EH.UpdateInteractionResponse(e, "Error", "Failed to claim daily reward. Please try again later.")
+		}
+
+		if b.QuestTracker != nil {
+			go b.QuestTracker.TrackSnowflakesEarned(context.Background(), user.DiscordID, reward, "daily")
 		}
 
 		if err := b.UserRepository.UpdateLastDaily(ctx, user.DiscordID); err != nil {
@@ -89,7 +93,7 @@ func DailyHandler(b *bottemplate.Bot) handler.CommandHandler {
 				slog.String("discord_id", user.DiscordID),
 				slog.Any("error", err),
 			)
-            return utils.EH.UpdateInteractionResponse(e, "Error", "Failed to claim daily reward. Please try again later.")
+			return utils.EH.UpdateInteractionResponse(e, "Error", "Failed to claim daily reward. Please try again later.")
 		}
 
 		if err := tx.Commit(); err != nil {
@@ -120,11 +124,11 @@ func DailyHandler(b *bottemplate.Bot) handler.CommandHandler {
 		}
 
 		// Send success message
-        _, updErr := e.UpdateInteractionResponse(discord.MessageUpdate{Embeds: &[]discord.Embed{{
-            Title:       "Daily Reward Claimed!",
-            Description: description,
-            Color:       utils.SuccessColor,
-        }}})
-        return updErr
-    }
+		_, updErr := e.UpdateInteractionResponse(discord.MessageUpdate{Embeds: &[]discord.Embed{{
+			Title:       "Daily Reward Claimed!",
+			Description: description,
+			Color:       utils.SuccessColor,
+		}}})
+		return updErr
+	}
 }

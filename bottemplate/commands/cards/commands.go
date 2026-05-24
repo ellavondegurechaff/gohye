@@ -4,6 +4,7 @@ import "github.com/disgoorg/disgo/discord"
 
 var Commands = []discord.ApplicationCommandCreate{
 	Summon,
+	Draw,
 	SearchCards,
 	Cards,
 	Claim,

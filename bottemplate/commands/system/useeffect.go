@@ -44,8 +44,10 @@ func NewUseEffectHandler(b *bottemplate.Bot, effectManager *effects.Manager) *Us
 }
 
 func (h *UseEffectHandler) Handle(event *handler.CommandEvent) error {
-    if err := event.DeferCreateMessage(false); err != nil { return err }
-    ctx := context.Background()
+	if err := event.DeferCreateMessage(false); err != nil {
+		return err
+	}
+	ctx := context.Background()
 
 	effectID := event.SlashCommandInteractionData().String("effect")
 	args := event.SlashCommandInteractionData().String("arguments")
@@ -55,14 +57,14 @@ func (h *UseEffectHandler) Handle(event *handler.CommandEvent) error {
 
 	// Use the effect through the manager to get full result data
 	resultMessage, err := h.effectManager.UseActiveEffect(enrichedCtx, event.User().ID.String(), effectID, args)
-    if err != nil {
-        _, updErr := event.UpdateInteractionResponse(discord.MessageUpdate{Embeds: &[]discord.Embed{{
-            Title:       "❌ Effect Failed",
-            Description: err.Error(),
-            Color:       utils.ErrorColor,
-        }}})
-        return updErr
-    }
+	if err != nil {
+		_, updErr := event.UpdateInteractionResponse(discord.MessageUpdate{Embeds: &[]discord.Embed{{
+			Title:       "❌ Effect Failed",
+			Description: err.Error(),
+			Color:       utils.ErrorColor,
+		}}})
+		return updErr
+	}
 
 	// Check if we need to get additional data for enhanced display
 	return h.createEffectResultMessage(enrichedCtx, event, effectID, args, resultMessage)
@@ -74,7 +76,7 @@ func (h *UseEffectHandler) createEffectResultMessage(ctx context.Context, event 
 	isJudgmentDay := strings.HasPrefix(resultMessage, "[Judgment Day]")
 
 	// Try to get card data from the effect result if available
-	cardData := h.extractCardDataFromContext(ctx, effectID, args, isJudgmentDay)
+	cardData := h.extractCardDataFromContext(ctx)
 	if cardData != nil {
 		return h.createCardDisplayMessage(event, resultMessage, cardData)
 	}
@@ -93,12 +95,12 @@ func (h *UseEffectHandler) createEffectResultMessage(ctx context.Context, event 
 		SetFooter(fmt.Sprintf("Used by %s • %s", event.User().Username, fmt.Sprintf("<t:%d:R>", time.Now().Unix())), event.User().EffectiveAvatarURL()).
 		Build()
 
-    _, updErr := event.UpdateInteractionResponse(discord.MessageUpdate{Embeds: &[]discord.Embed{embed}})
-    return updErr
+	_, updErr := event.UpdateInteractionResponse(discord.MessageUpdate{Embeds: &[]discord.Embed{embed}})
+	return updErr
 }
 
 // extractCardDataFromContext attempts to get card data from the effect result context
-func (h *UseEffectHandler) extractCardDataFromContext(ctx context.Context, effectID, args string, isJudgmentDay bool) *models.Card {
+func (h *UseEffectHandler) extractCardDataFromContext(ctx context.Context) *models.Card {
 	// Get effect result data from context
 	resultData, ok := ctx.Value("effect_result_data").(map[string]interface{})
 	if !ok || resultData == nil {
@@ -211,6 +213,6 @@ func (h *UseEffectHandler) createCardDisplayMessage(event *handler.CommandEvent,
 		},
 	}
 
-    _, updErr := event.UpdateInteractionResponse(discord.MessageUpdate{Embeds: &[]discord.Embed{embed}})
-    return updErr
+	_, updErr := event.UpdateInteractionResponse(discord.MessageUpdate{Embeds: &[]discord.Embed{embed}})
+	return updErr
 }

@@ -173,7 +173,7 @@ func formatNumber(n int64) string {
 	if len(str) <= 3 {
 		return str
 	}
-	
+
 	var result strings.Builder
 	for i, char := range str {
 		if i > 0 && (len(str)-i)%3 == 0 {
@@ -181,7 +181,7 @@ func formatNumber(n int64) string {
 		}
 		result.WriteRune(char)
 	}
-	
+
 	return result.String()
 }
 

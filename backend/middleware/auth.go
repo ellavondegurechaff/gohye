@@ -4,10 +4,10 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/gofiber/fiber/v2"
 	"github.com/disgoorg/bot-template/backend/handlers"
 	"github.com/disgoorg/bot-template/backend/models"
 	"github.com/disgoorg/bot-template/backend/utils"
+	"github.com/gofiber/fiber/v2"
 )
 
 // AuthRequired middleware ensures the user is authenticated
@@ -28,7 +28,7 @@ func AuthRequired(webApp *handlers.WebApp) fiber.Handler {
 
 		// Store user in context
 		c.Locals("user", session)
-		
+
 		slog.Debug("Auth middleware: user authenticated",
 			slog.String("discord_id", session.DiscordID),
 			slog.String("username", session.Username))
@@ -169,7 +169,7 @@ func redirectToLogin(c *fiber.Ctx) error {
 // isAPIRequest checks if the request is an API request
 func isAPIRequest(c *fiber.Ctx) bool {
 	path := c.Path()
-	
+
 	// Check if path starts with /api or /admin/api
 	if strings.HasPrefix(path, "/api/") || strings.HasPrefix(path, "/admin/api/") {
 		return true

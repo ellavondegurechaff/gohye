@@ -162,42 +162,6 @@ func convertPreferences(prefs Preferences) *models.Preferences {
 	}
 }
 
-func (m *Migrator) convertUserCard(mc MongoUserCard) *models.UserCard {
-	now := time.Now()
-
-	var cardID int64
-	if mc.CardID != nil {
-		cardID = int64(*mc.CardID)
-	} else {
-		// Decide how to handle null CardID
-		// For this example, we'll skip the record
-		return nil
-	}
-
-	return &models.UserCard{
-		UserID:    mc.UserID,
-		CardID:    cardID,
-		Favorite:  mc.Fav,
-		Locked:    mc.Locked,
-		Amount:    int64(mc.Amount),
-		Rating:    int64(mc.Rating),
-		Obtained:  mc.Obtained,
-		Exp:       int64(mc.Exp),
-		Mark:      mc.Mark,
-		CreatedAt: now,
-		UpdatedAt: now,
-	}
-}
-
-// Extract collection IDs from []ColInfo
-func extractColIDs(cols []ColInfo) []string {
-	var ids []string
-	for _, col := range cols {
-		ids = append(ids, col.ID)
-	}
-	return ids
-}
-
 // Convert completed collections to new format
 func convertCompletedCols(cols []ColInfo) []models.CompletedColModel {
 	var result []models.CompletedColModel

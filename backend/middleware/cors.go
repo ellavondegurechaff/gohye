@@ -2,7 +2,7 @@ package middleware
 
 import (
 	"fmt"
-	
+
 	"github.com/gofiber/fiber/v2"
 )
 
@@ -35,12 +35,12 @@ func CustomErrorHandler(c *fiber.Ctx, err error) error {
 		"Code":    code,
 		"Message": message,
 	})
-	
+
 	// If template rendering fails, fallback to plain text response
 	if renderErr != nil {
 		return c.Status(code).SendString(fmt.Sprintf("Error %d: %s", code, message))
 	}
-	
+
 	return renderErr
 }
 
@@ -53,16 +53,16 @@ func SecurityHeaders() fiber.Handler {
 		c.Set("X-XSS-Protection", "1; mode=block")
 		c.Set("Referrer-Policy", "strict-origin-when-cross-origin")
 		c.Set("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
-		
+
 		// CSP header for admin panel
 		if c.Path() != "/login" && c.Path() != "/" {
-			c.Set("Content-Security-Policy", 
+			c.Set("Content-Security-Policy",
 				"default-src 'self'; "+
-				"script-src 'self' 'unsafe-inline' https://unpkg.com https://cdn.tailwindcss.com; "+
-				"style-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://fonts.googleapis.com; "+
-				"img-src 'self' data: https://cards.hyejoobot.com https://cdn.discordapp.com; "+
-				"font-src 'self' https://fonts.gstatic.com https://fonts.googleapis.com; "+
-				"connect-src 'self';")
+					"script-src 'self' 'unsafe-inline' https://unpkg.com https://cdn.tailwindcss.com; "+
+					"style-src 'self' 'unsafe-inline' https://cdn.tailwindcss.com https://fonts.googleapis.com; "+
+					"img-src 'self' data: https://cards.hyejoobot.com https://cdn.discordapp.com; "+
+					"font-src 'self' https://fonts.gstatic.com https://fonts.googleapis.com; "+
+					"connect-src 'self';")
 		}
 
 		return c.Next()

@@ -30,6 +30,7 @@ import (
 	"github.com/disgoorg/bot-template/bottemplate/utils"
 	"github.com/disgoorg/disgo/bot"
 	"github.com/disgoorg/disgo/handler"
+	"github.com/disgoorg/snowflake/v2"
 )
 
 var (
@@ -167,6 +168,7 @@ func main() {
 		b.UserRepository,
 	)
 	b.QuestTracker = services.NewQuestTracker(b.QuestService)
+	handlers.SetQuestTracker(b.QuestTracker)
 
 	// Then initialize Auction Manager with all required dependencies
 	// auctionRepo := repositories.NewAuctionRepository(b.DB.BunDB())
@@ -336,13 +338,13 @@ func main() {
 
 	// Card-related commands
 	h.Command("/summon", handlers.WrapWithLogging("summon", cards.SummonHandler(b)))
+	h.Command("/draw", handlers.WrapWithLogging("draw", cards.SummonHandler(b)))
 	h.Command("/searchcards", handlers.WrapWithLogging("searchcards", cards.SearchCardsHandler(b)))
 	h.Command("/cards", handlers.WrapWithLogging("cards", cards.CardsHandler(b)))
 	h.Command("/price-stats", handlers.WrapWithLogging("price-stats", economyCommands.PriceStatsHandler(b)))
 	h.Component("/details/", handlers.WrapComponentWithLogging("price-details", economyCommands.PriceDetailsHandler(b)))
 	// h.Component("/claim/", handlers.WrapComponentWithLogging("claim", cards.ClaimButtonHandler(b)))
 	h.Command("/metrics", handlers.WrapWithLogging("metrics", system.MetricsHandler(b)))
-	h.Command("/claim", handlers.WrapWithLogging("claim", cards.NewClaimHandler(b).HandleCommand))
 	h.Command("/fixduplicates", handlers.WrapWithLogging("fixduplicates", admin.FixDuplicatesHandler(b)))
 	h.Command("/levelup", handlers.WrapWithLogging("levelup", cards.LevelUpHandler(b)))
 	h.Command("/analyze-economy", handlers.WrapWithLogging("analyze-economy", admin.AnalyzeEconomyHandler(b)))
@@ -395,13 +397,11 @@ func main() {
 
 	// Register passive effects
 	passiveEffects := []effects.EffectHandler{
-		effectsHandlers.NewTohrugiftHandler(deps),
 		effectsHandlers.NewCakedayHandler(deps),
 		effectsHandlers.NewHolygrailHandler(deps),
 		effectsHandlers.NewSkyfriendHandler(deps),
 		effectsHandlers.NewCherryblossHandler(deps),
 		effectsHandlers.NewRulerjeanneHandler(deps),
-		effectsHandlers.NewSpellcardHandler(deps),
 		effectsHandlers.NewLambhyejooHandler(deps),
 		effectsHandlers.NewYouthyouthHandler(deps),
 		effectsHandlers.NewKisslaterHandler(deps),
@@ -418,9 +418,8 @@ func main() {
 	activeEffects := []effects.EffectHandler{
 		effectsHandlers.NewClaimRecallHandler(deps),
 		effectsHandlers.NewSpaceUnityHandler(deps),
+		effectsHandlers.NewWalpurgisNightHandler(deps),
 		effectsHandlers.NewJudgeDayHandler(deps, registry),
-		effectsHandlers.NewEnayanoHandler(deps),
-		effectsHandlers.NewPbocchiHandler(deps),
 	}
 
 	for _, effect := range activeEffects {
@@ -442,17 +441,17 @@ func main() {
 	// Shop commands
 	shopHandler := economyCommands.NewShopHandler(b, effectManager)
 	h.Command("/shop", handlers.WrapWithLogging("shop", shopHandler.Handle))
-h.Component("/shop_category/", handlers.WrapComponentWithLogging("shop_category", shopHandler.HandleComponent))
-h.Component("/shop_item/", handlers.WrapComponentWithLogging("shop_item", shopHandler.HandleComponent))
+	h.Component("/shop_category/", handlers.WrapComponentWithLogging("shop_category", shopHandler.HandleComponent))
+	h.Component("/shop_item/", handlers.WrapComponentWithLogging("shop_item", shopHandler.HandleComponent))
 	h.Component("/shop_buy/", handlers.WrapComponentWithLogging("shop_buy", shopHandler.HandleComponent))
 
 	// Effects commands
 	effectsHandler := system.NewEffectsHandler(b, effectManager)
 	h.Command("/effects", handlers.WrapWithLogging("effects", effectsHandler.Handle))
-	
+
 	effectInfoHandler := system.NewEffectInfoHandler(b, effectManager)
 	h.Command("/effect", handlers.WrapWithLogging("effect", effectInfoHandler.Handle))
-	
+
 	effectUpgradeHandler := system.NewEffectUpgradeHandler(b, effectManager)
 	h.Component("/effect_upgrade_confirm_", handlers.WrapComponentWithLogging("effect_upgrade_confirm", effectUpgradeHandler.HandleUpgradeConfirm))
 	h.Component("/effect_upgrade_cancel", handlers.WrapComponentWithLogging("effect_upgrade_cancel", effectUpgradeHandler.HandleUpgradeCancel))
@@ -468,8 +467,8 @@ h.Component("/shop_item/", handlers.WrapComponentWithLogging("shop_item", shopHa
 	// Help commands
 	helpHandler := system.NewHelpHandler(b)
 	h.Command("/help", handlers.WrapWithLogging("help", helpHandler.Handle))
-h.Component("/help_category/", handlers.WrapComponentWithLogging("help", helpHandler.HandleComponent))
-h.Component("/help_back/", handlers.WrapComponentWithLogging("help", helpHandler.HandleComponent))
+	h.Component("/help_category/", handlers.WrapComponentWithLogging("help", helpHandler.HandleComponent))
+	h.Component("/help_back/", handlers.WrapComponentWithLogging("help", helpHandler.HandleComponent))
 
 	// Profile command
 	h.Command("/profile", handlers.WrapWithLogging("profile", system.ProfileHandler(b)))
@@ -537,6 +536,20 @@ h.Component("/help_back/", handlers.WrapComponentWithLogging("help", helpHandler
 		})
 	}
 
+	if b.EffectIntegrator != nil && b.EffectManager != nil {
+		auctionManager.SetAuctionEffectHandlers(
+			func(ctx context.Context, userID string, amount int64) int64 {
+				return b.EffectIntegrator.ApplyAuctionWinCashback(ctx, userID, amount)
+			},
+			func(ctx context.Context, userID string, amount int64) int64 {
+				return b.EffectIntegrator.ApplyAuctionSaleBonus(ctx, userID, amount)
+			},
+			func(userID string, effectID string, increment int) {
+				_ = b.EffectManager.UpdateEffectProgress(context.Background(), userID, effectID, increment)
+			},
+		)
+	}
+
 	// Initialize auction handler with the manager
 	auctionHandler := economyCommands.NewAuctionHandler(b, auctionManager, b.Client, b.CardRepository)
 	auctionHandler.Register(h)
@@ -560,14 +573,36 @@ h.Component("/help_back/", handlers.WrapComponentWithLogging("help", helpHandler
 			slog.String("type", "sys"),
 			slog.Any("guild_ids", cfg.Bot.DevGuilds),
 		)
-		if err = handler.SyncCommands(b.Client, commands.Commands, cfg.Bot.DevGuilds); err != nil {
-			slog.Error("Failed to sync commands",
-				slog.String("type", "sys"),
-				slog.Any("error", err),
-				slog.String("error_details", fmt.Sprintf("%+v", err)),
-				slog.String("component", "command_sync"),
-				slog.String("status", "failed"),
-			)
+		if len(cfg.Bot.DevGuilds) == 0 {
+			if err = handler.SyncCommands(b.Client, commands.Commands, nil); err != nil {
+				slog.Error("Failed to sync global commands",
+					slog.String("type", "sys"),
+					slog.Any("error", err),
+					slog.String("error_details", fmt.Sprintf("%+v", err)),
+					slog.String("component", "command_sync"),
+					slog.String("status", "failed"),
+				)
+			}
+		} else {
+			for _, guildID := range cfg.Bot.DevGuilds {
+				if err = handler.SyncCommands(b.Client, commands.Commands, []snowflake.ID{guildID}); err != nil {
+					slog.Error("Failed to sync guild commands",
+						slog.String("type", "sys"),
+						slog.String("guild_id", guildID.String()),
+						slog.Any("error", err),
+						slog.String("error_details", fmt.Sprintf("%+v", err)),
+						slog.String("component", "command_sync"),
+						slog.String("status", "failed"),
+					)
+					continue
+				}
+				slog.Info("Guild commands synced",
+					slog.String("type", "sys"),
+					slog.String("guild_id", guildID.String()),
+					slog.String("component", "command_sync"),
+					slog.String("status", "success"),
+				)
+			}
 		}
 	}
 

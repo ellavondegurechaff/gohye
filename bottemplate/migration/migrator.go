@@ -1,111 +1,113 @@
 package migration
 
 import (
-    "bufio"
-    "context"
-    "encoding/binary"
-    "encoding/json"
-    "fmt"
-    "io"
-    "log/slog"
-    "os"
-    "path/filepath"
-    "strconv"
-    "time"
+	"bufio"
+	"context"
+	"encoding/binary"
+	"encoding/json"
+	"fmt"
+	"io"
+	"log/slog"
+	"os"
+	"path/filepath"
+	"strconv"
+	"time"
 
-    "github.com/disgoorg/bot-template/bottemplate/database/models"
-    "github.com/uptrace/bun"
-    "go.mongodb.org/mongo-driver/bson"
-    "go.mongodb.org/mongo-driver/mongo"
-    "strings"
-    pgx "github.com/jackc/pgx/v5"
-    "github.com/jackc/pgx/v5/pgxpool"
+	"github.com/disgoorg/bot-template/bottemplate/database/models"
+	pgx "github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/uptrace/bun"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
+	"strings"
 )
 
 type Migrator struct {
-    pgDB      *bun.DB
-    dataDir   string
-    usersPath string
-    cardsPath string
-    batchSize int
-    // Statistics tracking
-    stats MigrationStats
-    // Optional direct Mongo access
-    mongoDB *mongo.Database
-    // Tuning
-    sleepBetween time.Duration
-    insertSingle bool
-    // Mongo collection names (overrideable)
-    collNames map[string]string
-    // JSON caches
-    jsonCardsByID        map[int64]JSONCard
-    jsonCollectionsByID  map[string]JSONCollection
-    // Fill missing card IDs from JSON definitions (preferred behavior)
-    fillMissingFromJSON bool
-    // Auto-create placeholder cards referenced by usercards (fallback, default false)
-    autoCreateMissingCards bool
-    // Optional: use pgx CopyFrom for fastest bulk inserts
-    useCopy bool
-    pool   *pgxpool.Pool
+	pgDB      *bun.DB
+	dataDir   string
+	usersPath string
+	cardsPath string
+	batchSize int
+	// Statistics tracking
+	stats MigrationStats
+	// Optional direct Mongo access
+	mongoDB *mongo.Database
+	// Tuning
+	sleepBetween time.Duration
+	insertSingle bool
+	// Mongo collection names (overrideable)
+	collNames map[string]string
+	// JSON caches
+	jsonCardsByID       map[int64]JSONCard
+	jsonCollectionsByID map[string]JSONCollection
+	// Fill missing card IDs from JSON definitions (preferred behavior)
+	fillMissingFromJSON bool
+	// Auto-create placeholder cards referenced by usercards (fallback, default false)
+	autoCreateMissingCards bool
+	// Optional: use pgx CopyFrom for fastest bulk inserts
+	useCopy bool
+	pool    *pgxpool.Pool
 }
 
 func NewMigrator(pgDB *bun.DB, dataDir string) *Migrator {
-    return &Migrator{
-        pgDB:      pgDB,
-        dataDir:   dataDir,
-        usersPath: filepath.Join(dataDir, "users.bson"),
-        cardsPath: filepath.Join(dataDir, "usercards.bson"),
-        batchSize: 1000,
-        stats: MigrationStats{
-            Tables:    make(map[string]*TableStats),
-            StartTime: time.Now(),
-        },
-        collNames: map[string]string{
-            "collections":      "collections",
-            "cards":            "cards",
-            "users":            "users",
-            "usercards":        "usercards",
-            "claims":           "claims",
-            "auctions":         "auctions",
-            "usereffects":      "usereffects",
-            "userquests":       "userquests",
-            "userinventories":  "userinventories",
-        },
-        fillMissingFromJSON: true,
-    }
+	return &Migrator{
+		pgDB:      pgDB,
+		dataDir:   dataDir,
+		usersPath: filepath.Join(dataDir, "users.bson"),
+		cardsPath: filepath.Join(dataDir, "usercards.bson"),
+		batchSize: 1000,
+		stats: MigrationStats{
+			Tables:    make(map[string]*TableStats),
+			StartTime: time.Now(),
+		},
+		collNames: map[string]string{
+			"collections":     "collections",
+			"cards":           "cards",
+			"users":           "users",
+			"usercards":       "usercards",
+			"claims":          "claims",
+			"auctions":        "auctions",
+			"usereffects":     "usereffects",
+			"userquests":      "userquests",
+			"userinventories": "userinventories",
+		},
+		fillMissingFromJSON: true,
+	}
 }
 
 // Legacy constructor for backward compatibility
 func NewLegacyMigrator(pgDB *bun.DB, usersPath, cardsPath string) *Migrator {
-    return &Migrator{
-        pgDB:      pgDB,
-        usersPath: usersPath,
-        cardsPath: cardsPath,
-        batchSize: 1000,
-    }
+	return &Migrator{
+		pgDB:      pgDB,
+		usersPath: usersPath,
+		cardsPath: cardsPath,
+		batchSize: 1000,
+	}
 }
 
 // SetBatchSize overrides the default batch size for inserts (useful for poolers/timeouts)
 func (m *Migrator) SetBatchSize(size int) {
-    if size > 0 {
-        m.batchSize = size
-    }
+	if size > 0 {
+		m.batchSize = size
+	}
 }
 
 // SetSleepBetween sets an optional sleep between batch inserts (milliseconds)
 func (m *Migrator) SetSleepBetween(ms int) {
-    if ms > 0 {
-        m.sleepBetween = time.Duration(ms) * time.Millisecond
-    }
+	if ms > 0 {
+		m.sleepBetween = time.Duration(ms) * time.Millisecond
+	}
 }
 
 // SetInsertMode sets insert mode: "batch" (default) or "single"
 func (m *Migrator) SetInsertMode(mode string) {
-    if mode == "single" {
-        m.insertSingle = true
-    } else {
-        m.insertSingle = false
-    }
+	if mode == "single" {
+		m.insertSingle = true
+	} else {
+		m.insertSingle = false
+	}
 }
 
 // SetAutoCreateMissingCards toggles creating placeholder cards for missing IDs
@@ -119,124 +121,124 @@ func (m *Migrator) UsePool(pool *pgxpool.Pool) { m.pool = pool }
 
 // loadJSONCaches loads cards.json and collections.json into memory maps (lazy)
 func (m *Migrator) loadJSONCaches() error {
-    if m.jsonCardsByID != nil && m.jsonCollectionsByID != nil {
-        return nil
-    }
+	if m.jsonCardsByID != nil && m.jsonCollectionsByID != nil {
+		return nil
+	}
 
-    // Resolve paths (prefer dataDir, fallback to cmd path)
-    cardsPath := filepath.Join(m.dataDir, "cards.json")
-    if _, err := os.Stat(cardsPath); err != nil {
-        alt := filepath.Join("bottemplate", "cmd", "migrate", "cards.json")
-        if _, err2 := os.Stat(alt); err2 == nil {
-            cardsPath = alt
-        } else {
-            return fmt.Errorf("cards.json not found in %s or %s", m.dataDir, alt)
-        }
-    }
+	// Resolve paths (prefer dataDir, fallback to cmd path)
+	cardsPath := filepath.Join(m.dataDir, "cards.json")
+	if _, err := os.Stat(cardsPath); err != nil {
+		alt := filepath.Join("bottemplate", "cmd", "migrate", "cards.json")
+		if _, err2 := os.Stat(alt); err2 == nil {
+			cardsPath = alt
+		} else {
+			return fmt.Errorf("cards.json not found in %s or %s", m.dataDir, alt)
+		}
+	}
 
-    collsPath := filepath.Join(m.dataDir, "collections.json")
-    if _, err := os.Stat(collsPath); err != nil {
-        alt := filepath.Join("bottemplate", "cmd", "migrate", "collections.json")
-        if _, err2 := os.Stat(alt); err2 == nil {
-            collsPath = alt
-        } else {
-            return fmt.Errorf("collections.json not found in %s or %s", m.dataDir, alt)
-        }
-    }
+	collsPath := filepath.Join(m.dataDir, "collections.json")
+	if _, err := os.Stat(collsPath); err != nil {
+		alt := filepath.Join("bottemplate", "cmd", "migrate", "collections.json")
+		if _, err2 := os.Stat(alt); err2 == nil {
+			collsPath = alt
+		} else {
+			return fmt.Errorf("collections.json not found in %s or %s", m.dataDir, alt)
+		}
+	}
 
-    // Load cards JSON
-    var jsonCards []JSONCard
-    if err := readJSONFile(cardsPath, &jsonCards); err != nil {
-        return fmt.Errorf("failed to load cards.json: %w", err)
-    }
-    m.jsonCardsByID = make(map[int64]JSONCard, len(jsonCards))
-    for _, jc := range jsonCards {
-        m.jsonCardsByID[jc.ID] = jc
-    }
+	// Load cards JSON
+	var jsonCards []JSONCard
+	if err := readJSONFile(cardsPath, &jsonCards); err != nil {
+		return fmt.Errorf("failed to load cards.json: %w", err)
+	}
+	m.jsonCardsByID = make(map[int64]JSONCard, len(jsonCards))
+	for _, jc := range jsonCards {
+		m.jsonCardsByID[jc.ID] = jc
+	}
 
-    // Load collections JSON
-    var jsonCollections []JSONCollection
-    if err := readJSONFile(collsPath, &jsonCollections); err != nil {
-        return fmt.Errorf("failed to load collections.json: %w", err)
-    }
-    m.jsonCollectionsByID = make(map[string]JSONCollection, len(jsonCollections))
-    for _, jcol := range jsonCollections {
-        m.jsonCollectionsByID[jcol.ID] = jcol
-    }
-    return nil
+	// Load collections JSON
+	var jsonCollections []JSONCollection
+	if err := readJSONFile(collsPath, &jsonCollections); err != nil {
+		return fmt.Errorf("failed to load collections.json: %w", err)
+	}
+	m.jsonCollectionsByID = make(map[string]JSONCollection, len(jsonCollections))
+	for _, jcol := range jsonCollections {
+		m.jsonCollectionsByID[jcol.ID] = jcol
+	}
+	return nil
 }
 
 // ensureCardFromJSON inserts a card by ID from JSON definitions if present
 func (m *Migrator) ensureCardFromJSON(ctx context.Context, cardID int64) (bool, error) {
-    if m.jsonCardsByID == nil {
-        if err := m.loadJSONCaches(); err != nil {
-            return false, err
-        }
-    }
-    jc, ok := m.jsonCardsByID[cardID]
-    if !ok {
-        return false, nil // Not found in JSON
-    }
+	if m.jsonCardsByID == nil {
+		if err := m.loadJSONCaches(); err != nil {
+			return false, err
+		}
+	}
+	jc, ok := m.jsonCardsByID[cardID]
+	if !ok {
+		return false, nil // Not found in JSON
+	}
 
-    // Ensure collection exists (from JSON collections cache if possible)
-    if m.jsonCollectionsByID == nil {
-        if err := m.loadJSONCaches(); err != nil {
-            return false, err
-        }
-    }
-    if _, ok := m.jsonCollectionsByID[jc.Col]; ok {
-        _ = m.ensureCollection(ctx, jc.Col, m.jsonCollectionsByID[jc.Col].Name)
-    } else {
-        _ = m.ensureCollection(ctx, jc.Col, jc.Col)
-    }
+	// Ensure collection exists (from JSON collections cache if possible)
+	if m.jsonCollectionsByID == nil {
+		if err := m.loadJSONCaches(); err != nil {
+			return false, err
+		}
+	}
+	if _, ok := m.jsonCollectionsByID[jc.Col]; ok {
+		_ = m.ensureCollection(ctx, jc.Col, m.jsonCollectionsByID[jc.Col].Name)
+	} else {
+		_ = m.ensureCollection(ctx, jc.Col, jc.Col)
+	}
 
-    // Build card from JSON
-    tags := convertTags(jc.Tags)
-    now := time.Now()
-    card := &models.Card{
-        ID:        cardID,
-        Name:      cleanseString(jc.Name),
-        Level:     jc.Level,
-        Animated:  jc.Animated,
-        ColID:     jc.Col,
-        Tags:      tags,
-        CreatedAt: now,
-        UpdatedAt: now,
-    }
+	// Build card from JSON
+	tags := convertTags(jc.Tags)
+	now := time.Now()
+	card := &models.Card{
+		ID:        cardID,
+		Name:      cleanseString(jc.Name),
+		Level:     jc.Level,
+		Animated:  jc.Animated,
+		ColID:     jc.Col,
+		Tags:      tags,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
 
-    _, err := m.pgDB.NewInsert().Model(card).On("CONFLICT (id) DO NOTHING").Exec(ctx)
-    if err != nil {
-        return false, fmt.Errorf("failed to insert card from JSON id=%d: %w", cardID, err)
-    }
-    return true, nil
+	_, err := m.pgDB.NewInsert().Model(card).On("CONFLICT (id) DO NOTHING").Exec(ctx)
+	if err != nil {
+		return false, fmt.Errorf("failed to insert card from JSON id=%d: %w", cardID, err)
+	}
+	return true, nil
 }
 
 // UseMongo enables direct-from-Mongo migration mode
 func (m *Migrator) UseMongo(client *mongo.Client, dbName string) {
-    if client != nil && dbName != "" {
-        m.mongoDB = client.Database(dbName)
-    }
+	if client != nil && dbName != "" {
+		m.mongoDB = client.Database(dbName)
+	}
 }
 
 // SetMongoCollectionName overrides the collection name for a given kind (e.g., "cards", "collections")
 func (m *Migrator) SetMongoCollectionName(kind, name string) {
-    if m.collNames == nil {
-        m.collNames = map[string]string{}
-    }
-    if kind != "" && name != "" {
-        m.collNames[kind] = name
-    }
+	if m.collNames == nil {
+		m.collNames = map[string]string{}
+	}
+	if kind != "" && name != "" {
+		m.collNames[kind] = name
+	}
 }
 
 func (m *Migrator) getColl(kind, defaultName string) *mongo.Collection {
-    if m.mongoDB == nil {
-        return nil
-    }
-    name := defaultName
-    if v, ok := m.collNames[kind]; ok && v != "" {
-        name = v
-    }
-    return m.mongoDB.Collection(name)
+	if m.mongoDB == nil {
+		return nil
+	}
+	name := defaultName
+	if v, ok := m.collNames[kind]; ok && v != "" {
+		name = v
+	}
+	return m.mongoDB.Collection(name)
 }
 
 func (m *Migrator) MigrateAll(ctx context.Context) error {
@@ -290,382 +292,443 @@ func (m *Migrator) MigrateAll(ctx context.Context) error {
 
 // MigrateAllFromMongo migrates data directly from a live MongoDB database
 func (m *Migrator) MigrateAllFromMongo(ctx context.Context) error {
-    if m.mongoDB == nil {
-        return fmt.Errorf("mongoDB not configured; call UseMongo first")
-    }
+	if m.mongoDB == nil {
+		return fmt.Errorf("mongoDB not configured; call UseMongo first")
+	}
 
-    logProgress("Starting direct MongoDB migration")
+	logProgress("Starting direct MongoDB migration")
 
-    // Initialize statistics
-    if m.stats.Tables == nil {
-        m.stats.Tables = make(map[string]*TableStats)
-    }
-    m.stats.StartTime = time.Now()
+	// Initialize statistics
+	if m.stats.Tables == nil {
+		m.stats.Tables = make(map[string]*TableStats)
+	}
+	m.stats.StartTime = time.Now()
 
-    steps := []struct {
-        name string
-        fn   func(context.Context) error
-    }{
-        {"collections_mongo", m.ImportCollectionsFromMongo},
-        {"cards_mongo", m.ImportCardsFromMongo},
-        {"users_mongo", m.MigrateUsersFromMongo},
-        {"user_cards_mongo", m.MigrateUserCardsFromMongo},
-        {"claims_mongo", m.MigrateClaimsFromMongo},
-        {"auctions_mongo", m.MigrateAuctionsFromMongo},
-        {"user_effects_mongo", m.MigrateUserEffectsFromMongo},
-        {"user_quests_mongo", m.MigrateUserQuestsFromMongo},
-        {"user_inventories_mongo", m.MigrateUserInventoriesFromMongo},
-    }
+	steps := []struct {
+		name string
+		fn   func(context.Context) error
+	}{
+		{"collections_mongo", m.ImportCollectionsFromMongo},
+		{"cards_mongo", m.ImportCardsFromMongo},
+		{"users_mongo", m.MigrateUsersFromMongo},
+		{"user_cards_mongo", m.MigrateUserCardsFromMongo},
+		{"claims_mongo", m.MigrateClaimsFromMongo},
+		{"auctions_mongo", m.MigrateAuctionsFromMongo},
+		{"user_effects_mongo", m.MigrateUserEffectsFromMongo},
+		{"user_quests_mongo", m.MigrateUserQuestsFromMongo},
+		{"user_inventories_mongo", m.MigrateUserInventoriesFromMongo},
+	}
 
-    for _, s := range steps {
-        logProgress(fmt.Sprintf("Starting migration step: %s", s.name))
-        if err := s.fn(ctx); err != nil {
-            return fmt.Errorf("migration failed at step %s: %w", s.name, err)
-        }
-        logProgress(fmt.Sprintf("Completed migration step: %s", s.name))
-    }
+	for _, s := range steps {
+		logProgress(fmt.Sprintf("Starting migration step: %s", s.name))
+		if err := s.fn(ctx); err != nil {
+			return fmt.Errorf("migration failed at step %s: %w", s.name, err)
+		}
+		logProgress(fmt.Sprintf("Completed migration step: %s", s.name))
+	}
 
-    m.stats.EndTime = time.Now()
-    if err := m.generateMigrationReport(); err != nil {
-        slog.Error("Failed to generate migration report", "error", err)
-    }
-    // Ensure cards were seeded; if empty, fall back to JSON
-    count, err := m.pgDB.NewSelect().Model((*models.Card)(nil)).Count(ctx)
-    if err == nil && count == 0 {
-        logProgress("Cards table is empty after Mongo import. Falling back to JSON seeds if available...")
-        _ = m.ImportCollectionsFromJSON(ctx)
-        _ = m.ImportCardsFromJSON(ctx)
-    }
+	m.stats.EndTime = time.Now()
+	if err := m.generateMigrationReport(); err != nil {
+		slog.Error("Failed to generate migration report", "error", err)
+	}
+	// Ensure cards were seeded; if empty, fall back to JSON
+	count, err := m.pgDB.NewSelect().Model((*models.Card)(nil)).Count(ctx)
+	if err == nil && count == 0 {
+		logProgress("Cards table is empty after Mongo import. Falling back to JSON seeds if available...")
+		_ = m.ImportCollectionsFromJSON(ctx)
+		_ = m.ImportCardsFromJSON(ctx)
+	}
 
-    logProgress("Direct Mongo migration completed successfully!")
-    m.logFinalStats()
-    return nil
+	logProgress("Direct Mongo migration completed successfully!")
+	m.logFinalStats()
+	return nil
 }
 
 // ImportCollectionsFromMongo imports collections from live Mongo
 func (m *Migrator) ImportCollectionsFromMongo(ctx context.Context) error {
-    if m.mongoDB == nil {
-        return nil
-    }
-    col := m.getColl("collections", "collections")
-    cur, err := col.Find(ctx, bson.D{})
-    if err != nil {
-        logProgress("collections collection not found or query failed; skipping")
-        return nil
-    }
-    defer cur.Close(ctx)
+	if m.mongoDB == nil {
+		return nil
+	}
+	col := m.getColl("collections", "collections")
+	cur, err := col.Find(ctx, bson.D{})
+	if err != nil {
+		logProgress("collections collection not found or query failed; skipping")
+		return nil
+	}
+	defer cur.Close(ctx)
 
-    var batch []*models.Collection
-    for cur.Next(ctx) {
-        var mc MongoCollection
-        if err := cur.Decode(&mc); err != nil {
-            continue
-        }
-        batch = append(batch, m.convertCollection(mc))
-        if len(batch) >= m.batchSize {
-            if err := m.batchInsertCollections(ctx, batch); err != nil {
-                return err
-            }
-            batch = batch[:0]
-        }
-    }
-    if err := cur.Err(); err != nil {
-        return err
-    }
-    if len(batch) > 0 {
-        if err := m.batchInsertCollections(ctx, batch); err != nil {
-            return err
-        }
-    }
-    return nil
+	var batch []*models.Collection
+	for cur.Next(ctx) {
+		var mc MongoCollection
+		if err := cur.Decode(&mc); err != nil {
+			continue
+		}
+		batch = append(batch, m.convertCollection(mc))
+		if len(batch) >= m.batchSize {
+			if err := m.batchInsertCollections(ctx, batch); err != nil {
+				return err
+			}
+			batch = batch[:0]
+		}
+	}
+	if err := cur.Err(); err != nil {
+		return err
+	}
+	if len(batch) > 0 {
+		if err := m.batchInsertCollections(ctx, batch); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // ImportCardsFromMongo imports cards from live Mongo
 func (m *Migrator) ImportCardsFromMongo(ctx context.Context) error {
-    if m.mongoDB == nil {
-        return nil
-    }
-    col := m.getColl("cards", "cards")
-    cur, err := col.Find(ctx, bson.D{})
-    if err != nil {
-        logProgress("cards collection not found or query failed; skipping")
-        return nil
-    }
-    defer cur.Close(ctx)
+	if m.mongoDB == nil {
+		return nil
+	}
+	col := m.getColl("cards", "cards")
+	cur, err := col.Find(ctx, bson.D{})
+	if err != nil {
+		logProgress("cards collection not found or query failed; skipping")
+		return nil
+	}
+	defer cur.Close(ctx)
 
-    var batch []*models.Card
-    for cur.Next(ctx) {
-        var mc MongoCard
-        if err := cur.Decode(&mc); err != nil {
-            continue
-        }
-        batch = append(batch, m.convertMongoCard(mc))
-        if len(batch) >= m.batchSize {
-            if err := m.batchInsertCards(ctx, batch); err != nil {
-                return err
-            }
-            batch = batch[:0]
-        }
-    }
-    if err := cur.Err(); err != nil {
-        return err
-    }
-    if len(batch) > 0 {
-        if err := m.batchInsertCards(ctx, batch); err != nil {
-            return err
-        }
-    }
-    return nil
+	var batch []*models.Card
+	for cur.Next(ctx) {
+		var mc MongoCard
+		if err := cur.Decode(&mc); err != nil {
+			continue
+		}
+		batch = append(batch, m.convertMongoCard(mc))
+		if len(batch) >= m.batchSize {
+			if err := m.batchInsertCards(ctx, batch); err != nil {
+				return err
+			}
+			batch = batch[:0]
+		}
+	}
+	if err := cur.Err(); err != nil {
+		return err
+	}
+	if len(batch) > 0 {
+		if err := m.batchInsertCards(ctx, batch); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // MigrateUsersFromMongo migrates users from live Mongo
 func (m *Migrator) MigrateUsersFromMongo(ctx context.Context) error {
-    if m.mongoDB == nil {
-        return nil
-    }
-    col := m.mongoDB.Collection("users")
-    cur, err := col.Find(ctx, bson.D{})
-    if err != nil {
-        return fmt.Errorf("failed to query users: %w", err)
-    }
-    defer cur.Close(ctx)
+	if m.mongoDB == nil {
+		return nil
+	}
+	col := m.mongoDB.Collection("users")
 
-    var users []MongoUser
-    for cur.Next(ctx) {
-        var mu MongoUser
-        if err := cur.Decode(&mu); err == nil {
-            users = append(users, mu)
-        }
-    }
-    if err := cur.Err(); err != nil {
-        return err
-    }
-    return m.processUsers(ctx, users)
+	var users []MongoUser
+	var lastID primitive.ObjectID
+	const pageSize int64 = 250
+	retryCount := 0
+
+	for {
+		filter := bson.D{}
+		if !lastID.IsZero() {
+			filter = bson.D{{Key: "_id", Value: bson.D{{Key: "$gt", Value: lastID}}}}
+		}
+
+		pageCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+		cur, err := col.Find(pageCtx, filter, options.Find().
+			SetSort(bson.D{{Key: "_id", Value: 1}}).
+			SetLimit(pageSize).
+			SetBatchSize(25).
+			SetMaxTime(10*time.Second))
+		if err != nil {
+			cancel()
+			retryCount++
+			if retryCount <= 5 {
+				logProgress(fmt.Sprintf("Users query interrupted after %d decoded users; retrying (%d/5): %v", len(users), retryCount, err))
+				time.Sleep(time.Duration(retryCount) * 2 * time.Second)
+				continue
+			}
+			return fmt.Errorf("failed to query users after retries: %w", err)
+		}
+
+		pageCount := 0
+		for cur.Next(pageCtx) {
+			var mu MongoUser
+			if err := cur.Decode(&mu); err == nil {
+				users = append(users, mu)
+				lastID = mu.ID
+				pageCount++
+				retryCount = 0
+			}
+		}
+
+		err = cur.Err()
+		cur.Close(pageCtx)
+		cancel()
+		if err != nil {
+			retryCount++
+			if retryCount <= 5 {
+				logProgress(fmt.Sprintf("Users cursor interrupted after %d decoded users; retrying from _id %s (%d/5): %v",
+					len(users), lastID.Hex(), retryCount, err))
+				time.Sleep(time.Duration(retryCount) * 2 * time.Second)
+				continue
+			}
+			return fmt.Errorf("failed reading users after retries: %w", err)
+		}
+
+		if pageCount == 0 {
+			break
+		}
+		logProgress(fmt.Sprintf("Read %d users from Mongo so far", len(users)))
+		if int64(pageCount) < pageSize {
+			break
+		}
+	}
+
+	return m.processUsers(ctx, users)
 }
 
 // MigrateUserCardsFromMongo migrates user cards from live Mongo
 func (m *Migrator) MigrateUserCardsFromMongo(ctx context.Context) error {
-    if m.mongoDB == nil {
-        return nil
-    }
-    col := m.mongoDB.Collection("usercards")
-    cur, err := col.Find(ctx, bson.D{})
-    if err != nil {
-        return fmt.Errorf("failed to query usercards: %w", err)
-    }
-    defer cur.Close(ctx)
+	if m.mongoDB == nil {
+		return nil
+	}
+	col := m.mongoDB.Collection("usercards")
+	cur, err := col.Find(ctx, bson.D{})
+	if err != nil {
+		return fmt.Errorf("failed to query usercards: %w", err)
+	}
+	defer cur.Close(ctx)
 
-    var cards []MongoUserCard
-    for cur.Next(ctx) {
-        var mc MongoUserCard
-        if err := cur.Decode(&mc); err == nil {
-            cards = append(cards, mc)
-        }
-    }
-    if err := cur.Err(); err != nil {
-        return err
-    }
-    return m.processUserCards(ctx, cards)
+	var cards []MongoUserCard
+	for cur.Next(ctx) {
+		var mc MongoUserCard
+		if err := cur.Decode(&mc); err == nil {
+			cards = append(cards, mc)
+		}
+	}
+	if err := cur.Err(); err != nil {
+		return err
+	}
+	return m.processUserCards(ctx, cards)
 }
 
 // MigrateClaimsFromMongo migrates claims from live Mongo
 func (m *Migrator) MigrateClaimsFromMongo(ctx context.Context) error {
-    if m.mongoDB == nil {
-        return nil
-    }
-    col := m.mongoDB.Collection("claims")
-    cur, err := col.Find(ctx, bson.D{})
-    if err != nil {
-        logProgress("claims collection not found; skipping")
-        return nil
-    }
-    defer cur.Close(ctx)
+	if m.mongoDB == nil {
+		return nil
+	}
+	col := m.mongoDB.Collection("claims")
+	cur, err := col.Find(ctx, bson.D{})
+	if err != nil {
+		logProgress("claims collection not found; skipping")
+		return nil
+	}
+	defer cur.Close(ctx)
 
-    var batch []*models.Claim
-    for cur.Next(ctx) {
-        var mc MongoClaim
-        if err := cur.Decode(&mc); err != nil {
-            continue
-        }
-        batch = append(batch, m.convertClaims(mc)...)
-        if len(batch) >= m.batchSize {
-            if err := m.batchInsertClaims(ctx, batch); err != nil {
-                return err
-            }
-            batch = batch[:0]
-        }
-    }
-    if err := cur.Err(); err != nil {
-        return err
-    }
-    if len(batch) > 0 {
-        if err := m.batchInsertClaims(ctx, batch); err != nil {
-            return err
-        }
-    }
-    return nil
+	var batch []*models.Claim
+	for cur.Next(ctx) {
+		var mc MongoClaim
+		if err := cur.Decode(&mc); err != nil {
+			continue
+		}
+		batch = append(batch, m.convertClaims(mc)...)
+		if len(batch) >= m.batchSize {
+			if err := m.batchInsertClaims(ctx, batch); err != nil {
+				return err
+			}
+			batch = batch[:0]
+		}
+	}
+	if err := cur.Err(); err != nil {
+		return err
+	}
+	if len(batch) > 0 {
+		if err := m.batchInsertClaims(ctx, batch); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // MigrateAuctionsFromMongo migrates auctions and bids from live Mongo
 func (m *Migrator) MigrateAuctionsFromMongo(ctx context.Context) error {
-    if m.mongoDB == nil {
-        return nil
-    }
-    col := m.mongoDB.Collection("auctions")
-    cur, err := col.Find(ctx, bson.D{})
-    if err != nil {
-        logProgress("auctions collection not found; skipping")
-        return nil
-    }
-    defer cur.Close(ctx)
+	if m.mongoDB == nil {
+		return nil
+	}
+	col := m.mongoDB.Collection("auctions")
+	cur, err := col.Find(ctx, bson.D{})
+	if err != nil {
+		logProgress("auctions collection not found; skipping")
+		return nil
+	}
+	defer cur.Close(ctx)
 
-    var auctions []*models.Auction
-    var bids []*models.AuctionBid
-    for cur.Next(ctx) {
-        var ma MongoAuction
-        if err := cur.Decode(&ma); err != nil {
-            continue
-        }
-        a, bs := m.convertAuction(ma)
-        auctions = append(auctions, a)
-        bids = append(bids, bs...)
-        if len(auctions) >= m.batchSize {
-            if err := m.batchInsertAuctions(ctx, auctions); err != nil {
-                return err
-            }
-            if err := m.batchInsertAuctionBids(ctx, bids); err != nil {
-                return err
-            }
-            auctions = auctions[:0]
-            bids = bids[:0]
-        }
-    }
-    if err := cur.Err(); err != nil {
-        return err
-    }
-    if len(auctions) > 0 {
-        if err := m.batchInsertAuctions(ctx, auctions); err != nil {
-            return err
-        }
-        if err := m.batchInsertAuctionBids(ctx, bids); err != nil {
-            return err
-        }
-    }
-    return nil
+	var auctions []*models.Auction
+	var bids []*models.AuctionBid
+	for cur.Next(ctx) {
+		var ma MongoAuction
+		if err := cur.Decode(&ma); err != nil {
+			continue
+		}
+		a, bs := m.convertAuction(ma)
+		auctions = append(auctions, a)
+		bids = append(bids, bs...)
+		if len(auctions) >= m.batchSize {
+			if err := m.batchInsertAuctions(ctx, auctions); err != nil {
+				return err
+			}
+			if err := m.batchInsertAuctionBids(ctx, bids); err != nil {
+				return err
+			}
+			auctions = auctions[:0]
+			bids = bids[:0]
+		}
+	}
+	if err := cur.Err(); err != nil {
+		return err
+	}
+	if len(auctions) > 0 {
+		if err := m.batchInsertAuctions(ctx, auctions); err != nil {
+			return err
+		}
+		if err := m.batchInsertAuctionBids(ctx, bids); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // MigrateUserEffectsFromMongo migrates user effects from live Mongo
 func (m *Migrator) MigrateUserEffectsFromMongo(ctx context.Context) error {
-    if m.mongoDB == nil {
-        return nil
-    }
-    col := m.mongoDB.Collection("usereffects")
-    cur, err := col.Find(ctx, bson.D{})
-    if err != nil {
-        logProgress("usereffects collection not found; skipping")
-        return nil
-    }
-    defer cur.Close(ctx)
+	if m.mongoDB == nil {
+		return nil
+	}
+	col := m.mongoDB.Collection("usereffects")
+	cur, err := col.Find(ctx, bson.D{})
+	if err != nil {
+		logProgress("usereffects collection not found; skipping")
+		return nil
+	}
+	defer cur.Close(ctx)
 
-    var batch []*models.UserEffect
-    for cur.Next(ctx) {
-        var me MongoUserEffect
-        if err := cur.Decode(&me); err != nil {
-            continue
-        }
-        batch = append(batch, m.convertUserEffect(me))
-        if len(batch) >= m.batchSize {
-            if err := m.batchInsertUserEffects(ctx, batch); err != nil {
-                return err
-            }
-            batch = batch[:0]
-        }
-    }
-    if err := cur.Err(); err != nil {
-        return err
-    }
-    if len(batch) > 0 {
-        if err := m.batchInsertUserEffects(ctx, batch); err != nil {
-            return err
-        }
-    }
-    return nil
+	var batch []*models.UserEffect
+	for cur.Next(ctx) {
+		var me MongoUserEffect
+		if err := cur.Decode(&me); err != nil {
+			continue
+		}
+		batch = append(batch, m.convertUserEffect(me))
+		if len(batch) >= m.batchSize {
+			if err := m.batchInsertUserEffects(ctx, batch); err != nil {
+				return err
+			}
+			batch = batch[:0]
+		}
+	}
+	if err := cur.Err(); err != nil {
+		return err
+	}
+	if len(batch) > 0 {
+		if err := m.batchInsertUserEffects(ctx, batch); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // MigrateUserQuestsFromMongo migrates user quests from live Mongo
 func (m *Migrator) MigrateUserQuestsFromMongo(ctx context.Context) error {
-    if m.mongoDB == nil {
-        return nil
-    }
-    col := m.mongoDB.Collection("userquests")
-    cur, err := col.Find(ctx, bson.D{})
-    if err != nil {
-        logProgress("userquests collection not found; skipping")
-        return nil
-    }
-    defer cur.Close(ctx)
+	if m.mongoDB == nil {
+		return nil
+	}
+	col := m.mongoDB.Collection("userquests")
+	cur, err := col.Find(ctx, bson.D{})
+	if err != nil {
+		logProgress("userquests collection not found; skipping")
+		return nil
+	}
+	defer cur.Close(ctx)
 
-    var batch []*models.UserQuest
-    for cur.Next(ctx) {
-        var mq MongoUserQuest
-        if err := cur.Decode(&mq); err != nil {
-            continue
-        }
-        batch = append(batch, m.convertUserQuest(mq))
-        if len(batch) >= m.batchSize {
-            if err := m.batchInsertUserQuests(ctx, batch); err != nil {
-                return err
-            }
-            batch = batch[:0]
-        }
-    }
-    if err := cur.Err(); err != nil {
-        return err
-    }
-    if len(batch) > 0 {
-        if err := m.batchInsertUserQuests(ctx, batch); err != nil {
-            return err
-        }
-    }
-    return nil
+	var batch []*models.UserQuest
+	for cur.Next(ctx) {
+		var mq MongoUserQuest
+		if err := cur.Decode(&mq); err != nil {
+			continue
+		}
+		batch = append(batch, m.convertUserQuest(mq))
+		if len(batch) >= m.batchSize {
+			if err := m.batchInsertUserQuests(ctx, batch); err != nil {
+				return err
+			}
+			batch = batch[:0]
+		}
+	}
+	if err := cur.Err(); err != nil {
+		return err
+	}
+	if len(batch) > 0 {
+		if err := m.batchInsertUserQuests(ctx, batch); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // MigrateUserInventoriesFromMongo migrates user inventories from live Mongo
 func (m *Migrator) MigrateUserInventoriesFromMongo(ctx context.Context) error {
-    if m.mongoDB == nil {
-        return nil
-    }
-    col := m.mongoDB.Collection("userinventories")
-    cur, err := col.Find(ctx, bson.D{})
-    if err != nil {
-        logProgress("userinventories collection not found; skipping")
-        return nil
-    }
-    defer cur.Close(ctx)
+	if m.mongoDB == nil {
+		return nil
+	}
+	col := m.mongoDB.Collection("userinventories")
+	cur, err := col.Find(ctx, bson.D{})
+	if err != nil {
+		logProgress("userinventories collection not found; skipping")
+		return nil
+	}
+	defer cur.Close(ctx)
 
-    var batch []*models.UserRecipe
-    for cur.Next(ctx) {
-        var mi MongoUserInventory
-        if err := cur.Decode(&mi); err != nil {
-            continue
-        }
-        batch = append(batch, m.convertUserInventory(mi))
-        if len(batch) >= m.batchSize {
-            if err := m.batchInsertUserRecipes(ctx, batch); err != nil {
-                return err
-            }
-            batch = batch[:0]
-        }
-    }
-    if err := cur.Err(); err != nil {
-        return err
-    }
-    if len(batch) > 0 {
-        if err := m.batchInsertUserRecipes(ctx, batch); err != nil {
-            return err
-        }
-    }
-    return nil
+	var batch []*models.UserRecipe
+	seenKeys := make(map[string]struct{})
+	duplicateCount := 0
+	importedCount := 0
+	for cur.Next(ctx) {
+		var mi MongoUserInventory
+		if err := cur.Decode(&mi); err != nil {
+			continue
+		}
+
+		recipeKey := fmt.Sprintf("%s:%s", mi.UserID, mi.ItemID)
+		if _, exists := seenKeys[recipeKey]; exists {
+			duplicateCount++
+			continue
+		}
+		seenKeys[recipeKey] = struct{}{}
+
+		batch = append(batch, m.convertUserInventory(mi))
+		importedCount++
+		if len(batch) >= m.batchSize {
+			if err := m.batchInsertUserRecipes(ctx, batch); err != nil {
+				return err
+			}
+			batch = batch[:0]
+		}
+	}
+	if err := cur.Err(); err != nil {
+		return err
+	}
+	if len(batch) > 0 {
+		if err := m.batchInsertUserRecipes(ctx, batch); err != nil {
+			return err
+		}
+	}
+	logProgress(fmt.Sprintf("User recipes migration completed: %d unique recipes imported, %d duplicates skipped",
+		importedCount, duplicateCount))
+	return nil
 }
 
 // ImportCollectionsFromJSON imports collections from JSON file (complete dataset)
@@ -1133,8 +1196,8 @@ func (m *Migrator) MigrateUserCards(ctx context.Context) error {
 }
 
 func (m *Migrator) processUserCards(ctx context.Context, mongoCards []MongoUserCard) error {
-    // First, get all valid card IDs from the cards table
-    var validCardIDs []int64
+	// First, get all valid card IDs from the cards table
+	var validCardIDs []int64
 	err := m.pgDB.NewSelect().
 		Model((*models.Card)(nil)).
 		Column("id").
@@ -1158,12 +1221,12 @@ func (m *Migrator) processUserCards(ctx context.Context, mongoCards []MongoUserC
 
 	logProgress(fmt.Sprintf("Cards table stats: total=%d, range=%d-%d", len(validCardIDs), minCardID, maxCardID))
 
-    // Create a file for logging skipped cards
-    skippedFile, err := os.Create("skipped_cards.log")
-    if err != nil {
-        return fmt.Errorf("failed to create skipped cards log file: %w", err)
-    }
-    defer skippedFile.Close()
+	// Create a file for logging skipped cards
+	skippedFile, err := os.Create("skipped_cards.log")
+	if err != nil {
+		return fmt.Errorf("failed to create skipped cards log file: %w", err)
+	}
+	defer skippedFile.Close()
 
 	// Write header to the file
 	_, err = fmt.Fprintf(skippedFile, "timestamp,user_id,card_id,reason\n")
@@ -1171,20 +1234,20 @@ func (m *Migrator) processUserCards(ctx context.Context, mongoCards []MongoUserC
 		return fmt.Errorf("failed to write header to log file: %w", err)
 	}
 
-    // Optional: log of auto-created cards
-    var autoFile *os.File
-    if m.autoCreateMissingCards {
-        f, ferr := os.Create("cards_autocreated.log")
-        if ferr == nil {
-            autoFile = f
-            _, _ = fmt.Fprintf(autoFile, "timestamp,card_id,action\n")
-            defer autoFile.Close()
-        }
-    }
+	// Optional: log of auto-created cards
+	var autoFile *os.File
+	if m.autoCreateMissingCards {
+		f, ferr := os.Create("cards_autocreated.log")
+		if ferr == nil {
+			autoFile = f
+			_, _ = fmt.Fprintf(autoFile, "timestamp,card_id,action\n")
+			defer autoFile.Close()
+		}
+	}
 
-    var userCards []*models.UserCard
-    skippedCount := 0
-    timestamp := time.Now().Format("2006-01-02 15:04:05")
+	var userCards []*models.UserCard
+	skippedCount := 0
+	timestamp := time.Now().Format("2006-01-02 15:04:05")
 
 	for _, mongoCard := range mongoCards {
 		if mongoCard.CardID == nil {
@@ -1199,39 +1262,39 @@ func (m *Migrator) processUserCards(ctx context.Context, mongoCards []MongoUserC
 
 		cardID := int64(*mongoCard.CardID)
 
-        // If card ID missing in cards table, try to fill from JSON; otherwise warn/skip
-        if !validCardIDsMap[cardID] {
-            if m.fillMissingFromJSON {
-                ok, jerr := m.ensureCardFromJSON(ctx, cardID)
-                if jerr != nil {
-                    logProgress(fmt.Sprintf("Failed to backfill card %d from JSON: %v", cardID, jerr))
-                }
-                if ok {
-                    validCardIDsMap[cardID] = true
-                } else {
-                    skippedCount++
-                    _, _ = fmt.Fprintf(skippedFile, "%s,%s,%d,missing_from_cards_table_and_json\n",
-                        timestamp, mongoCard.UserID, cardID)
-                    continue
-                }
-            } else if m.autoCreateMissingCards {
-                // fall back to placeholder mode if explicitly enabled
-                _ = m.ensureCollection(ctx, "unknown", "Unknown")
-                now := time.Now()
-                placeholder := &models.Card{ID: cardID, Name: fmt.Sprintf("Unknown Card %d", cardID), Level: 1, Animated: false, ColID: "unknown", Tags: []string{}, CreatedAt: now, UpdatedAt: now}
-                if _, ierr := m.pgDB.NewInsert().Model(placeholder).On("CONFLICT (id) DO NOTHING").Exec(ctx); ierr == nil {
-                    validCardIDsMap[cardID] = true
-                } else {
-                    skippedCount++
-                    _, _ = fmt.Fprintf(skippedFile, "%s,%s,%d,missing_from_cards_table_autocreate_failed\n", timestamp, mongoCard.UserID, cardID)
-                    continue
-                }
-            } else {
-                skippedCount++
-                _, _ = fmt.Fprintf(skippedFile, "%s,%s,%d,missing_from_cards_table\n", timestamp, mongoCard.UserID, cardID)
-                continue
-            }
-        }
+		// If card ID missing in cards table, try to fill from JSON; otherwise warn/skip
+		if !validCardIDsMap[cardID] {
+			if m.fillMissingFromJSON {
+				ok, jerr := m.ensureCardFromJSON(ctx, cardID)
+				if jerr != nil {
+					logProgress(fmt.Sprintf("Failed to backfill card %d from JSON: %v", cardID, jerr))
+				}
+				if ok {
+					validCardIDsMap[cardID] = true
+				} else {
+					skippedCount++
+					_, _ = fmt.Fprintf(skippedFile, "%s,%s,%d,missing_from_cards_table_and_json\n",
+						timestamp, mongoCard.UserID, cardID)
+					continue
+				}
+			} else if m.autoCreateMissingCards {
+				// fall back to placeholder mode if explicitly enabled
+				_ = m.ensureCollection(ctx, "unknown", "Unknown")
+				now := time.Now()
+				placeholder := &models.Card{ID: cardID, Name: fmt.Sprintf("Unknown Card %d", cardID), Level: 1, Animated: false, ColID: "unknown", Tags: []string{}, CreatedAt: now, UpdatedAt: now}
+				if _, ierr := m.pgDB.NewInsert().Model(placeholder).On("CONFLICT (id) DO NOTHING").Exec(ctx); ierr == nil {
+					validCardIDsMap[cardID] = true
+				} else {
+					skippedCount++
+					_, _ = fmt.Fprintf(skippedFile, "%s,%s,%d,missing_from_cards_table_autocreate_failed\n", timestamp, mongoCard.UserID, cardID)
+					continue
+				}
+			} else {
+				skippedCount++
+				_, _ = fmt.Fprintf(skippedFile, "%s,%s,%d,missing_from_cards_table\n", timestamp, mongoCard.UserID, cardID)
+				continue
+			}
+		}
 
 		userCards = append(userCards, &models.UserCard{
 			UserID:    mongoCard.UserID,
@@ -1276,181 +1339,191 @@ func (m *Migrator) processUserCards(ctx context.Context, mongoCards []MongoUserC
 
 // ensureCollection creates a collection row if it does not exist
 func (m *Migrator) ensureCollection(ctx context.Context, id, name string) error {
-    now := time.Now()
-    _, err := m.pgDB.NewInsert().Model(&models.Collection{
-        ID:         id,
-        Name:       name,
-        Origin:     "",
-        Aliases:    []string{},
-        Promo:      false,
-        Compressed: false,
-        Fragments:  false,
-        Tags:       []string{},
-        CreatedAt:  now,
-        UpdatedAt:  now,
-    }).On("CONFLICT (id) DO UPDATE").Set("updated_at = EXCLUDED.updated_at").Exec(ctx)
-    return err
+	now := time.Now()
+	_, err := m.pgDB.NewInsert().Model(&models.Collection{
+		ID:         id,
+		Name:       name,
+		Origin:     "",
+		Aliases:    []string{},
+		Promo:      false,
+		Compressed: false,
+		Fragments:  false,
+		Tags:       []string{},
+		CreatedAt:  now,
+		UpdatedAt:  now,
+	}).On("CONFLICT (id) DO UPDATE").Set("updated_at = EXCLUDED.updated_at").Exec(ctx)
+	return err
 }
 
 func (m *Migrator) batchInsertUsers(ctx context.Context, users []*models.User) error {
-    startTime := time.Now()
-    mode := "batch"
-    if m.useCopy && m.pool != nil { mode = "copy-upsert" }
-    slog.Info("Starting batch insert of users", "count", len(users), "mode", mode)
+	startTime := time.Now()
+	mode := "batch"
+	if m.useCopy && m.pool != nil {
+		mode = "copy-upsert"
+	}
+	slog.Info("Starting batch insert of users", "count", len(users), "mode", mode)
 
-    if m.useCopy && m.pool != nil {
-        if err := m.copyUpsertUsers(ctx, users); err == nil {
-            slog.Info("Users copy-upsert completed", "count", len(users), "took", time.Since(startTime))
-            return nil
-        } else {
-            slog.Warn("Users COPY path failed; falling back to standard upsert", "error", err)
-        }
-    }
+	if m.useCopy && m.pool != nil {
+		if err := m.copyUpsertUsers(ctx, users); err == nil {
+			slog.Info("Users copy-upsert completed", "count", len(users), "took", time.Since(startTime))
+			return nil
+		} else {
+			slog.Warn("Users COPY path failed; falling back to standard upsert", "error", err)
+		}
+	}
 
-    _, err := m.pgDB.NewInsert().
-        Model(&users).
-        On("CONFLICT (discord_id) DO UPDATE").
-        Set("username = EXCLUDED.username").
-        Set("user_stats = EXCLUDED.user_stats").
-        Set("promo_exp = EXCLUDED.promo_exp").
-        Set("joined = EXCLUDED.joined").
-        Set("last_queried_card = EXCLUDED.last_queried_card").
-        Set("last_kofi_claim = EXCLUDED.last_kofi_claim").
-        Set("daily_stats = EXCLUDED.daily_stats").
-        Set("effect_stats = EXCLUDED.effect_stats").
-        Set("cards = EXCLUDED.cards").
-        Set("inventory = EXCLUDED.inventory").
-        Set("completed_cols = EXCLUDED.completed_cols").
-        Set("clouted_cols = EXCLUDED.clouted_cols").
-        Set("achievements = EXCLUDED.achievements").
-        Set("effects = EXCLUDED.effects").
-        Set("wishlist = EXCLUDED.wishlist").
-        Set("preferences = EXCLUDED.preferences").
-        Set("last_daily = EXCLUDED.last_daily").
-        Set("last_train = EXCLUDED.last_train").
-        Set("last_work = EXCLUDED.last_work").
-        Set("last_vote = EXCLUDED.last_vote").
-        Set("last_announce = EXCLUDED.last_announce").
-        Set("last_msg = EXCLUDED.last_msg").
-        Set("hero_slots = EXCLUDED.hero_slots").
-        Set("hero_cooldown = EXCLUDED.hero_cooldown").
-        Set("hero = EXCLUDED.hero").
-        Set("hero_changed = EXCLUDED.hero_changed").
-        Set("hero_submits = EXCLUDED.hero_submits").
-        Set("roles = EXCLUDED.roles").
-        Set("ban = EXCLUDED.ban").
-        Set("premium = EXCLUDED.premium").
-        Set("premium_expires = EXCLUDED.premium_expires").
-        Set("updated_at = EXCLUDED.updated_at").
-        Exec(ctx)
+	_, err := m.pgDB.NewInsert().
+		Model(&users).
+		On("CONFLICT (discord_id) DO UPDATE").
+		Set("username = EXCLUDED.username").
+		Set("user_stats = EXCLUDED.user_stats").
+		Set("promo_exp = EXCLUDED.promo_exp").
+		Set("joined = EXCLUDED.joined").
+		Set("last_queried_card = EXCLUDED.last_queried_card").
+		Set("last_kofi_claim = EXCLUDED.last_kofi_claim").
+		Set("daily_stats = EXCLUDED.daily_stats").
+		Set("effect_stats = EXCLUDED.effect_stats").
+		Set("cards = EXCLUDED.cards").
+		Set("inventory = EXCLUDED.inventory").
+		Set("completed_cols = EXCLUDED.completed_cols").
+		Set("clouted_cols = EXCLUDED.clouted_cols").
+		Set("achievements = EXCLUDED.achievements").
+		Set("effects = EXCLUDED.effects").
+		Set("wishlist = EXCLUDED.wishlist").
+		Set("preferences = EXCLUDED.preferences").
+		Set("last_daily = EXCLUDED.last_daily").
+		Set("last_train = EXCLUDED.last_train").
+		Set("last_work = EXCLUDED.last_work").
+		Set("last_vote = EXCLUDED.last_vote").
+		Set("last_announce = EXCLUDED.last_announce").
+		Set("last_msg = EXCLUDED.last_msg").
+		Set("hero_slots = EXCLUDED.hero_slots").
+		Set("hero_cooldown = EXCLUDED.hero_cooldown").
+		Set("hero = EXCLUDED.hero").
+		Set("hero_changed = EXCLUDED.hero_changed").
+		Set("hero_submits = EXCLUDED.hero_submits").
+		Set("roles = EXCLUDED.roles").
+		Set("ban = EXCLUDED.ban").
+		Set("premium = EXCLUDED.premium").
+		Set("premium_expires = EXCLUDED.premium_expires").
+		Set("updated_at = EXCLUDED.updated_at").
+		Exec(ctx)
 
-    if err != nil {
-        for _, user := range users {
-            _, singleErr := m.pgDB.NewInsert().Model(user).Exec(ctx)
-            if singleErr != nil {
-                slog.Error("Failed to insert user individually", "discord_id", user.DiscordID, "error", singleErr)
-            }
-        }
-        slog.Error("Batch insert of users failed",
-            "error", err,
-            "duration", time.Since(startTime))
-        return fmt.Errorf("batch insert failed: %w", err)
-    }
+	if err != nil {
+		for _, user := range users {
+			_, singleErr := m.pgDB.NewInsert().Model(user).Exec(ctx)
+			if singleErr != nil {
+				slog.Error("Failed to insert user individually", "discord_id", user.DiscordID, "error", singleErr)
+			}
+		}
+		slog.Error("Batch insert of users failed",
+			"error", err,
+			"duration", time.Since(startTime))
+		return fmt.Errorf("batch insert failed: %w", err)
+	}
 
-    slog.Info("Batch insert of users completed",
-        "count", len(users),
-        "duration", time.Since(startTime))
-    return nil
+	slog.Info("Batch insert of users completed",
+		"count", len(users),
+		"duration", time.Since(startTime))
+	return nil
 }
 
 func (m *Migrator) batchInsertUserCards(ctx context.Context, userCards []*models.UserCard) error {
-    startTime := time.Now()
-    mode := "batch"
-    if m.insertSingle { mode = "single" }
-    if m.useCopy { mode = "copy" }
-    logProgress(fmt.Sprintf("Starting batch insert of user cards: %d (mode=%s)", len(userCards), mode))
+	startTime := time.Now()
+	mode := "batch"
+	if m.insertSingle {
+		mode = "single"
+	}
+	if m.useCopy {
+		mode = "copy"
+	}
+	logProgress(fmt.Sprintf("Starting batch insert of user cards: %d (mode=%s)", len(userCards), mode))
 
-    if m.sleepBetween > 0 {
-        time.Sleep(m.sleepBetween)
-    }
+	if m.sleepBetween > 0 {
+		time.Sleep(m.sleepBetween)
+	}
 
-    if m.useCopy && m.pool != nil {
-        if err := m.copyInsertUserCards(ctx, userCards); err != nil {
-            logProgress(fmt.Sprintf("COPY failed, falling back to %s mode: %v", ternary(m.insertSingle, "single", "batch"), err))
-        } else {
-            logProgress(fmt.Sprintf("COPY insert of user cards completed: %d (took %s)", len(userCards), time.Since(startTime)))
-            return nil
-        }
-    }
+	if m.useCopy && m.pool != nil {
+		if err := m.copyInsertUserCards(ctx, userCards); err != nil {
+			logProgress(fmt.Sprintf("COPY failed, falling back to %s mode: %v", ternary(m.insertSingle, "single", "batch"), err))
+		} else {
+			logProgress(fmt.Sprintf("COPY insert of user cards completed: %d (took %s)", len(userCards), time.Since(startTime)))
+			return nil
+		}
+	}
 
-    if m.insertSingle {
-        for i, uc := range userCards {
-            if _, err := m.pgDB.NewInsert().Model(uc).Exec(ctx); err != nil {
-                logProgress(fmt.Sprintf("Insert user card %d/%d failed: %v", i+1, len(userCards), err))
-                return fmt.Errorf("failed to insert user card: %w", err)
-            }
-            if m.sleepBetween > 0 {
-                time.Sleep(m.sleepBetween)
-            }
-        }
-        logProgress(fmt.Sprintf("Single inserts of user cards completed: %d (took %s)", len(userCards), time.Since(startTime)))
-        return nil
-    }
+	if m.insertSingle {
+		for i, uc := range userCards {
+			if _, err := m.pgDB.NewInsert().Model(uc).Exec(ctx); err != nil {
+				logProgress(fmt.Sprintf("Insert user card %d/%d failed: %v", i+1, len(userCards), err))
+				return fmt.Errorf("failed to insert user card: %w", err)
+			}
+			if m.sleepBetween > 0 {
+				time.Sleep(m.sleepBetween)
+			}
+		}
+		logProgress(fmt.Sprintf("Single inserts of user cards completed: %d (took %s)", len(userCards), time.Since(startTime)))
+		return nil
+	}
 
-    if err := m.tryInsertUserCards(ctx, userCards); err != nil {
-        return err
-    }
-    logProgress(fmt.Sprintf("Batch insert of user cards completed: %d (took %s)", len(userCards), time.Since(startTime)))
-    return nil
+	if err := m.tryInsertUserCards(ctx, userCards); err != nil {
+		return err
+	}
+	logProgress(fmt.Sprintf("Batch insert of user cards completed: %d (took %s)", len(userCards), time.Since(startTime)))
+	return nil
 }
 
 func (m *Migrator) tryInsertUserCards(ctx context.Context, userCards []*models.UserCard) error {
-    if _, err := m.pgDB.NewInsert().Model(&userCards).Exec(ctx); err != nil {
-        if isTimeoutErr(err) && len(userCards) > 1 {
-            mid := len(userCards) / 2
-            left := userCards[:mid]
-            right := userCards[mid:]
-            logProgress(fmt.Sprintf("Batch insert timeout. Splitting into %d and %d", len(left), len(right)))
-            if err := m.tryInsertUserCards(ctx, left); err != nil {
-                return err
-            }
-            if err := m.tryInsertUserCards(ctx, right); err != nil {
-                return err
-            }
-            return nil
-        }
-        logProgress(fmt.Sprintf("Batch insert failed: %v", err))
-        return fmt.Errorf("failed to insert user cards batch: %w", err)
-    }
-    return nil
+	if _, err := m.pgDB.NewInsert().Model(&userCards).Exec(ctx); err != nil {
+		if isTimeoutErr(err) && len(userCards) > 1 {
+			mid := len(userCards) / 2
+			left := userCards[:mid]
+			right := userCards[mid:]
+			logProgress(fmt.Sprintf("Batch insert timeout. Splitting into %d and %d", len(left), len(right)))
+			if err := m.tryInsertUserCards(ctx, left); err != nil {
+				return err
+			}
+			if err := m.tryInsertUserCards(ctx, right); err != nil {
+				return err
+			}
+			return nil
+		}
+		logProgress(fmt.Sprintf("Batch insert failed: %v", err))
+		return fmt.Errorf("failed to insert user cards batch: %w", err)
+	}
+	return nil
 }
 
 func isTimeoutErr(err error) bool {
-    if err == nil { return false }
-    s := err.Error()
-    if strings.Contains(s, "i/o timeout") || strings.Contains(s, "timeout") || strings.Contains(s, "context deadline") {
-        return true
-    }
-    return false
+	if err == nil {
+		return false
+	}
+	s := err.Error()
+	if strings.Contains(s, "i/o timeout") || strings.Contains(s, "timeout") || strings.Contains(s, "context deadline") {
+		return true
+	}
+	return false
 }
 
 func ternary(cond bool, a, b string) string {
-    if cond { return a }
-    return b
+	if cond {
+		return a
+	}
+	return b
 }
 
 // copyUpsertUsers performs COPY into a temp table, then upserts into users
 func (m *Migrator) copyUpsertUsers(ctx context.Context, rows []*models.User) error {
-    if m.pool == nil {
-        return fmt.Errorf("pgx pool not configured")
-    }
-    conn, err := m.pool.Acquire(ctx)
-    if err != nil {
-        return fmt.Errorf("failed to acquire connection: %w", err)
-    }
-    defer conn.Release()
+	if m.pool == nil {
+		return fmt.Errorf("pgx pool not configured")
+	}
+	conn, err := m.pool.Acquire(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to acquire connection: %w", err)
+	}
+	defer conn.Release()
 
-    createSQL := `CREATE TEMP TABLE tmp_users (
+	createSQL := `CREATE TEMP TABLE tmp_users (
         discord_id TEXT PRIMARY KEY,
         username TEXT,
         user_stats TEXT,
@@ -1485,42 +1558,42 @@ func (m *Migrator) copyUpsertUsers(ctx context.Context, rows []*models.User) err
         premium_expires TIMESTAMP,
         updated_at TIMESTAMP
     ) ON COMMIT DROP;`
-    if _, err := conn.Exec(ctx, createSQL); err != nil {
-        return fmt.Errorf("failed to create temp table: %w", err)
-    }
+	if _, err := conn.Exec(ctx, createSQL); err != nil {
+		return fmt.Errorf("failed to create temp table: %w", err)
+	}
 
-    data := make([][]any, 0, len(rows))
-    for _, u := range rows {
-        lastQ, _ := json.Marshal(u.LastQueriedCard)
-        daily, _ := json.Marshal(u.DailyStats)
-        effect, _ := json.Marshal(u.EffectStats)
-        userStats, _ := json.Marshal(u.UserStats)
-        cards, _ := json.Marshal(u.Cards)
-        inv, _ := json.Marshal(u.Inventory)
-        completed, _ := json.Marshal(u.CompletedCols)
-        clouted, _ := json.Marshal(u.CloutedCols)
-        achievements, _ := json.Marshal(u.Achievements)
-        effects, _ := json.Marshal(u.Effects)
-        wishlist, _ := json.Marshal(u.Wishlist)
-        prefs, _ := json.Marshal(u.Preferences)
-        heroSlots, _ := json.Marshal(u.HeroSlots)
-        heroCooldown, _ := json.Marshal(u.HeroCooldown)
-        roles, _ := json.Marshal(u.Roles)
-        ban, _ := json.Marshal(u.Ban)
+	data := make([][]any, 0, len(rows))
+	for _, u := range rows {
+		lastQ, _ := json.Marshal(u.LastQueriedCard)
+		daily, _ := json.Marshal(u.DailyStats)
+		effect, _ := json.Marshal(u.EffectStats)
+		userStats, _ := json.Marshal(u.UserStats)
+		cards, _ := json.Marshal(u.Cards)
+		inv, _ := json.Marshal(u.Inventory)
+		completed, _ := json.Marshal(u.CompletedCols)
+		clouted, _ := json.Marshal(u.CloutedCols)
+		achievements, _ := json.Marshal(u.Achievements)
+		effects, _ := json.Marshal(u.Effects)
+		wishlist, _ := json.Marshal(u.Wishlist)
+		prefs, _ := json.Marshal(u.Preferences)
+		heroSlots, _ := json.Marshal(u.HeroSlots)
+		heroCooldown, _ := json.Marshal(u.HeroCooldown)
+		roles, _ := json.Marshal(u.Roles)
+		ban, _ := json.Marshal(u.Ban)
 
-        data = append(data, []any{
-            u.DiscordID, u.Username, string(userStats), u.PromoExp, u.Joined, string(lastQ), u.LastKofiClaim, string(daily), string(effect),
-            string(cards), string(inv), string(completed), string(clouted), string(achievements), string(effects), string(wishlist), string(prefs), u.LastDaily,
-            u.LastTrain, u.LastWork, u.LastVote, u.LastAnnounce, u.LastMsg, string(heroSlots), string(heroCooldown), u.Hero, u.HeroChanged,
-            u.HeroSubmits, string(roles), string(ban), u.Premium, u.PremiumExpires, u.UpdatedAt,
-        })
-    }
-    cols := []string{"discord_id","username","user_stats","promo_exp","joined","last_queried_card","last_kofi_claim","daily_stats","effect_stats","cards","inventory","completed_cols","clouted_cols","achievements","effects","wishlist","preferences","last_daily","last_train","last_work","last_vote","last_announce","last_msg","hero_slots","hero_cooldown","hero","hero_changed","hero_submits","roles","ban","premium","premium_expires","updated_at"}
-    if _, err := conn.Conn().CopyFrom(ctx, pgx.Identifier{"tmp_users"}, cols, pgx.CopyFromRows(data)); err != nil {
-        return fmt.Errorf("copy to temp failed: %w", err)
-    }
+		data = append(data, []any{
+			u.DiscordID, u.Username, string(userStats), u.PromoExp, u.Joined, string(lastQ), u.LastKofiClaim, string(daily), string(effect),
+			string(cards), string(inv), string(completed), string(clouted), string(achievements), string(effects), string(wishlist), string(prefs), u.LastDaily,
+			u.LastTrain, u.LastWork, u.LastVote, u.LastAnnounce, u.LastMsg, string(heroSlots), string(heroCooldown), u.Hero, u.HeroChanged,
+			u.HeroSubmits, string(roles), string(ban), u.Premium, u.PremiumExpires, u.UpdatedAt,
+		})
+	}
+	cols := []string{"discord_id", "username", "user_stats", "promo_exp", "joined", "last_queried_card", "last_kofi_claim", "daily_stats", "effect_stats", "cards", "inventory", "completed_cols", "clouted_cols", "achievements", "effects", "wishlist", "preferences", "last_daily", "last_train", "last_work", "last_vote", "last_announce", "last_msg", "hero_slots", "hero_cooldown", "hero", "hero_changed", "hero_submits", "roles", "ban", "premium", "premium_expires", "updated_at"}
+	if _, err := conn.Conn().CopyFrom(ctx, pgx.Identifier{"tmp_users"}, cols, pgx.CopyFromRows(data)); err != nil {
+		return fmt.Errorf("copy to temp failed: %w", err)
+	}
 
-    upsertSQL := `INSERT INTO users (
+	upsertSQL := `INSERT INTO users (
         discord_id, username, user_stats, promo_exp, joined, last_queried_card, last_kofi_claim, daily_stats, effect_stats, cards, inventory,
         completed_cols, clouted_cols, achievements, effects, wishlist, preferences, last_daily, last_train, last_work, last_vote, last_announce, last_msg,
         hero_slots, hero_cooldown, hero, hero_changed, hero_submits, roles, ban, premium, premium_expires, updated_at, created_at
@@ -1563,52 +1636,52 @@ func (m *Migrator) copyUpsertUsers(ctx context.Context, rows []*models.User) err
         premium = EXCLUDED.premium,
         premium_expires = EXCLUDED.premium_expires,
         updated_at = EXCLUDED.updated_at;`
-    if _, err := conn.Exec(ctx, upsertSQL); err != nil {
-        return fmt.Errorf("users upsert from temp failed: %w", err)
-    }
-    return nil
+	if _, err := conn.Exec(ctx, upsertSQL); err != nil {
+		return fmt.Errorf("users upsert from temp failed: %w", err)
+	}
+	return nil
 }
 
 // copyInsertUserCards performs a fast COPY FROM for user_cards
 func (m *Migrator) copyInsertUserCards(ctx context.Context, rows []*models.UserCard) error {
-    if m.pool == nil {
-        return fmt.Errorf("pgx pool not configured for COPY")
-    }
-    conn, err := m.pool.Acquire(ctx)
-    if err != nil {
-        return fmt.Errorf("failed to acquire connection: %w", err)
-    }
-    defer conn.Release()
+	if m.pool == nil {
+		return fmt.Errorf("pgx pool not configured for COPY")
+	}
+	conn, err := m.pool.Acquire(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to acquire connection: %w", err)
+	}
+	defer conn.Release()
 
-    // Map rows to [][]any for CopyFromRows
-    data := make([][]any, 0, len(rows))
-    for _, r := range rows {
-        data = append(data, []any{
-            r.UserID,
-            r.CardID,
-            r.Level,
-            r.Exp,
-            r.Amount,
-            r.Favorite,
-            r.Locked,
-            r.Rating,
-            r.Obtained,
-            r.Mark,
-            r.CreatedAt,
-            r.UpdatedAt,
-        })
-    }
+	// Map rows to [][]any for CopyFromRows
+	data := make([][]any, 0, len(rows))
+	for _, r := range rows {
+		data = append(data, []any{
+			r.UserID,
+			r.CardID,
+			r.Level,
+			r.Exp,
+			r.Amount,
+			r.Favorite,
+			r.Locked,
+			r.Rating,
+			r.Obtained,
+			r.Mark,
+			r.CreatedAt,
+			r.UpdatedAt,
+		})
+	}
 
-    columns := []string{
-        "user_id", "card_id", "level", "exp", "amount", "favorite", "locked", "rating", "obtained", "mark", "created_at", "updated_at",
-    }
+	columns := []string{
+		"user_id", "card_id", "level", "exp", "amount", "favorite", "locked", "rating", "obtained", "mark", "created_at", "updated_at",
+	}
 
-    // COPY FROM user_cards (cols...)
-    _, err = conn.Conn().CopyFrom(ctx, pgx.Identifier{"user_cards"}, columns, pgx.CopyFromRows(data))
-    if err != nil {
-        return fmt.Errorf("copy from failed: %w", err)
-    }
-    return nil
+	// COPY FROM user_cards (cols...)
+	_, err = conn.Conn().CopyFrom(ctx, pgx.Identifier{"user_cards"}, columns, pgx.CopyFromRows(data))
+	if err != nil {
+		return fmt.Errorf("copy from failed: %w", err)
+	}
+	return nil
 }
 
 // logProgress logs progress messages following existing pattern
@@ -1617,7 +1690,7 @@ func logProgress(message string) {
 }
 
 // Generic BSON file processing function following existing pattern
-func (m *Migrator) processBSONFile(ctx context.Context, filePath string, processDoc func([]byte) error) error {
+func (m *Migrator) processBSONFile(filePath string, processDoc func([]byte) error) error {
 	// Check if file exists first
 	if _, err := os.Stat(filePath); os.IsNotExist(err) {
 		logProgress(fmt.Sprintf("BSON file not found, skipping: %s", filePath))
@@ -1721,7 +1794,7 @@ func (m *Migrator) MigrateCollections(ctx context.Context) error {
 		return nil
 	}
 
-	if err := m.processBSONFile(ctx, filePath, processDoc); err != nil {
+	if err := m.processBSONFile(filePath, processDoc); err != nil {
 		return err
 	}
 
@@ -1765,7 +1838,7 @@ func (m *Migrator) MigrateCards(ctx context.Context) error {
 		return nil
 	}
 
-	if err := m.processBSONFile(ctx, filePath, processDoc); err != nil {
+	if err := m.processBSONFile(filePath, processDoc); err != nil {
 		return err
 	}
 
@@ -1810,7 +1883,7 @@ func (m *Migrator) MigrateClaims(ctx context.Context) error {
 		return nil
 	}
 
-	if err := m.processBSONFile(ctx, filePath, processDoc); err != nil {
+	if err := m.processBSONFile(filePath, processDoc); err != nil {
 		return err
 	}
 
@@ -1861,7 +1934,7 @@ func (m *Migrator) MigrateAuctions(ctx context.Context) error {
 		return nil
 	}
 
-	if err := m.processBSONFile(ctx, filePath, processDoc); err != nil {
+	if err := m.processBSONFile(filePath, processDoc); err != nil {
 		return err
 	}
 
@@ -1910,7 +1983,7 @@ func (m *Migrator) MigrateUserEffects(ctx context.Context) error {
 		return nil
 	}
 
-	if err := m.processBSONFile(ctx, filePath, processDoc); err != nil {
+	if err := m.processBSONFile(filePath, processDoc); err != nil {
 		return err
 	}
 
@@ -1954,7 +2027,7 @@ func (m *Migrator) MigrateUserQuests(ctx context.Context) error {
 		return nil
 	}
 
-	if err := m.processBSONFile(ctx, filePath, processDoc); err != nil {
+	if err := m.processBSONFile(filePath, processDoc); err != nil {
 		return err
 	}
 
@@ -2027,7 +2100,7 @@ func (m *Migrator) MigrateUserInventories(ctx context.Context) error {
 		return nil
 	}
 
-	if err := m.processBSONFile(ctx, filePath, processDoc); err != nil {
+	if err := m.processBSONFile(filePath, processDoc); err != nil {
 		return err
 	}
 
@@ -2047,179 +2120,160 @@ func (m *Migrator) MigrateUserInventories(ctx context.Context) error {
 // Batch insert helper functions following existing patterns
 
 func (m *Migrator) batchInsertCollections(ctx context.Context, collections []*models.Collection) error {
-    if m.useCopy && m.pool != nil {
-        conn, err := m.pool.Acquire(ctx)
-        if err == nil {
-            defer conn.Release()
-            rows := make([][]any, 0, len(collections))
-            for _, c := range collections {
-                aliasesBytes, _ := json.Marshal(c.Aliases)
-                tagsBytes, _ := json.Marshal(c.Tags)
-                rows = append(rows, []any{c.ID, c.Name, c.Origin, string(aliasesBytes), c.Promo, c.Compressed, c.Fragments, string(tagsBytes), c.CreatedAt, c.UpdatedAt})
-            }
-            cols := []string{"id","name","origin","aliases","promo","compressed","fragments","tags","created_at","updated_at"}
-            if _, err = conn.Conn().CopyFrom(ctx, pgx.Identifier{"collections"}, cols, pgx.CopyFromRows(rows)); err == nil {
-                return nil
-            }
-        }
-    }
-    _, err := m.pgDB.NewInsert().Model(&collections).On("CONFLICT (id) DO UPDATE").Set("name = EXCLUDED.name").Set("origin = EXCLUDED.origin").Set("aliases = EXCLUDED.aliases").Set("promo = EXCLUDED.promo").Set("compressed = EXCLUDED.compressed").Set("fragments = EXCLUDED.fragments").Set("tags = EXCLUDED.tags").Set("updated_at = EXCLUDED.updated_at").Exec(ctx)
-    return err
+	if m.useCopy && m.pool != nil {
+		conn, err := m.pool.Acquire(ctx)
+		if err == nil {
+			defer conn.Release()
+			rows := make([][]any, 0, len(collections))
+			for _, c := range collections {
+				aliasesBytes, _ := json.Marshal(c.Aliases)
+				tagsBytes, _ := json.Marshal(c.Tags)
+				rows = append(rows, []any{c.ID, c.Name, c.Origin, string(aliasesBytes), c.Promo, c.Compressed, c.Fragments, string(tagsBytes), c.CreatedAt, c.UpdatedAt})
+			}
+			cols := []string{"id", "name", "origin", "aliases", "promo", "compressed", "fragments", "tags", "created_at", "updated_at"}
+			if _, err = conn.Conn().CopyFrom(ctx, pgx.Identifier{"collections"}, cols, pgx.CopyFromRows(rows)); err == nil {
+				return nil
+			}
+		}
+	}
+	_, err := m.pgDB.NewInsert().Model(&collections).On("CONFLICT (id) DO UPDATE").Set("name = EXCLUDED.name").Set("origin = EXCLUDED.origin").Set("aliases = EXCLUDED.aliases").Set("promo = EXCLUDED.promo").Set("compressed = EXCLUDED.compressed").Set("fragments = EXCLUDED.fragments").Set("tags = EXCLUDED.tags").Set("updated_at = EXCLUDED.updated_at").Exec(ctx)
+	return err
 }
 
 func (m *Migrator) batchInsertCards(ctx context.Context, cards []*models.Card) error {
-    if m.useCopy && m.pool != nil {
-        conn, err := m.pool.Acquire(ctx)
-        if err == nil {
-            defer conn.Release()
-            rows := make([][]any, 0, len(cards))
-            for _, c := range cards {
-                tagsBytes, _ := json.Marshal(c.Tags)
-                rows = append(rows, []any{c.ID, c.Name, c.Level, c.Animated, c.ColID, string(tagsBytes), c.CreatedAt, c.UpdatedAt})
-            }
-            cols := []string{"id","name","level","animated","col_id","tags","created_at","updated_at"}
-            if _, err = conn.Conn().CopyFrom(ctx, pgx.Identifier{"cards"}, cols, pgx.CopyFromRows(rows)); err == nil {
-                return nil
-            }
-        }
-    }
-    _, err := m.pgDB.NewInsert().Model(&cards).On("CONFLICT (id) DO UPDATE").Set("name = EXCLUDED.name").Set("level = EXCLUDED.level").Set("animated = EXCLUDED.animated").Set("col_id = EXCLUDED.col_id").Set("tags = EXCLUDED.tags").Set("updated_at = EXCLUDED.updated_at").Exec(ctx)
-    return err
+	if m.useCopy && m.pool != nil {
+		conn, err := m.pool.Acquire(ctx)
+		if err == nil {
+			defer conn.Release()
+			rows := make([][]any, 0, len(cards))
+			for _, c := range cards {
+				tagsBytes, _ := json.Marshal(c.Tags)
+				rows = append(rows, []any{c.ID, c.Name, c.Level, c.Animated, c.ColID, string(tagsBytes), c.CreatedAt, c.UpdatedAt})
+			}
+			cols := []string{"id", "name", "level", "animated", "col_id", "tags", "created_at", "updated_at"}
+			if _, err = conn.Conn().CopyFrom(ctx, pgx.Identifier{"cards"}, cols, pgx.CopyFromRows(rows)); err == nil {
+				return nil
+			}
+		}
+	}
+	_, err := m.pgDB.NewInsert().Model(&cards).On("CONFLICT (id) DO UPDATE").Set("name = EXCLUDED.name").Set("level = EXCLUDED.level").Set("animated = EXCLUDED.animated").Set("col_id = EXCLUDED.col_id").Set("tags = EXCLUDED.tags").Set("updated_at = EXCLUDED.updated_at").Exec(ctx)
+	return err
 }
 
 func (m *Migrator) batchInsertClaims(ctx context.Context, claims []*models.Claim) error {
-    if m.useCopy && m.pool != nil {
-        conn, err := m.pool.Acquire(ctx)
-        if err == nil {
-            defer conn.Release()
-            rows := make([][]any, 0, len(claims))
-            for _, c := range claims {
-                rows = append(rows, []any{c.CardID, c.UserID, c.ClaimedAt, c.Expires})
-            }
-            cols := []string{"card_id","user_id","claimed_at","expires"}
-            if _, err = conn.Conn().CopyFrom(ctx, pgx.Identifier{"claims"}, cols, pgx.CopyFromRows(rows)); err == nil {
-                return nil
-            }
-        }
-    }
-    _, err := m.pgDB.NewInsert().Model(&claims).Exec(ctx)
-    return err
+	if m.useCopy && m.pool != nil {
+		conn, err := m.pool.Acquire(ctx)
+		if err == nil {
+			defer conn.Release()
+			rows := make([][]any, 0, len(claims))
+			for _, c := range claims {
+				rows = append(rows, []any{c.CardID, c.UserID, c.ClaimedAt, c.Expires})
+			}
+			cols := []string{"card_id", "user_id", "claimed_at", "expires"}
+			if _, err = conn.Conn().CopyFrom(ctx, pgx.Identifier{"claims"}, cols, pgx.CopyFromRows(rows)); err == nil {
+				return nil
+			}
+		}
+	}
+	_, err := m.pgDB.NewInsert().Model(&claims).Exec(ctx)
+	return err
 }
 
 func (m *Migrator) batchInsertAuctions(ctx context.Context, auctions []*models.Auction) error {
-    if m.useCopy && m.pool != nil {
-        conn, err := m.pool.Acquire(ctx)
-        if err == nil {
-            defer conn.Release()
-            rows := make([][]any, 0, len(auctions))
-            for _, a := range auctions {
-                rows = append(rows, []any{a.AuctionID, a.CardID, a.SellerID, a.StartPrice, a.CurrentPrice, a.MinIncrement, a.TopBidderID, a.PreviousBidderID, a.PreviousBidAmount, string(a.Status), a.StartTime, a.EndTime, a.MessageID, a.ChannelID, a.LastBidTime, a.BidCount, a.CreatedAt, a.UpdatedAt})
-            }
-            cols := []string{"auction_id","card_id","seller_id","start_price","current_price","min_increment","top_bidder_id","previous_bidder_id","previous_bid_amount","status","start_time","end_time","message_id","channel_id","last_bid_time","bid_count","created_at","updated_at"}
-            if _, err = conn.Conn().CopyFrom(ctx, pgx.Identifier{"auctions"}, cols, pgx.CopyFromRows(rows)); err == nil {
-                return nil
-            }
-        }
-    }
-    _, err := m.pgDB.NewInsert().Model(&auctions).On("CONFLICT (auction_id) DO UPDATE").Set("card_id = EXCLUDED.card_id").Set("seller_id = EXCLUDED.seller_id").Set("start_price = EXCLUDED.start_price").Set("current_price = EXCLUDED.current_price").Set("status = EXCLUDED.status").Set("end_time = EXCLUDED.end_time").Set("updated_at = EXCLUDED.updated_at").Exec(ctx)
-    return err
+	if m.useCopy && m.pool != nil {
+		conn, err := m.pool.Acquire(ctx)
+		if err == nil {
+			defer conn.Release()
+			rows := make([][]any, 0, len(auctions))
+			for _, a := range auctions {
+				rows = append(rows, []any{a.AuctionID, a.CardID, a.SellerID, a.StartPrice, a.CurrentPrice, a.MinIncrement, a.TopBidderID, a.PreviousBidderID, a.PreviousBidAmount, string(a.Status), a.StartTime, a.EndTime, a.MessageID, a.ChannelID, a.LastBidTime, a.BidCount, a.CreatedAt, a.UpdatedAt})
+			}
+			cols := []string{"auction_id", "card_id", "seller_id", "start_price", "current_price", "min_increment", "top_bidder_id", "previous_bidder_id", "previous_bid_amount", "status", "start_time", "end_time", "message_id", "channel_id", "last_bid_time", "bid_count", "created_at", "updated_at"}
+			if _, err = conn.Conn().CopyFrom(ctx, pgx.Identifier{"auctions"}, cols, pgx.CopyFromRows(rows)); err == nil {
+				return nil
+			}
+		}
+	}
+	_, err := m.pgDB.NewInsert().Model(&auctions).On("CONFLICT (auction_id) DO UPDATE").Set("card_id = EXCLUDED.card_id").Set("seller_id = EXCLUDED.seller_id").Set("start_price = EXCLUDED.start_price").Set("current_price = EXCLUDED.current_price").Set("status = EXCLUDED.status").Set("end_time = EXCLUDED.end_time").Set("updated_at = EXCLUDED.updated_at").Exec(ctx)
+	return err
 }
 
 func (m *Migrator) batchInsertAuctionBids(ctx context.Context, auctionBids []*models.AuctionBid) error {
-    if m.useCopy && m.pool != nil {
-        conn, err := m.pool.Acquire(ctx)
-        if err == nil {
-            defer conn.Release()
-            rows := make([][]any, 0, len(auctionBids))
-            for _, b := range auctionBids {
-                rows = append(rows, []any{b.AuctionID, b.BidderID, b.Amount, b.Timestamp, b.CreatedAt})
-            }
-            cols := []string{"auction_id","bidder_id","amount","timestamp","created_at"}
-            if _, err = conn.Conn().CopyFrom(ctx, pgx.Identifier{"auction_bids"}, cols, pgx.CopyFromRows(rows)); err == nil {
-                return nil
-            }
-        }
-    }
-    _, err := m.pgDB.NewInsert().Model(&auctionBids).Exec(ctx)
-    return err
+	if m.useCopy && m.pool != nil {
+		conn, err := m.pool.Acquire(ctx)
+		if err == nil {
+			defer conn.Release()
+			rows := make([][]any, 0, len(auctionBids))
+			for _, b := range auctionBids {
+				rows = append(rows, []any{b.AuctionID, b.BidderID, b.Amount, b.Timestamp, b.CreatedAt})
+			}
+			cols := []string{"auction_id", "bidder_id", "amount", "timestamp", "created_at"}
+			if _, err = conn.Conn().CopyFrom(ctx, pgx.Identifier{"auction_bids"}, cols, pgx.CopyFromRows(rows)); err == nil {
+				return nil
+			}
+		}
+	}
+	_, err := m.pgDB.NewInsert().Model(&auctionBids).Exec(ctx)
+	return err
 }
 
 func (m *Migrator) batchInsertUserEffects(ctx context.Context, userEffects []*models.UserEffect) error {
-    if m.useCopy && m.pool != nil {
-        conn, err := m.pool.Acquire(ctx)
-        if err == nil {
-            defer conn.Release()
-            rows := make([][]any, 0, len(userEffects))
-            for _, e := range userEffects {
-                // recipe_cards as JSONB
-                rcBytes, _ := json.Marshal(e.RecipeCards)
-                rows = append(rows, []any{e.UserID, e.EffectID, e.IsRecipe, string(rcBytes), e.Active, e.Uses, e.ExpiresAt, e.CooldownEndsAt, e.Notified, e.CreatedAt, e.UpdatedAt, e.Tier, e.Progress})
-            }
-            cols := []string{"user_id","effect_id","is_recipe","recipe_cards","active","uses","expires_at","cooldown_ends_at","notified","created_at","updated_at","tier","progress"}
-            if _, err = conn.Conn().CopyFrom(ctx, pgx.Identifier{"user_effects"}, cols, pgx.CopyFromRows(rows)); err == nil {
-                return nil
-            }
-        }
-    }
-    _, err := m.pgDB.NewInsert().Model(&userEffects).Exec(ctx)
-    return err
+	if m.useCopy && m.pool != nil {
+		conn, err := m.pool.Acquire(ctx)
+		if err == nil {
+			defer conn.Release()
+			rows := make([][]any, 0, len(userEffects))
+			for _, e := range userEffects {
+				// recipe_cards as JSONB
+				rcBytes, _ := json.Marshal(e.RecipeCards)
+				rows = append(rows, []any{e.UserID, e.EffectID, e.IsRecipe, string(rcBytes), e.Active, e.Uses, e.ExpiresAt, e.CooldownEndsAt, e.Notified, e.CreatedAt, e.UpdatedAt, e.Tier, e.Progress})
+			}
+			cols := []string{"user_id", "effect_id", "is_recipe", "recipe_cards", "active", "uses", "expires_at", "cooldown_ends_at", "notified", "created_at", "updated_at", "tier", "progress"}
+			if _, err = conn.Conn().CopyFrom(ctx, pgx.Identifier{"user_effects"}, cols, pgx.CopyFromRows(rows)); err == nil {
+				return nil
+			}
+		}
+	}
+	_, err := m.pgDB.NewInsert().Model(&userEffects).Exec(ctx)
+	return err
 }
 
 func (m *Migrator) batchInsertUserQuests(ctx context.Context, userQuests []*models.UserQuest) error {
-    if m.useCopy && m.pool != nil {
-        conn, err := m.pool.Acquire(ctx)
-        if err == nil {
-            defer conn.Release()
-            rows := make([][]any, 0, len(userQuests))
-            for _, q := range userQuests {
-                rows = append(rows, []any{q.UserID, q.QuestID, q.Type, q.Completed, q.CreatedAt, q.ExpiresAt, q.UpdatedAt})
-            }
-            cols := []string{"user_id","quest_id","type","completed","created_at","expires_at","updated_at"}
-            if _, err = conn.Conn().CopyFrom(ctx, pgx.Identifier{"user_quests"}, cols, pgx.CopyFromRows(rows)); err == nil {
-                return nil
-            }
-        }
-    }
-    _, err := m.pgDB.NewInsert().Model(&userQuests).Exec(ctx)
-    return err
+	if m.useCopy && m.pool != nil {
+		conn, err := m.pool.Acquire(ctx)
+		if err == nil {
+			defer conn.Release()
+			rows := make([][]any, 0, len(userQuests))
+			for _, q := range userQuests {
+				rows = append(rows, []any{q.UserID, q.QuestID, q.Type, q.Completed, q.CreatedAt, q.ExpiresAt, q.UpdatedAt})
+			}
+			cols := []string{"user_id", "quest_id", "type", "completed", "created_at", "expires_at", "updated_at"}
+			if _, err = conn.Conn().CopyFrom(ctx, pgx.Identifier{"user_quests"}, cols, pgx.CopyFromRows(rows)); err == nil {
+				return nil
+			}
+		}
+	}
+	_, err := m.pgDB.NewInsert().Model(&userQuests).Exec(ctx)
+	return err
 }
 
 func (m *Migrator) batchInsertUserRecipes(ctx context.Context, userRecipes []*models.UserRecipe) error {
-    if m.useCopy && m.pool != nil {
-        conn, err := m.pool.Acquire(ctx)
-        if err == nil {
-            defer conn.Release()
-            rows := make([][]any, 0, len(userRecipes))
-            for _, r := range userRecipes {
-                rows = append(rows, []any{r.UserID, r.ItemID, r.CardIDs, r.CreatedAt, r.UpdatedAt})
-            }
-            cols := []string{"user_id","item_id","card_ids","created_at","updated_at"}
-            if _, err = conn.Conn().CopyFrom(ctx, pgx.Identifier{"user_recipes"}, cols, pgx.CopyFromRows(rows)); err == nil {
-                return nil
-            }
-        }
-    }
-    _, err := m.pgDB.NewInsert().Model(&userRecipes).Exec(ctx)
-    return err
-}
-
-func (m *Migrator) batchInsertUserInventories(ctx context.Context, userInventories []*models.UserInventory) error {
-    if m.useCopy && m.pool != nil {
-        conn, err := m.pool.Acquire(ctx)
-        if err == nil {
-            defer conn.Release()
-            rows := make([][]any, 0, len(userInventories))
-            for _, ui := range userInventories {
-                rows = append(rows, []any{ui.UserID, ui.ItemID, ui.Amount, ui.CreatedAt, ui.UpdatedAt})
-            }
-            cols := []string{"user_id","item_id","amount","created_at","updated_at"}
-            if _, err = conn.Conn().CopyFrom(ctx, pgx.Identifier{"user_inventory"}, cols, pgx.CopyFromRows(rows)); err == nil {
-                return nil
-            }
-        }
-    }
-    _, err := m.pgDB.NewInsert().Model(&userInventories).On("CONFLICT (user_id, item_id) DO UPDATE").Set("amount = EXCLUDED.amount").Set("updated_at = EXCLUDED.updated_at").Exec(ctx)
-    return err
+	if m.useCopy && m.pool != nil {
+		conn, err := m.pool.Acquire(ctx)
+		if err == nil {
+			defer conn.Release()
+			rows := make([][]any, 0, len(userRecipes))
+			for _, r := range userRecipes {
+				rows = append(rows, []any{r.UserID, r.ItemID, r.CardIDs, r.CreatedAt, r.UpdatedAt})
+			}
+			cols := []string{"user_id", "item_id", "card_ids", "created_at", "updated_at"}
+			if _, err = conn.Conn().CopyFrom(ctx, pgx.Identifier{"user_recipes"}, cols, pgx.CopyFromRows(rows)); err == nil {
+				return nil
+			}
+		}
+	}
+	_, err := m.pgDB.NewInsert().Model(&userRecipes).Exec(ctx)
+	return err
 }
 
 // generateMigrationReport creates a detailed JSON report of the migration
@@ -2273,52 +2327,5 @@ func (m *Migrator) logFinalStats() {
 			"successful", stats.Successful,
 			"skipped", stats.Skipped,
 			"errors", stats.Errors)
-	}
-}
-
-// Helper methods for statistics tracking
-
-func (m *Migrator) initTableStats(tableName string) {
-	if m.stats.Tables == nil {
-		m.stats.Tables = make(map[string]*TableStats)
-	}
-	m.stats.Tables[tableName] = &TableStats{
-		TableName:      tableName,
-		SkippedRecords: []SkippedRecord{},
-		ErrorRecords:   []ErrorRecord{},
-	}
-}
-
-func (m *Migrator) recordProcessed(tableName string) {
-	if stats, exists := m.stats.Tables[tableName]; exists {
-		stats.Processed++
-	}
-}
-
-func (m *Migrator) recordSuccessful(tableName string) {
-	if stats, exists := m.stats.Tables[tableName]; exists {
-		stats.Successful++
-	}
-}
-
-func (m *Migrator) recordSkipped(tableName, reason, data string) {
-	if stats, exists := m.stats.Tables[tableName]; exists {
-		stats.Skipped++
-		stats.SkippedRecords = append(stats.SkippedRecords, SkippedRecord{
-			Reason:    reason,
-			Data:      data,
-			Timestamp: time.Now(),
-		})
-	}
-}
-
-func (m *Migrator) recordError(tableName, errorMsg, data string) {
-	if stats, exists := m.stats.Tables[tableName]; exists {
-		stats.Errors++
-		stats.ErrorRecords = append(stats.ErrorRecords, ErrorRecord{
-			Error:     errorMsg,
-			Data:      data,
-			Timestamp: time.Now(),
-		})
 	}
 }

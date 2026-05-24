@@ -3,8 +3,8 @@ package utils
 import (
 	"net/http"
 
-	"github.com/gofiber/fiber/v2"
 	"github.com/disgoorg/bot-template/backend/models"
+	"github.com/gofiber/fiber/v2"
 )
 
 // SendJSON sends a JSON response using Fiber
@@ -91,7 +91,7 @@ func ExtractUserSession(c *fiber.Ctx) (*models.UserSession, bool) {
 	if session == nil {
 		return nil, false
 	}
-	
+
 	userSession, ok := session.(*models.UserSession)
 	return userSession, ok
 }

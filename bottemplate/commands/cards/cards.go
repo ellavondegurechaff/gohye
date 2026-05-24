@@ -1,16 +1,16 @@
 package cards
 
 import (
-    "context"
-    "strings"
+	"context"
+	"strings"
 
-    "github.com/disgoorg/bot-template/bottemplate"
-    "github.com/disgoorg/bot-template/bottemplate/database/models"
-    "github.com/disgoorg/bot-template/bottemplate/config"
-    "github.com/disgoorg/bot-template/bottemplate/services"
-    "github.com/disgoorg/bot-template/bottemplate/utils"
-    "github.com/disgoorg/disgo/discord"
-    "github.com/disgoorg/disgo/handler"
+	"github.com/disgoorg/bot-template/bottemplate"
+	"github.com/disgoorg/bot-template/bottemplate/config"
+	"github.com/disgoorg/bot-template/bottemplate/database/models"
+	"github.com/disgoorg/bot-template/bottemplate/services"
+	"github.com/disgoorg/bot-template/bottemplate/utils"
+	"github.com/disgoorg/disgo/discord"
+	"github.com/disgoorg/disgo/handler"
 )
 
 var Cards = discord.SlashCommandCreate{
@@ -76,40 +76,40 @@ func CardsHandler(b *bottemplate.Bot) handler.CommandHandler {
 		},
 	}
 
-    return func(event *handler.CommandEvent) error {
-        query := strings.TrimSpace(event.SlashCommandInteractionData().String("query"))
+	return func(event *handler.CommandEvent) error {
+		query := strings.TrimSpace(event.SlashCommandInteractionData().String("query"))
 
-        // Defer immediately to avoid Discord 3s timeout -> Unknown interaction (10062)
-        if err := event.DeferCreateMessage(false); err != nil {
-            return err
-        }
+		// Defer immediately to avoid Discord 3s timeout -> Unknown interaction (10062)
+		if err := event.DeferCreateMessage(false); err != nil {
+			return err
+		}
 
 		// Get user data for new card detection
-        user, err := b.UserRepository.GetByDiscordID(context.Background(), event.User().ID.String())
-        if err != nil {
-            return utils.EH.UpdateInteractionResponse(event, "Cards", "Failed to fetch user data")
-        }
+		user, err := b.UserRepository.GetByDiscordID(context.Background(), event.User().ID.String())
+		if err != nil {
+			return utils.EH.UpdateInteractionResponse(event, "Cards", "Failed to fetch user data")
+		}
 
 		// Use CardOperationsService to get user cards with details, filtering, and search context
-        displayCards, cardDetails, filters, err := cardOperationsService.GetUserCardsWithDetailsAndFiltersWithUser(context.Background(), event.User().ID.String(), query, user)
-        if err != nil {
-            return utils.EH.UpdateInteractionResponse(event, "Cards", "Failed to fetch cards")
-        }
+		displayCards, cardDetails, filters, err := cardOperationsService.GetUserCardsWithDetailsAndFiltersWithUser(context.Background(), event.User().ID.String(), query, user)
+		if err != nil {
+			return utils.EH.UpdateInteractionResponse(event, "Cards", "Failed to fetch cards")
+		}
 
-        if len(displayCards) == 0 {
-            return utils.EH.UpdateInteractionResponse(event, "Cards", "No cards found")
-        }
+		if len(displayCards) == 0 {
+			return utils.EH.UpdateInteractionResponse(event, "Cards", "No cards found")
+		}
 
 		// Convert to CardDisplayItem slice with user data for new card detection and sorting context
-        // Build a map to avoid per-card DB lookups in display conversion
-        cardByID := make(map[int64]*models.Card, len(cardDetails))
-        for _, c := range cardDetails {
-            cardByID[c.ID] = c
-        }
-        displayItems, err := cardDisplayService.ConvertUserCardsToDisplayItemsWithUserAndContextFromMap(context.Background(), displayCards, user, filters, cardByID)
-        if err != nil {
-            return utils.EH.UpdateInteractionResponse(event, "Cards", "Failed to prepare card display")
-        }
+		// Build a map to avoid per-card DB lookups in display conversion
+		cardByID := make(map[int64]*models.Card, len(cardDetails))
+		for _, c := range cardDetails {
+			cardByID[c.ID] = c
+		}
+		displayItems, err := cardDisplayService.ConvertUserCardsToDisplayItemsWithUserAndContextFromMap(context.Background(), displayCards, user, filters, cardByID)
+		if err != nil {
+			return utils.EH.UpdateInteractionResponse(event, "Cards", "Failed to prepare card display")
+		}
 
 		// Convert to interface{} slice for pagination handler
 		items := make([]interface{}, len(displayItems))
@@ -117,17 +117,17 @@ func CardsHandler(b *bottemplate.Bot) handler.CommandHandler {
 			items[i] = item
 		}
 
-        embed, components, err := paginationHandler.CreateInitialPaginationEmbed(items, event.User().ID.String(), query)
-        if err != nil {
-            return utils.EH.UpdateInteractionResponse(event, "Cards", "Failed to create card display")
-        }
+		embed, components, err := paginationHandler.CreateInitialPaginationEmbed(items, event.User().ID.String(), query)
+		if err != nil {
+			return utils.EH.UpdateInteractionResponse(event, "Cards", "Failed to create card display")
+		}
 
-        _, updErr := event.UpdateInteractionResponse(discord.MessageUpdate{
-            Embeds:     &[]discord.Embed{embed},
-            Components: &components,
-        })
-        return updErr
-    }
+		_, updErr := event.UpdateInteractionResponse(discord.MessageUpdate{
+			Embeds:     &[]discord.Embed{embed},
+			Components: &components,
+		})
+		return updErr
+	}
 }
 
 // CardsComponentHandler handles pagination for cards using the new unified factory
@@ -173,37 +173,37 @@ type CardsDataFetcher struct {
 }
 
 func (cdf *CardsDataFetcher) FetchData(ctx context.Context, params utils.PaginationParams) ([]interface{}, error) {
-    // Get user data for new card detection
-    user, err := cdf.bot.UserRepository.GetByDiscordID(ctx, params.UserID)
-    if err != nil {
-        return nil, err
-    }
+	// Get user data for new card detection
+	user, err := cdf.bot.UserRepository.GetByDiscordID(ctx, params.UserID)
+	if err != nil {
+		return nil, err
+	}
 
-    // Use CardOperationsService to get user cards with details and filtering
-    displayCards, cardDetails, filters, err := cdf.cardOperationsService.GetUserCardsWithDetailsAndFiltersWithUser(ctx, params.UserID, params.Query, user)
-    if err != nil {
-        return nil, err
-    }
+	// Use CardOperationsService to get user cards with details and filtering
+	displayCards, cardDetails, filters, err := cdf.cardOperationsService.GetUserCardsWithDetailsAndFiltersWithUser(ctx, params.UserID, params.Query, user)
+	if err != nil {
+		return nil, err
+	}
 
-    // Build a map to avoid per-card DB lookups in display conversion
-    cardByID := make(map[int64]*models.Card, len(cardDetails))
-    for _, c := range cardDetails {
-        cardByID[c.ID] = c
-    }
+	// Build a map to avoid per-card DB lookups in display conversion
+	cardByID := make(map[int64]*models.Card, len(cardDetails))
+	for _, c := range cardDetails {
+		cardByID[c.ID] = c
+	}
 
-    // Convert to CardDisplayItem slice with user data using preloaded cards
-    displayItems, err := cdf.cardDisplayService.ConvertUserCardsToDisplayItemsWithUserAndContextFromMap(ctx, displayCards, user, filters, cardByID)
-    if err != nil {
-        return nil, err
-    }
+	// Convert to CardDisplayItem slice with user data using preloaded cards
+	displayItems, err := cdf.cardDisplayService.ConvertUserCardsToDisplayItemsWithUserAndContextFromMap(ctx, displayCards, user, filters, cardByID)
+	if err != nil {
+		return nil, err
+	}
 
-    // Convert to interface{} slice
-    items := make([]interface{}, len(displayItems))
-    for i, item := range displayItems {
-        items[i] = item
-    }
+	// Convert to interface{} slice
+	items := make([]interface{}, len(displayItems))
+	for i, item := range displayItems {
+		items[i] = item
+	}
 
-    return items, nil
+	return items, nil
 }
 
 // CardsFormatter implements ItemFormatter for cards pagination

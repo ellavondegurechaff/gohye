@@ -45,7 +45,7 @@ func NewWebAppConfig(cfg *bottemplate.Config, debug bool) *WebAppConfig {
 	if debug {
 		environment = "development"
 	}
-	
+
 	return &WebAppConfig{
 		Config:      cfg,
 		Debug:       debug,

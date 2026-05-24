@@ -13,13 +13,13 @@ import (
 var (
 	// ValidImageExtensions contains valid image file extensions
 	ValidImageExtensions = []string{".jpg", ".jpeg", ".png", ".gif", ".webp"}
-	
+
 	// MaxImageSize defines maximum image size (10MB)
 	MaxImageSize int64 = 10 * 1024 * 1024
-	
+
 	// ValidCardNameRegex validates card names
 	ValidCardNameRegex = regexp.MustCompile(`^[a-zA-Z0-9\s\-_()]+$`)
-	
+
 	// ValidCollectionIDRegex validates collection IDs
 	ValidCollectionIDRegex = regexp.MustCompile(`^[a-zA-Z0-9\-_]+$`)
 )
@@ -27,7 +27,7 @@ var (
 // ValidateCardCreateRequest validates a card creation request
 func ValidateCardCreateRequest(req *models.CardCreateRequest) []models.ValidationError {
 	var errors []models.ValidationError
-	
+
 	// Validate name
 	if req.Name == "" {
 		errors = append(errors, models.ValidationError{
@@ -51,7 +51,7 @@ func ValidateCardCreateRequest(req *models.CardCreateRequest) []models.Validatio
 			Severity:    "high",
 		})
 	}
-	
+
 	// Validate level
 	if req.Level < 1 || req.Level > 5 {
 		errors = append(errors, models.ValidationError{
@@ -61,7 +61,7 @@ func ValidateCardCreateRequest(req *models.CardCreateRequest) []models.Validatio
 			Severity:    "critical",
 		})
 	}
-	
+
 	// Validate collection ID
 	if req.ColID == "" {
 		errors = append(errors, models.ValidationError{
@@ -78,7 +78,7 @@ func ValidateCardCreateRequest(req *models.CardCreateRequest) []models.Validatio
 			Severity:    "high",
 		})
 	}
-	
+
 	// Validate tags
 	for i, tag := range req.Tags {
 		if len(tag) > 50 {
@@ -90,14 +90,14 @@ func ValidateCardCreateRequest(req *models.CardCreateRequest) []models.Validatio
 			})
 		}
 	}
-	
+
 	return errors
 }
 
 // ValidateCardUpdateRequest validates a card update request
 func ValidateCardUpdateRequest(req *models.CardUpdateRequest) []models.ValidationError {
 	var errors []models.ValidationError
-	
+
 	// Validate name if provided
 	if req.Name != nil {
 		if *req.Name == "" {
@@ -123,7 +123,7 @@ func ValidateCardUpdateRequest(req *models.CardUpdateRequest) []models.Validatio
 			})
 		}
 	}
-	
+
 	// Validate level if provided
 	if req.Level != nil {
 		if *req.Level < 1 || *req.Level > 5 {
@@ -135,7 +135,7 @@ func ValidateCardUpdateRequest(req *models.CardUpdateRequest) []models.Validatio
 			})
 		}
 	}
-	
+
 	// Validate collection ID if provided
 	if req.ColID != nil {
 		if *req.ColID == "" {
@@ -154,7 +154,7 @@ func ValidateCardUpdateRequest(req *models.CardUpdateRequest) []models.Validatio
 			})
 		}
 	}
-	
+
 	// Validate tags if provided
 	if req.Tags != nil {
 		for i, tag := range req.Tags {
@@ -168,14 +168,14 @@ func ValidateCardUpdateRequest(req *models.CardUpdateRequest) []models.Validatio
 			}
 		}
 	}
-	
+
 	return errors
 }
 
 // ValidateImageFile validates an uploaded image file
 func ValidateImageFile(fileHeader *multipart.FileHeader) []models.ValidationError {
 	var errors []models.ValidationError
-	
+
 	// Check file size
 	if fileHeader.Size > MaxImageSize {
 		errors = append(errors, models.ValidationError{
@@ -185,7 +185,7 @@ func ValidateImageFile(fileHeader *multipart.FileHeader) []models.ValidationErro
 			Severity:    "critical",
 		})
 	}
-	
+
 	// Check file extension
 	ext := strings.ToLower(filepath.Ext(fileHeader.Filename))
 	validExt := false
@@ -195,7 +195,7 @@ func ValidateImageFile(fileHeader *multipart.FileHeader) []models.ValidationErro
 			break
 		}
 	}
-	
+
 	if !validExt {
 		errors = append(errors, models.ValidationError{
 			FileName:    fileHeader.Filename,
@@ -205,15 +205,14 @@ func ValidateImageFile(fileHeader *multipart.FileHeader) []models.ValidationErro
 			Suggestion:  "Please use JPG, PNG, GIF, or WebP format",
 		})
 	}
-	
+
 	return errors
 }
-
 
 // ValidateBulkOperation validates a bulk operation request
 func ValidateBulkOperation(req *models.CardBulkOperation) []models.ValidationError {
 	var errors []models.ValidationError
-	
+
 	// Validate operation
 	validOperations := []string{"delete", "update", "move", "export"}
 	validOp := false
@@ -223,7 +222,7 @@ func ValidateBulkOperation(req *models.CardBulkOperation) []models.ValidationErr
 			break
 		}
 	}
-	
+
 	if !validOp {
 		errors = append(errors, models.ValidationError{
 			FileName:    "operation",
@@ -232,7 +231,7 @@ func ValidateBulkOperation(req *models.CardBulkOperation) []models.ValidationErr
 			Severity:    "critical",
 		})
 	}
-	
+
 	// Validate card IDs
 	if len(req.CardIDs) == 0 {
 		errors = append(errors, models.ValidationError{
@@ -249,7 +248,7 @@ func ValidateBulkOperation(req *models.CardBulkOperation) []models.ValidationErr
 			Severity:    "high",
 		})
 	}
-	
+
 	// Validate updates for update operation
 	if req.Operation == "update" && req.Updates == nil {
 		errors = append(errors, models.ValidationError{
@@ -259,7 +258,7 @@ func ValidateBulkOperation(req *models.CardBulkOperation) []models.ValidationErr
 			Severity:    "critical",
 		})
 	}
-	
+
 	// Validate target collection for move operation
 	if req.Operation == "move" && req.TargetCollection == "" {
 		errors = append(errors, models.ValidationError{
@@ -269,7 +268,7 @@ func ValidateBulkOperation(req *models.CardBulkOperation) []models.ValidationErr
 			Severity:    "critical",
 		})
 	}
-	
+
 	return errors
 }
 
@@ -280,11 +279,11 @@ func SanitizeFilename(filename string) string {
 	filename = strings.ReplaceAll(filename, "\\", "_")
 	filename = strings.ReplaceAll(filename, "..", "_")
 	filename = strings.ReplaceAll(filename, " ", "_")
-	
+
 	// Remove any non-alphanumeric characters except dots, dashes, and underscores
 	reg := regexp.MustCompile(`[^a-zA-Z0-9.\-_]`)
 	filename = reg.ReplaceAllString(filename, "_")
-	
+
 	return filename
 }
 
@@ -292,13 +291,13 @@ func SanitizeFilename(filename string) string {
 func GenerateCardSlug(name string) string {
 	// Convert to lowercase
 	slug := strings.ToLower(name)
-	
+
 	// Replace spaces and special characters with dashes
 	reg := regexp.MustCompile(`[^a-z0-9]+`)
 	slug = reg.ReplaceAllString(slug, "-")
-	
+
 	// Remove leading and trailing dashes
 	slug = strings.Trim(slug, "-")
-	
+
 	return slug
 }

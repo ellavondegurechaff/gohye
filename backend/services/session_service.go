@@ -9,9 +9,9 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
 	"github.com/disgoorg/bot-template/backend/config"
 	"github.com/disgoorg/bot-template/backend/models"
+	"github.com/gofiber/fiber/v2"
 )
 
 const (

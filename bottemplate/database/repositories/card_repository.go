@@ -1,13 +1,13 @@
 package repositories
 
 import (
-    "context"
-    "database/sql"
-    "fmt"
-    "log/slog"
-    "strings"
-    "sync"
-    "time"
+	"context"
+	"database/sql"
+	"fmt"
+	"log/slog"
+	"strings"
+	"sync"
+	"time"
 
 	"github.com/disgoorg/bot-template/bottemplate/config"
 	"github.com/disgoorg/bot-template/bottemplate/database/models"
@@ -45,9 +45,9 @@ type CardRepository interface {
 	// Enhanced search methods for optimization
 	GetByNameOrIDFuzzy(ctx context.Context, query string) (*models.Card, error)
 	SearchByNameFuzzy(ctx context.Context, query string, limit int) ([]*models.Card, error)
-    SearchAdminMode(ctx context.Context, query string, filters SearchFilters) ([]*models.Card, error)
-    // SearchOwnedByUserFuzzy finds cards owned by a user matching the query (by name substring or exact ID)
-    SearchOwnedByUserFuzzy(ctx context.Context, userID string, query string, limit int) ([]*models.Card, error)
+	SearchAdminMode(ctx context.Context, query string, filters SearchFilters) ([]*models.Card, error)
+	// SearchOwnedByUserFuzzy finds cards owned by a user matching the query (by name substring or exact ID)
+	SearchOwnedByUserFuzzy(ctx context.Context, userID string, query string, limit int) ([]*models.Card, error)
 }
 
 type cardRepository struct {
@@ -78,28 +78,28 @@ func (r *cardRepository) Create(ctx context.Context, card *models.Card) error {
 }
 
 func (r *cardRepository) GetByID(ctx context.Context, id int64) (*models.Card, error) {
-    ctx, cancel := context.WithTimeout(ctx, config.DefaultQueryTimeout)
-    defer cancel()
+	ctx, cancel := context.WithTimeout(ctx, config.DefaultQueryTimeout)
+	defer cancel()
 
-    // Check cache first
-    cacheKey := fmt.Sprintf("card:%d", id)
-    if cached, ok := r.getFromCache(cacheKey); ok {
-        if card, ok2 := cached.(*models.Card); ok2 {
-            return card, nil
-        }
-    }
+	// Check cache first
+	cacheKey := fmt.Sprintf("card:%d", id)
+	if cached, ok := r.getFromCache(cacheKey); ok {
+		if card, ok2 := cached.(*models.Card); ok2 {
+			return card, nil
+		}
+	}
 
-    card := new(models.Card)
-    err := r.db.NewSelect().
-        Model(card).
-        Where("id = ?", id).
-        Scan(ctx)
+	card := new(models.Card)
+	err := r.db.NewSelect().
+		Model(card).
+		Where("id = ?", id).
+		Scan(ctx)
 
-    if err == nil {
-        r.setCache(cacheKey, card, config.CacheExpiration)
-    }
+	if err == nil {
+		r.setCache(cacheKey, card, config.CacheExpiration)
+	}
 
-    return card, err
+	return card, err
 }
 
 func (r *cardRepository) GetByName(ctx context.Context, name string) ([]*models.Card, error) {
@@ -125,27 +125,27 @@ func (r *cardRepository) GetByName(ctx context.Context, name string) ([]*models.
 }
 
 func (r *cardRepository) GetAll(ctx context.Context) ([]*models.Card, error) {
-    ctx, cancel := context.WithTimeout(ctx, config.DefaultQueryTimeout)
-    defer cancel()
+	ctx, cancel := context.WithTimeout(ctx, config.DefaultQueryTimeout)
+	defer cancel()
 
-    // Try cache first
-    if cached, ok := r.getFromCache("cards:all"); ok {
-        if cards, ok2 := cached.([]*models.Card); ok2 {
-            return cards, nil
-        }
-    }
+	// Try cache first
+	if cached, ok := r.getFromCache("cards:all"); ok {
+		if cards, ok2 := cached.([]*models.Card); ok2 {
+			return cards, nil
+		}
+	}
 
-    var cards []*models.Card
-    err := r.db.NewSelect().
-        Model(&cards).
-        Order("id ASC").
-        Scan(ctx)
+	var cards []*models.Card
+	err := r.db.NewSelect().
+		Model(&cards).
+		Order("id ASC").
+		Scan(ctx)
 
-    if err == nil {
-        r.setCache("cards:all", cards, config.CacheExpiration)
-    }
+	if err == nil {
+		r.setCache("cards:all", cards, config.CacheExpiration)
+	}
 
-    return cards, err
+	return cards, err
 }
 
 func (r *cardRepository) GetByCollectionID(ctx context.Context, colID string) ([]*models.Card, error) {
@@ -429,24 +429,24 @@ func (r *cardRepository) Search(ctx context.Context, filters SearchFilters, offs
 	)
 
 	var count int
-    if cachedCount, ok := r.getFromCache(countCacheKey); ok {
+	if cachedCount, ok := r.getFromCache(countCacheKey); ok {
 		count = cachedCount.(int)
 		fmt.Printf("Count cache hit! Count: %d\n", count)
 	} else {
 		countQuery := r.db.NewSelect().Model((*models.Card)(nil))
 
-        // Apply filters to count query
-        if filters.Name != "" {
-            q := strings.ToLower(filters.Name)
-            alt1 := strings.ReplaceAll(q, "_", " ")
-            alt2 := strings.ReplaceAll(q, " ", "_")
-            countQuery = countQuery.WhereGroup("(", func(s *bun.SelectQuery) *bun.SelectQuery {
-                s = s.Where("LOWER(name) LIKE ?", "%"+q+"%")
-                s = s.WhereOr("LOWER(name) LIKE ?", "%"+alt1+"%")
-                s = s.WhereOr("LOWER(name) LIKE ?", "%"+alt2+"%")
-                return s
-            })
-        }
+		// Apply filters to count query
+		if filters.Name != "" {
+			q := strings.ToLower(filters.Name)
+			alt1 := strings.ReplaceAll(q, "_", " ")
+			alt2 := strings.ReplaceAll(q, " ", "_")
+			countQuery = countQuery.WhereGroup("(", func(s *bun.SelectQuery) *bun.SelectQuery {
+				s = s.Where("LOWER(name) LIKE ?", "%"+q+"%")
+				s = s.WhereOr("LOWER(name) LIKE ?", "%"+alt1+"%")
+				s = s.WhereOr("LOWER(name) LIKE ?", "%"+alt2+"%")
+				return s
+			})
+		}
 		if filters.ID != 0 {
 			countQuery = countQuery.Where("id = ?", filters.ID)
 		}
@@ -474,18 +474,18 @@ func (r *cardRepository) Search(ctx context.Context, filters SearchFilters, offs
 	// Create and execute the main query
 	query := r.db.NewSelect().Model((*models.Card)(nil))
 
-    // Improve name search logic with flexible matching (spaces/underscores)
-    if filters.Name != "" {
-        q := strings.ToLower(filters.Name)
-        alt1 := strings.ReplaceAll(q, "_", " ")
-        alt2 := strings.ReplaceAll(q, " ", "_")
-        query = query.WhereGroup("(", func(s *bun.SelectQuery) *bun.SelectQuery {
-            s = s.Where("LOWER(name) LIKE ?", "%"+q+"%")
-            s = s.WhereOr("LOWER(name) LIKE ?", "%"+alt1+"%")
-            s = s.WhereOr("LOWER(name) LIKE ?", "%"+alt2+"%")
-            return s
-        })
-    }
+	// Improve name search logic with flexible matching (spaces/underscores)
+	if filters.Name != "" {
+		q := strings.ToLower(filters.Name)
+		alt1 := strings.ReplaceAll(q, "_", " ")
+		alt2 := strings.ReplaceAll(q, " ", "_")
+		query = query.WhereGroup("(", func(s *bun.SelectQuery) *bun.SelectQuery {
+			s = s.Where("LOWER(name) LIKE ?", "%"+q+"%")
+			s = s.WhereOr("LOWER(name) LIKE ?", "%"+alt1+"%")
+			s = s.WhereOr("LOWER(name) LIKE ?", "%"+alt2+"%")
+			return s
+		})
+	}
 
 	// Apply filters to main query
 	if filters.ID != 0 {
@@ -537,57 +537,57 @@ type cacheEntry struct {
 
 // Improve cache helper methods
 func (r *cardRepository) getFromCache(key string) (interface{}, bool) {
-    value, ok := r.cache.Load(key)
-    if !ok {
-        if slog.Default().Enabled(context.Background(), slog.LevelDebug) {
-            slog.Debug("cache miss", slog.String("key", key))
-        }
-        return nil, false
-    }
+	value, ok := r.cache.Load(key)
+	if !ok {
+		if slog.Default().Enabled(context.Background(), slog.LevelDebug) {
+			slog.Debug("cache miss", slog.String("key", key))
+		}
+		return nil, false
+	}
 
-    entry := value.(cacheEntry)
-    if time.Now().After(entry.expiresAt) {
-        if slog.Default().Enabled(context.Background(), slog.LevelDebug) {
-            slog.Debug("cache expired", slog.String("key", key))
-        }
-        r.cache.Delete(key)
-        return nil, false
-    }
+	entry := value.(cacheEntry)
+	if time.Now().After(entry.expiresAt) {
+		if slog.Default().Enabled(context.Background(), slog.LevelDebug) {
+			slog.Debug("cache expired", slog.String("key", key))
+		}
+		r.cache.Delete(key)
+		return nil, false
+	}
 
-    if slog.Default().Enabled(context.Background(), slog.LevelDebug) {
-        slog.Debug("cache hit", slog.String("key", key))
-    }
-    return entry.data, true
+	if slog.Default().Enabled(context.Background(), slog.LevelDebug) {
+		slog.Debug("cache hit", slog.String("key", key))
+	}
+	return entry.data, true
 }
 
 func (r *cardRepository) setCache(key string, value interface{}, duration time.Duration) {
-    entry := cacheEntry{
-        data:      value,
-        expiresAt: time.Now().Add(duration),
-        key:       key,
-    }
-    r.cache.Store(key, entry)
-    if slog.Default().Enabled(context.Background(), slog.LevelDebug) {
-        slog.Debug("cache set", slog.String("key", key), slog.Time("expires", entry.expiresAt))
-    }
+	entry := cacheEntry{
+		data:      value,
+		expiresAt: time.Now().Add(duration),
+		key:       key,
+	}
+	r.cache.Store(key, entry)
+	if slog.Default().Enabled(context.Background(), slog.LevelDebug) {
+		slog.Debug("cache set", slog.String("key", key), slog.Time("expires", entry.expiresAt))
+	}
 }
 
 // Add this method for cache invalidation
 func (r *cardRepository) invalidateCache(cardID int64) {
-    r.cache.Delete(fmt.Sprintf("card:%d", cardID))
-    // Also delete any collection or level caches that might contain this card
-    r.cache.Range(func(key, _ interface{}) bool {
-        keyStr := key.(string)
-        if strings.HasPrefix(keyStr, "search:") ||
-            strings.HasPrefix(keyStr, "collection:") ||
-            strings.HasPrefix(keyStr, "level:") {
-            r.cache.Delete(key)
-        }
-        return true
-    })
-    if slog.Default().Enabled(context.Background(), slog.LevelDebug) {
-        slog.Debug("cache invalidated", slog.Int64("card_id", cardID))
-    }
+	r.cache.Delete(fmt.Sprintf("card:%d", cardID))
+	// Also delete any collection or level caches that might contain this card
+	r.cache.Range(func(key, _ interface{}) bool {
+		keyStr := key.(string)
+		if strings.HasPrefix(keyStr, "search:") ||
+			strings.HasPrefix(keyStr, "collection:") ||
+			strings.HasPrefix(keyStr, "level:") {
+			r.cache.Delete(key)
+		}
+		return true
+	})
+	if slog.Default().Enabled(context.Background(), slog.LevelDebug) {
+		slog.Debug("cache invalidated", slog.Int64("card_id", cardID))
+	}
 }
 
 func (r *cardRepository) UpdateUserCard(ctx context.Context, userCard *models.UserCard) error {
@@ -646,13 +646,13 @@ func (r *cardRepository) GetAllByUserID(ctx context.Context, userID string) ([]*
 
 	userCards := make([]*models.UserCard, 0)
 
-    err := r.db.NewSelect().
-        Model(&userCards).
-        Where("user_id = ?", userID).
-        Where("amount > 0").
-        Order("level DESC").
-        Order("id ASC").
-        Scan(ctx)
+	err := r.db.NewSelect().
+		Model(&userCards).
+		Where("user_id = ?", userID).
+		Where("amount > 0").
+		Order("level DESC").
+		Order("id ASC").
+		Scan(ctx)
 
 	if err != nil {
 		fmt.Printf("Database error: %v\n", err)
@@ -677,18 +677,18 @@ func (r *cardRepository) GetByIDs(ctx context.Context, ids []int64) ([]*models.C
 }
 
 func (r *cardRepository) GetByQuery(ctx context.Context, query string) (*models.Card, error) {
-    card := new(models.Card)
-    // Support flexible matching: treat '_' and spaces interchangeably
-    alt1 := strings.ReplaceAll(query, "_", " ")
-    alt2 := strings.ReplaceAll(query, " ", "_")
-    err := r.db.NewSelect().
-        Model(card).
-        Where("LOWER(name) LIKE LOWER(?)", "%"+query+"%").
-        WhereOr("LOWER(name) LIKE LOWER(?)", "%"+alt1+"%").
-        WhereOr("LOWER(name) LIKE LOWER(?)", "%"+alt2+"%").
-        WhereOr("id::text = ?", query).
-        Limit(1).
-        Scan(ctx)
+	card := new(models.Card)
+	// Support flexible matching: treat '_' and spaces interchangeably
+	alt1 := strings.ReplaceAll(query, "_", " ")
+	alt2 := strings.ReplaceAll(query, " ", "_")
+	err := r.db.NewSelect().
+		Model(card).
+		Where("LOWER(name) LIKE LOWER(?)", "%"+query+"%").
+		WhereOr("LOWER(name) LIKE LOWER(?)", "%"+alt1+"%").
+		WhereOr("LOWER(name) LIKE LOWER(?)", "%"+alt2+"%").
+		WhereOr("id::text = ?", query).
+		Limit(1).
+		Scan(ctx)
 
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -744,46 +744,46 @@ func (r *cardRepository) GetCardCount(ctx context.Context) (int64, error) {
 
 // GetByNameOrIDFuzzy finds a single card by name or ID with fuzzy matching - optimized for price stats
 func (r *cardRepository) GetByNameOrIDFuzzy(ctx context.Context, query string) (*models.Card, error) {
-    ctx, cancel := context.WithTimeout(ctx, config.DefaultQueryTimeout)
-    defer cancel()
+	ctx, cancel := context.WithTimeout(ctx, config.DefaultQueryTimeout)
+	defer cancel()
 
-    card := new(models.Card)
+	card := new(models.Card)
 
-    // Try exact ID match first
-    err := r.db.NewSelect().
-        Model(card).
-        Where("id::text = ?", query).
-        Scan(ctx)
+	// Try exact ID match first
+	err := r.db.NewSelect().
+		Model(card).
+		Where("id::text = ?", query).
+		Scan(ctx)
 
-    if err == nil {
-        return card, nil
-    }
+	if err == nil {
+		return card, nil
+	}
 
-    // Try exact name match (case insensitive)
-    err = r.db.NewSelect().
-        Model(card).
-        Where("LOWER(name) = LOWER(?)", query).
-        Scan(ctx)
+	// Try exact name match (case insensitive)
+	err = r.db.NewSelect().
+		Model(card).
+		Where("LOWER(name) = LOWER(?)", query).
+		Scan(ctx)
 
-    if err == nil {
-        return card, nil
-    }
+	if err == nil {
+		return card, nil
+	}
 
-    // Try fuzzy name match with flexible spaces/underscores
-    q := strings.ToLower(query)
-    alt1 := strings.ReplaceAll(q, "_", " ")
-    alt2 := strings.ReplaceAll(q, " ", "_")
-    err = r.db.NewSelect().
-        Model(card).
-        WhereGroup("(", func(s *bun.SelectQuery) *bun.SelectQuery {
-            s = s.Where("LOWER(name) LIKE ?", "%"+q+"%")
-            s = s.WhereOr("LOWER(name) LIKE ?", "%"+alt1+"%")
-            s = s.WhereOr("LOWER(name) LIKE ?", "%"+alt2+"%")
-            return s
-        }).
-        OrderExpr("LENGTH(name)"). // Prefer shorter matches
-        Limit(1).
-        Scan(ctx)
+	// Try fuzzy name match with flexible spaces/underscores
+	q := strings.ToLower(query)
+	alt1 := strings.ReplaceAll(q, "_", " ")
+	alt2 := strings.ReplaceAll(q, " ", "_")
+	err = r.db.NewSelect().
+		Model(card).
+		WhereGroup("(", func(s *bun.SelectQuery) *bun.SelectQuery {
+			s = s.Where("LOWER(name) LIKE ?", "%"+q+"%")
+			s = s.WhereOr("LOWER(name) LIKE ?", "%"+alt1+"%")
+			s = s.WhereOr("LOWER(name) LIKE ?", "%"+alt2+"%")
+			return s
+		}).
+		OrderExpr("LENGTH(name)"). // Prefer shorter matches
+		Limit(1).
+		Scan(ctx)
 
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -804,21 +804,21 @@ func (r *cardRepository) SearchByNameFuzzy(ctx context.Context, query string, li
 		limit = 10 // Default reasonable limit
 	}
 
-    q := strings.ToLower(query)
-    alt1 := strings.ReplaceAll(q, "_", " ")
-    alt2 := strings.ReplaceAll(q, " ", "_")
-    var cards []*models.Card
-    err := r.db.NewSelect().
-        Model(&cards).
-        WhereGroup("(", func(s *bun.SelectQuery) *bun.SelectQuery {
-            s = s.Where("LOWER(name) LIKE ?", "%"+q+"%")
-            s = s.WhereOr("LOWER(name) LIKE ?", "%"+alt1+"%")
-            s = s.WhereOr("LOWER(name) LIKE ?", "%"+alt2+"%")
-            return s
-        }).
-        OrderExpr("LENGTH(name)").Order("name"). // Prefer shorter, then alphabetical
-        Limit(limit).
-        Scan(ctx)
+	q := strings.ToLower(query)
+	alt1 := strings.ReplaceAll(q, "_", " ")
+	alt2 := strings.ReplaceAll(q, " ", "_")
+	var cards []*models.Card
+	err := r.db.NewSelect().
+		Model(&cards).
+		WhereGroup("(", func(s *bun.SelectQuery) *bun.SelectQuery {
+			s = s.Where("LOWER(name) LIKE ?", "%"+q+"%")
+			s = s.WhereOr("LOWER(name) LIKE ?", "%"+alt1+"%")
+			s = s.WhereOr("LOWER(name) LIKE ?", "%"+alt2+"%")
+			return s
+		}).
+		OrderExpr("LENGTH(name)").Order("name"). // Prefer shorter, then alphabetical
+		Limit(limit).
+		Scan(ctx)
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to search cards: %w", err)
@@ -835,18 +835,18 @@ func (r *cardRepository) SearchAdminMode(ctx context.Context, query string, filt
 	// Start with base query
 	selectQuery := r.db.NewSelect().Model((*models.Card)(nil))
 
-    // Apply name filter if provided (flexible underscores/spaces)
-    if query != "" {
-        q := strings.ToLower(query)
-        alt1 := strings.ReplaceAll(q, "_", " ")
-        alt2 := strings.ReplaceAll(q, " ", "_")
-        selectQuery = selectQuery.WhereGroup("(", func(s *bun.SelectQuery) *bun.SelectQuery {
-            s = s.Where("LOWER(name) LIKE ?", "%"+q+"%")
-            s = s.WhereOr("LOWER(name) LIKE ?", "%"+alt1+"%")
-            s = s.WhereOr("LOWER(name) LIKE ?", "%"+alt2+"%")
-            return s
-        })
-    }
+	// Apply name filter if provided (flexible underscores/spaces)
+	if query != "" {
+		q := strings.ToLower(query)
+		alt1 := strings.ReplaceAll(q, "_", " ")
+		alt2 := strings.ReplaceAll(q, " ", "_")
+		selectQuery = selectQuery.WhereGroup("(", func(s *bun.SelectQuery) *bun.SelectQuery {
+			s = s.Where("LOWER(name) LIKE ?", "%"+q+"%")
+			s = s.WhereOr("LOWER(name) LIKE ?", "%"+alt1+"%")
+			s = s.WhereOr("LOWER(name) LIKE ?", "%"+alt2+"%")
+			return s
+		})
+	}
 
 	// Apply other filters
 	if filters.Level != 0 {
@@ -876,34 +876,34 @@ func (r *cardRepository) SearchAdminMode(ctx context.Context, query string, filt
 
 // SearchOwnedByUserFuzzy performs a single-query search limited to cards the user owns
 func (r *cardRepository) SearchOwnedByUserFuzzy(ctx context.Context, userID string, query string, limit int) ([]*models.Card, error) {
-    ctx, cancel := context.WithTimeout(ctx, config.SearchTimeout)
-    defer cancel()
+	ctx, cancel := context.WithTimeout(ctx, config.SearchTimeout)
+	defer cancel()
 
-    if limit <= 0 {
-        limit = 10
-    }
+	if limit <= 0 {
+		limit = 10
+	}
 
-    var cards []*models.Card
-    q := r.db.NewSelect().
-        Model(&cards).
-        Join("JOIN user_cards ON user_cards.card_id = cards.id").
-        Where("user_cards.user_id = ? AND user_cards.amount > 0", userID)
+	var cards []*models.Card
+	q := r.db.NewSelect().
+		Model(&cards).
+		Join("JOIN user_cards ON user_cards.card_id = cards.id").
+		Where("user_cards.user_id = ? AND user_cards.amount > 0", userID)
 
-    // Try exact ID match first via OR clause
-    if query != "" {
-        q = q.WhereGroup("AND", func(s *bun.SelectQuery) *bun.SelectQuery {
-            s = s.Where("cards.id::text = ?", query)
-            s = s.WhereOr("LOWER(cards.name) LIKE LOWER(?)", "%"+query+"%")
-            return s
-        })
-    }
+	// Try exact ID match first via OR clause
+	if query != "" {
+		q = q.WhereGroup("AND", func(s *bun.SelectQuery) *bun.SelectQuery {
+			s = s.Where("cards.id::text = ?", query)
+			s = s.WhereOr("LOWER(cards.name) LIKE LOWER(?)", "%"+query+"%")
+			return s
+		})
+	}
 
-    // Prefer shorter names then higher level, then alpha
-    q = q.OrderExpr("LENGTH(cards.name)").Order("cards.level DESC", "cards.name").
-        Limit(limit)
+	// Prefer shorter names then higher level, then alpha
+	q = q.OrderExpr("LENGTH(cards.name)").Order("cards.level DESC", "cards.name").
+		Limit(limit)
 
-    if err := q.Scan(ctx); err != nil {
-        return nil, fmt.Errorf("failed to search owned cards: %w", err)
-    }
-    return cards, nil
+	if err := q.Scan(ctx); err != nil {
+		return nil, fmt.Errorf("failed to search owned cards: %w", err)
+	}
+	return cards, nil
 }

@@ -36,8 +36,8 @@ func (h *InventoryHandler) Handle(event *handler.CommandEvent) error {
 }
 
 func (h *InventoryHandler) handleList(event *handler.CommandEvent) error {
-    ctx := context.Background()
-    userID := event.User().ID.String()
+	ctx := context.Background()
+	userID := event.User().ID.String()
 
 	// Get effects
 	items, err := h.effectManager.ListUserEffects(ctx, userID)
@@ -99,10 +99,10 @@ func (h *InventoryHandler) handleList(event *handler.CommandEvent) error {
 		}
 	}
 
-    components := []discord.ContainerComponent{
-        createInventoryCategories(selectedCategory, userID),
-        createInventoryItems(currentItems, selectedCategory, userID),
-    }
+	components := []discord.ContainerComponent{
+		createInventoryCategories(selectedCategory, userID),
+		createInventoryItems(currentItems, selectedCategory, userID),
+	}
 
 	return event.CreateMessage(discord.MessageCreate{
 		Embeds: []discord.Embed{{
@@ -118,8 +118,8 @@ func (h *InventoryHandler) handleList(event *handler.CommandEvent) error {
 }
 
 func createInventoryCategories(selectedValue string, ownerID string) discord.ContainerComponent {
-    return discord.NewActionRow(
-        discord.NewStringSelectMenu("/inventory_category/"+ownerID, "Select Category",
+	return discord.NewActionRow(
+		discord.NewStringSelectMenu("/inventory_category/"+ownerID, "Select Category",
 			discord.StringSelectMenuOption{
 				Label:       "Materials",
 				Value:       "materials",
@@ -153,28 +153,28 @@ func createInventoryCategories(selectedValue string, ownerID string) discord.Con
 }
 
 func createInventoryItems(items []*models.EffectItem, _ string, ownerID string) discord.ContainerComponent {
-    options := make([]discord.StringSelectMenuOption, 0, len(items))
-    for _, item := range items {
-        // Format duration per type
-        var desc string
-        if item.Passive {
-            desc = fmt.Sprintf("%dd duration", item.Duration)
-        } else {
-            desc = fmt.Sprintf("%d uses", item.Duration)
-        }
-        options = append(options, discord.StringSelectMenuOption{
-            Label:       fmt.Sprintf("%s", item.Name),
-            Value:       fmt.Sprintf("inv_%s", item.ID),
-            Description: desc,
-            Emoji:       &discord.ComponentEmoji{Name: getTypeEmoji(item.Type)},
-        })
-    }
+	options := make([]discord.StringSelectMenuOption, 0, len(items))
+	for _, item := range items {
+		// Format duration per type
+		var desc string
+		if item.Passive {
+			desc = fmt.Sprintf("%dd duration", item.Duration)
+		} else {
+			desc = fmt.Sprintf("%d uses", item.Duration)
+		}
+		options = append(options, discord.StringSelectMenuOption{
+			Label:       fmt.Sprintf("%s", item.Name),
+			Value:       fmt.Sprintf("inv_%s", item.ID),
+			Description: desc,
+			Emoji:       &discord.ComponentEmoji{Name: getTypeEmoji(item.Type)},
+		})
+	}
 
-    return discord.NewActionRow(
-        discord.NewStringSelectMenu("/inventory_item/"+ownerID, "Select Item", options...).
-            WithMinValues(1).
-            WithMaxValues(1),
-    )
+	return discord.NewActionRow(
+		discord.NewStringSelectMenu("/inventory_item/"+ownerID, "Select Item", options...).
+			WithMinValues(1).
+			WithMaxValues(1),
+	)
 }
 
 func (h *InventoryHandler) handleItemSelect(event *handler.ComponentEvent) error {
@@ -207,11 +207,11 @@ func (h *InventoryHandler) handleItemSelect(event *handler.ComponentEvent) error
 	description.WriteString("```ansi\n")
 	description.WriteString("\u001b[1;33m📋 Item Details\u001b[0m\n")
 	description.WriteString(fmt.Sprintf("• Description: %s\n", item.Description))
-    if item.Passive {
-        description.WriteString(fmt.Sprintf("• Duration: %d days\n\n", item.Duration))
-    } else {
-        description.WriteString(fmt.Sprintf("• Uses: %d\n\n", item.Duration))
-    }
+	if item.Passive {
+		description.WriteString(fmt.Sprintf("• Duration: %d days\n\n", item.Duration))
+	} else {
+		description.WriteString(fmt.Sprintf("• Uses: %d\n\n", item.Duration))
+	}
 
 	if len(item.Recipe) > 0 {
 		description.WriteString("\u001b[1;36m🔮 Recipe Requirements\u001b[0m\n")
@@ -250,17 +250,17 @@ func (h *InventoryHandler) handleItemSelect(event *handler.ComponentEvent) error
 	embed.SetDescription(description.String())
 	embed.SetFooter("💡 Use /shop to purchase more items", "")
 
-    // ownerID encoded in the custom ID of the select that triggered this view
-    ownerID := event.User().ID.String()
-    if idd, ok := event.Data.(interface{ CustomID() string }); ok {
-        parts := strings.Split(idd.CustomID(), "/")
-        if len(parts) >= 3 && parts[2] != "" {
-            ownerID = parts[2]
-        }
-    }
-    actionRow := discord.NewActionRow(
-        discord.NewSecondaryButton("Back to Inventory ↩️", "/inventory_category/"+ownerID),
-    )
+	// ownerID encoded in the custom ID of the select that triggered this view
+	ownerID := event.User().ID.String()
+	if idd, ok := event.Data.(interface{ CustomID() string }); ok {
+		parts := strings.Split(idd.CustomID(), "/")
+		if len(parts) >= 3 && parts[2] != "" {
+			ownerID = parts[2]
+		}
+	}
+	actionRow := discord.NewActionRow(
+		discord.NewSecondaryButton("Back to Inventory ↩️", "/inventory_category/"+ownerID),
+	)
 
 	return event.UpdateMessage(discord.MessageUpdate{
 		Embeds:     &[]discord.Embed{embed.Build()},
@@ -269,50 +269,50 @@ func (h *InventoryHandler) handleItemSelect(event *handler.ComponentEvent) error
 }
 
 func (h *InventoryHandler) HandleComponent(event *handler.ComponentEvent) error {
-    customID := event.Data.CustomID()
+	customID := event.Data.CustomID()
 
-    switch {
-    case strings.HasPrefix(customID, "/inventory_category/"):
-        parts := strings.Split(customID, "/")
-        if len(parts) < 3 || parts[2] == "" || parts[2] != event.User().ID.String() {
-            return utils.EH.CreateEphemeralError(event, "Only the command user can navigate this inventory.")
-        }
-        return h.handleCategorySelect(event)
-    case strings.HasPrefix(customID, "/inventory_item/"):
-        parts := strings.Split(customID, "/")
-        if len(parts) < 3 || parts[2] == "" || parts[2] != event.User().ID.String() {
-            return utils.EH.CreateEphemeralError(event, "Only the command user can navigate this inventory.")
-        }
-        return h.handleItemSelect(event)
-    default:
-        return nil
-    }
+	switch {
+	case strings.HasPrefix(customID, "/inventory_category/"):
+		parts := strings.Split(customID, "/")
+		if len(parts) < 3 || parts[2] == "" || parts[2] != event.User().ID.String() {
+			return utils.EH.CreateEphemeralError(event, "Only the command user can navigate this inventory.")
+		}
+		return h.handleCategorySelect(event)
+	case strings.HasPrefix(customID, "/inventory_item/"):
+		parts := strings.Split(customID, "/")
+		if len(parts) < 3 || parts[2] == "" || parts[2] != event.User().ID.String() {
+			return utils.EH.CreateEphemeralError(event, "Only the command user can navigate this inventory.")
+		}
+		return h.handleItemSelect(event)
+	default:
+		return nil
+	}
 }
 
 func (h *InventoryHandler) handleCategorySelect(event *handler.ComponentEvent) error {
-    var selectedValue string
-    ownerID := ""
+	var selectedValue string
+	ownerID := ""
 
 	// Handle both button and select menu interactions
 	switch data := event.Data.(type) {
-    case discord.StringSelectMenuInteractionData:
-        if len(data.Values) == 0 {
-            return event.CreateMessage(discord.MessageCreate{
-                Content: "Invalid selection",
-                Flags:   discord.MessageFlagEphemeral,
-            })
-        }
-        selectedValue = data.Values[0]
-        parts := strings.Split(data.CustomID(), "/")
-        if len(parts) >= 3 {
-            ownerID = parts[2]
-        }
-    case discord.ButtonInteractionData:
-        selectedValue = "recipe" // Default to recipes when coming from back button
-        parts := strings.Split(data.CustomID(), "/")
-        if len(parts) >= 3 {
-            ownerID = parts[2]
-        }
+	case discord.StringSelectMenuInteractionData:
+		if len(data.Values) == 0 {
+			return event.CreateMessage(discord.MessageCreate{
+				Content: "Invalid selection",
+				Flags:   discord.MessageFlagEphemeral,
+			})
+		}
+		selectedValue = data.Values[0]
+		parts := strings.Split(data.CustomID(), "/")
+		if len(parts) >= 3 {
+			ownerID = parts[2]
+		}
+	case discord.ButtonInteractionData:
+		selectedValue = "recipe" // Default to recipes when coming from back button
+		parts := strings.Split(data.CustomID(), "/")
+		if len(parts) >= 3 {
+			ownerID = parts[2]
+		}
 	default:
 		return event.CreateMessage(discord.MessageCreate{
 			Content: "Invalid interaction data",
@@ -320,11 +320,11 @@ func (h *InventoryHandler) handleCategorySelect(event *handler.ComponentEvent) e
 		})
 	}
 
-    if ownerID == "" || ownerID != event.User().ID.String() {
-        return utils.EH.CreateEphemeralError(event, "Only the command user can navigate this inventory.")
-    }
+	if ownerID == "" || ownerID != event.User().ID.String() {
+		return utils.EH.CreateEphemeralError(event, "Only the command user can navigate this inventory.")
+	}
 
-    ctx := context.Background()
+	ctx := context.Background()
 	userID := event.User().ID.String()
 
 	items, err := h.effectManager.ListUserEffects(ctx, userID)
@@ -362,10 +362,10 @@ func (h *InventoryHandler) handleCategorySelect(event *handler.ComponentEvent) e
 		})
 	}
 
-    components := []discord.ContainerComponent{
-        createInventoryCategories(selectedValue, ownerID),
-        createInventoryItems(currentItems, selectedValue, ownerID),
-    }
+	components := []discord.ContainerComponent{
+		createInventoryCategories(selectedValue, ownerID),
+		createInventoryItems(currentItems, selectedValue, ownerID),
+	}
 
 	return event.UpdateMessage(discord.MessageUpdate{
 		Embeds: &[]discord.Embed{{
@@ -428,26 +428,26 @@ func groupItems(items []*models.EffectItem) (actives, recipes, passives []*model
 }
 
 func (h *InventoryHandler) showMaterialsView(event *handler.CommandEvent, userItems []*models.UserItem, totalEffects int) error {
-    embed, components := h.createMaterialsEmbed(userItems, totalEffects, event.User().ID.String())
-    return event.CreateMessage(discord.MessageCreate{
-        Embeds:     []discord.Embed{embed},
-        Components: components,
-    })
+	embed, components := h.createMaterialsEmbed(userItems, totalEffects, event.User().ID.String())
+	return event.CreateMessage(discord.MessageCreate{
+		Embeds:     []discord.Embed{embed},
+		Components: components,
+	})
 }
 
 func (h *InventoryHandler) updateMaterialsView(event *handler.ComponentEvent, userItems []*models.UserItem, totalEffects int) error {
-    ownerID := event.User().ID.String()
-    if idd, ok := event.Data.(interface{ CustomID() string }); ok {
-        parts := strings.Split(idd.CustomID(), "/")
-        if len(parts) >= 3 && parts[2] != "" {
-            ownerID = parts[2]
-        }
-    }
-    embed, components := h.createMaterialsEmbed(userItems, totalEffects, ownerID)
-    return event.UpdateMessage(discord.MessageUpdate{
-        Embeds:     &[]discord.Embed{embed},
-        Components: &components,
-    })
+	ownerID := event.User().ID.String()
+	if idd, ok := event.Data.(interface{ CustomID() string }); ok {
+		parts := strings.Split(idd.CustomID(), "/")
+		if len(parts) >= 3 && parts[2] != "" {
+			ownerID = parts[2]
+		}
+	}
+	embed, components := h.createMaterialsEmbed(userItems, totalEffects, ownerID)
+	return event.UpdateMessage(discord.MessageUpdate{
+		Embeds:     &[]discord.Embed{embed},
+		Components: &components,
+	})
 }
 
 func (h *InventoryHandler) createMaterialsEmbed(userItems []*models.UserItem, totalEffects int, ownerID string) (discord.Embed, []discord.ContainerComponent) {
@@ -481,9 +481,9 @@ func (h *InventoryHandler) createMaterialsEmbed(userItems []*models.UserItem, to
 		SetFooter(fmt.Sprintf("Total Items: %d materials, %d effects", len(userItems), totalEffects), "").
 		Build()
 
-    components := []discord.ContainerComponent{
-        createInventoryCategories("materials", ownerID),
-    }
+	components := []discord.ContainerComponent{
+		createInventoryCategories("materials", ownerID),
+	}
 
 	return embed, components
 }

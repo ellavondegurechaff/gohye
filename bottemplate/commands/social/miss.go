@@ -87,66 +87,70 @@ func MissHandler(b *bottemplate.Bot) handler.CommandHandler {
 		},
 	}
 
-    return func(e *handler.CommandEvent) error {
-        // Defer immediately to avoid 3s timeout -> prevents Unknown interaction (10062)
-        if err := e.DeferCreateMessage(false); err != nil {
-            return err
-        }
+	return func(e *handler.CommandEvent) error {
+		// Defer immediately to avoid 3s timeout -> prevents Unknown interaction (10062)
+		if err := e.DeferCreateMessage(false); err != nil {
+			return err
+		}
 
-        // Show immediate placeholder to avoid long "thinking" state
-        _, _ = e.UpdateInteractionResponse(discord.MessageUpdate{Embeds: &[]discord.Embed{{
-            Title:       "Missing Cards",
-            Description: "Fetching your missing cards...",
-            Color:       config.BackgroundColor,
-        }}})
+		// Show immediate placeholder to avoid long "thinking" state
+		_, _ = e.UpdateInteractionResponse(discord.MessageUpdate{Embeds: &[]discord.Embed{{
+			Title:       "Missing Cards",
+			Description: "Fetching your missing cards...",
+			Color:       config.BackgroundColor,
+		}}})
 
-        // Run expensive work asynchronously to avoid 10s wrapper timeout
-        go func() {
-            ctx, cancel := context.WithTimeout(context.Background(), config.DefaultQueryTimeout)
-            defer cancel()
+		// Run expensive work asynchronously to avoid 10s wrapper timeout
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), config.DefaultQueryTimeout)
+			defer cancel()
 
-            query := strings.TrimSpace(e.SlashCommandInteractionData().String("card_query"))
+			query := strings.TrimSpace(e.SlashCommandInteractionData().String("card_query"))
 
-            missingCards, err := cardOperationsService.GetMissingCards(ctx, e.User().ID.String(), query)
-            if err != nil {
-                _, _ = e.UpdateInteractionResponse(discord.MessageUpdate{Embeds: &[]discord.Embed{{
-                    Title:       "Error",
-                    Description: "Failed to fetch missing cards",
-                    Color:       config.ErrorColor,
-                }}})
-                return
-            }
+			missingCards, err := cardOperationsService.GetMissingCards(ctx, e.User().ID.String(), query)
+			if err != nil {
+				_, _ = e.UpdateInteractionResponse(discord.MessageUpdate{Embeds: &[]discord.Embed{{
+					Title:       "Error",
+					Description: "Failed to fetch missing cards",
+					Color:       config.ErrorColor,
+				}}})
+				return
+			}
 
-            if len(missingCards) == 0 {
-                msg := "You own all available cards! 🎉"
-                if query != "" { msg = "No missing cards found matching your search criteria." }
-                _, _ = e.UpdateInteractionResponse(discord.MessageUpdate{Embeds: &[]discord.Embed{{
-                    Title:       "Missing Cards",
-                    Description: msg,
-                    Color:       config.BackgroundColor,
-                }}})
-                return
-            }
+			if len(missingCards) == 0 {
+				msg := "You own all available cards! 🎉"
+				if query != "" {
+					msg = "No missing cards found matching your search criteria."
+				}
+				_, _ = e.UpdateInteractionResponse(discord.MessageUpdate{Embeds: &[]discord.Embed{{
+					Title:       "Missing Cards",
+					Description: msg,
+					Color:       config.BackgroundColor,
+				}}})
+				return
+			}
 
-            displayItems := cardDisplayService.ConvertCardsToMissingDisplayItems(missingCards)
-            items := make([]interface{}, len(displayItems))
-            for i, item := range displayItems { items[i] = item }
+			displayItems := cardDisplayService.ConvertCardsToMissingDisplayItems(missingCards)
+			items := make([]interface{}, len(displayItems))
+			for i, item := range displayItems {
+				items[i] = item
+			}
 
-            embed, components, err := paginationHandler.CreateInitialPaginationEmbed(items, e.User().ID.String(), query)
-            if err != nil {
-                _, _ = e.UpdateInteractionResponse(discord.MessageUpdate{Embeds: &[]discord.Embed{{
-                    Title:       "Error",
-                    Description: "Failed to create pagination",
-                    Color:       config.ErrorColor,
-                }}})
-                return
-            }
+			embed, components, err := paginationHandler.CreateInitialPaginationEmbed(items, e.User().ID.String(), query)
+			if err != nil {
+				_, _ = e.UpdateInteractionResponse(discord.MessageUpdate{Embeds: &[]discord.Embed{{
+					Title:       "Error",
+					Description: "Failed to create pagination",
+					Color:       config.ErrorColor,
+				}}})
+				return
+			}
 
-            _, _ = e.UpdateInteractionResponse(discord.MessageUpdate{Embeds: &[]discord.Embed{embed}, Components: &components})
-        }()
+			_, _ = e.UpdateInteractionResponse(discord.MessageUpdate{Embeds: &[]discord.Embed{embed}, Components: &components})
+		}()
 
-        return nil
-    }
+		return nil
+	}
 }
 
 // MissComponentHandler handles pagination for missing cards using the new unified factory

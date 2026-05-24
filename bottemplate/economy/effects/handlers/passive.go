@@ -6,9 +6,35 @@ import (
 
 	"log/slog"
 
+	"github.com/disgoorg/bot-template/bottemplate/database/models"
 	"github.com/disgoorg/bot-template/bottemplate/database/repositories"
 	"github.com/disgoorg/bot-template/bottemplate/economy/effects"
+	"github.com/uptrace/bun"
 )
+
+func currentTierValue(ctx context.Context, deps *effects.EffectDependencies, userID, effectID string) (value int, tier int, ok bool) {
+	effectRepo, ok := deps.EffectRepo.(repositories.EffectRepository)
+	if !ok {
+		return 0, 0, false
+	}
+
+	userEffect, err := effectRepo.GetUserEffect(ctx, userID, effectID)
+	if err != nil || userEffect == nil || userEffect.IsRecipe || !userEffect.Active {
+		return 0, 0, false
+	}
+
+	effectData := effects.GetEffectItemByID(effectID)
+	if effectData == nil || effectData.TierData == nil {
+		return 0, 0, false
+	}
+
+	tierIndex := userEffect.Tier - 1
+	if tierIndex < 0 || tierIndex >= len(effectData.TierData.Values) {
+		return 0, 0, false
+	}
+
+	return effectData.TierData.Values[tierIndex], userEffect.Tier, true
+}
 
 // TohrugiftHandler implements the "Gift From Tohru" passive effect
 type TohrugiftHandler struct {
@@ -108,6 +134,7 @@ func (h *TohrugiftHandler) GetModifier(ctx context.Context, userID string, actio
 type CakedayHandler struct {
 	*effects.BaseEffectHandler
 	userRepo repositories.UserRepository
+	db       *bun.DB
 }
 
 // NewCakedayHandler creates a new Cakeday effect handler
@@ -115,7 +142,7 @@ func NewCakedayHandler(deps *effects.EffectDependencies) *CakedayHandler {
 	metadata := effects.EffectMetadata{
 		ID:          "cakeday",
 		Name:        "Cake Day",
-		Description: "Get +100 snowflakes in your daily for every claim you did",
+		Description: "Get extra flakes per daily for every claim you did",
 		Type:        effects.EffectTypePassive,
 		Category:    effects.EffectCategoryDaily,
 		Cooldown:    0,
@@ -128,7 +155,21 @@ func NewCakedayHandler(deps *effects.EffectDependencies) *CakedayHandler {
 	return &CakedayHandler{
 		BaseEffectHandler: effects.NewBaseEffectHandler(metadata, deps),
 		userRepo:          deps.UserRepo.(repositories.UserRepository),
+		db:                deps.Database.(*bun.DB),
 	}
+}
+
+func (h *CakedayHandler) getDailyClaims(ctx context.Context, userID string) int {
+	var stats models.ClaimStats
+	err := h.db.NewSelect().
+		Model(&stats).
+		Column("daily_claims").
+		Where("user_id = ?", userID).
+		Scan(ctx)
+	if err != nil {
+		return 0
+	}
+	return stats.DailyClaims
 }
 
 // Execute for passive effects
@@ -146,53 +187,25 @@ func (h *CakedayHandler) ApplyEffect(ctx context.Context, userID string, action 
 		return baseValue, nil
 	}
 
-	user, err := h.userRepo.GetByDiscordID(ctx, userID)
-	if err != nil {
-		return baseValue, err
-	}
-
 	baseReward, ok := baseValue.(int)
 	if !ok {
 		return baseValue, fmt.Errorf("invalid base value type for daily reward")
 	}
 
-	// Get the user's effect tier and calculate bonus based on tier
-	effectRepo, ok := h.BaseEffectHandler.GetDependencies().EffectRepo.(repositories.EffectRepository)
+	flakesPerClaim, tier, ok := currentTierValue(ctx, h.BaseEffectHandler.GetDependencies(), userID, "cakeday")
 	if !ok {
-		return baseValue, fmt.Errorf("invalid effect repository type")
-	}
-
-	userEffect, err := effectRepo.GetUserEffect(ctx, userID, "cakeday")
-	if err != nil {
-		// Effect not found or error, use default
 		return baseValue, nil
 	}
 
-	// Get tier value from effect definition
-	effectData := effects.GetEffectItemByID("cakeday")
-	if effectData == nil || effectData.TierData == nil {
-		// Fallback to old behavior
-		bonus := user.DailyStats.Claims * 100
-		modifiedReward := baseReward + bonus
-		return modifiedReward, nil
-	}
-
-	// Get value for current tier
-	tierIndex := userEffect.Tier - 1
-	if tierIndex < 0 || tierIndex >= len(effectData.TierData.Values) {
-		return baseValue, fmt.Errorf("invalid tier index")
-	}
-
-	// Calculate bonus: flakes per claim * claims made
-	flakesPerClaim := effectData.TierData.Values[tierIndex]
-	bonus := user.DailyStats.Claims * flakesPerClaim
+	dailyClaims := h.getDailyClaims(ctx, userID)
+	bonus := dailyClaims * flakesPerClaim
 	modifiedReward := baseReward + bonus
 
 	slog.Info("Applied Cakeday effect",
 		slog.String("user_id", userID),
 		slog.Int("base_reward", baseReward),
-		slog.Int("claims_today", user.DailyStats.Claims),
-		slog.Int("tier", userEffect.Tier),
+		slog.Int("claims_today", dailyClaims),
+		slog.Int("tier", tier),
 		slog.Int("flakes_per_claim", flakesPerClaim),
 		slog.Int("bonus", bonus),
 		slog.Int("modified_reward", modifiedReward))
@@ -211,39 +224,11 @@ func (h *CakedayHandler) GetModifier(ctx context.Context, userID string, action 
 		return 0.0, nil
 	}
 
-	user, err := h.userRepo.GetByDiscordID(ctx, userID)
-	if err != nil {
-		return 0.0, err
-	}
-
-	// Get the user's effect tier
-	effectRepo, ok := h.BaseEffectHandler.GetDependencies().EffectRepo.(repositories.EffectRepository)
+	flakesPerClaim, _, ok := currentTierValue(ctx, h.BaseEffectHandler.GetDependencies(), userID, "cakeday")
 	if !ok {
-		// Fallback to old behavior
-		return float64(user.DailyStats.Claims * 100), nil
-	}
-
-	userEffect, err := effectRepo.GetUserEffect(ctx, userID, "cakeday")
-	if err != nil {
-		// Effect not found, return 0
 		return 0.0, nil
 	}
-
-	// Get tier value from effect definition
-	effectData := effects.GetEffectItemByID("cakeday")
-	if effectData == nil || effectData.TierData == nil {
-		// Fallback to old behavior
-		return float64(user.DailyStats.Claims * 100), nil
-	}
-
-	// Get value for current tier
-	tierIndex := userEffect.Tier - 1
-	if tierIndex < 0 || tierIndex >= len(effectData.TierData.Values) {
-		return 0.0, nil
-	}
-
-	flakesPerClaim := effectData.TierData.Values[tierIndex]
-	return float64(user.DailyStats.Claims * flakesPerClaim), nil
+	return float64(h.getDailyClaims(ctx, userID) * flakesPerClaim), nil
 }
 
 // HolygrailHandler implements the "The Holy Grail" passive effect
@@ -257,7 +242,7 @@ func NewHolygrailHandler(deps *effects.EffectDependencies) *HolygrailHandler {
 	metadata := effects.EffectMetadata{
 		ID:          "holygrail",
 		Name:        "The Holy Grail",
-		Description: "Get +25% of vials when liquifying 1 and 2-star cards",
+		Description: "Get extra vials per liquify",
 		Type:        effects.EffectTypePassive,
 		Category:    effects.EffectCategoryEconomy,
 		Cooldown:    0,
@@ -299,17 +284,12 @@ func (h *HolygrailHandler) ApplyEffect(ctx context.Context, userID string, actio
 		return baseValue, fmt.Errorf("missing vials in base value")
 	}
 
-	cardLevel, ok := data["card_level"].(int)
+	bonusValue, tier, ok := currentTierValue(ctx, h.BaseEffectHandler.GetDependencies(), userID, "holygrail")
 	if !ok {
-		return baseValue, fmt.Errorf("missing card_level in base value")
-	}
-
-	// Only apply bonus for 1-2 star cards
-	if cardLevel > 2 {
 		return baseValue, nil
 	}
 
-	bonus := int64(float64(baseVials) * 0.25)
+	bonus := int64(bonusValue)
 	modifiedVials := baseVials + bonus
 
 	result := make(map[string]interface{})
@@ -321,7 +301,7 @@ func (h *HolygrailHandler) ApplyEffect(ctx context.Context, userID string, actio
 	slog.Info("Applied Holygrail effect",
 		slog.String("user_id", userID),
 		slog.Int64("base_vials", baseVials),
-		slog.Int("card_level", cardLevel),
+		slog.Int("tier", tier),
 		slog.Int64("bonus", bonus),
 		slog.Int64("modified_vials", modifiedVials))
 
@@ -333,16 +313,20 @@ func (h *HolygrailHandler) IsActive(ctx context.Context, userID string) (bool, e
 	return true, nil // Simplified for now
 }
 
-// GetModifier returns the vial bonus multiplier (1.25 for 1-2 star cards)
+// GetModifier returns the vial bonus amount for the current tier.
 func (h *HolygrailHandler) GetModifier(ctx context.Context, userID string, action string) (float64, error) {
 	if action != "vial_reward" {
-		return 1.0, nil
+		return 0.0, nil
 	}
 
-	return 1.25, nil
+	bonus, _, ok := currentTierValue(ctx, h.BaseEffectHandler.GetDependencies(), userID, "holygrail")
+	if !ok {
+		return 0.0, nil
+	}
+	return float64(bonus), nil
 }
 
-// SkyfriendHandler implements the "Skies Of Friendship" passive effect
+// SkyfriendHandler implements the "Wolf of Hyejoo" passive effect
 type SkyfriendHandler struct {
 	*effects.BaseEffectHandler
 	userRepo repositories.UserRepository
@@ -351,9 +335,9 @@ type SkyfriendHandler struct {
 // NewSkyfriendHandler creates a new Skyfriend effect handler
 func NewSkyfriendHandler(deps *effects.EffectDependencies) *SkyfriendHandler {
 	metadata := effects.EffectMetadata{
-		ID:          "skyfriend",
-		Name:        "Skies Of Friendship",
-		Description: "Get 10% snowflakes back when winning an auction",
+		ID:          "wolfofhyejoo",
+		Name:        "Wolf of Hyejoo",
+		Description: "Gain cashback from winning auctions",
 		Type:        effects.EffectTypePassive,
 		Category:    effects.EffectCategoryEconomy,
 		Cooldown:    0,
@@ -373,7 +357,7 @@ func NewSkyfriendHandler(deps *effects.EffectDependencies) *SkyfriendHandler {
 func (h *SkyfriendHandler) Execute(ctx context.Context, params effects.EffectParams) (*effects.EffectResult, error) {
 	return &effects.EffectResult{
 		Success:  true,
-		Message:  "Skyfriend passive effect is active",
+		Message:  "Wolf of Hyejoo effect is active",
 		Consumed: false,
 	}, nil
 }
@@ -390,12 +374,17 @@ func (h *SkyfriendHandler) ApplyEffect(ctx context.Context, userID string, actio
 		return baseValue, fmt.Errorf("invalid base value type for auction price")
 	}
 
-	// Return 10% of auction price as bonus
-	bonus := int64(float64(auctionPrice) * 0.10)
+	bonusPercent, tier, ok := currentTierValue(ctx, h.BaseEffectHandler.GetDependencies(), userID, "wolfofhyejoo")
+	if !ok {
+		return int64(0), nil
+	}
+	bonus := int64(float64(auctionPrice) * float64(bonusPercent) / 100.0)
 
 	slog.Info("Applied Skyfriend effect",
 		slog.String("user_id", userID),
 		slog.Int64("auction_price", auctionPrice),
+		slog.Int("tier", tier),
+		slog.Int("bonus_percent", bonusPercent),
 		slog.Int64("bonus", bonus))
 
 	return bonus, nil
@@ -406,13 +395,17 @@ func (h *SkyfriendHandler) IsActive(ctx context.Context, userID string) (bool, e
 	return true, nil // Simplified for now
 }
 
-// GetModifier returns the auction bonus rate (0.10)
+// GetModifier returns the auction cashback percentage.
 func (h *SkyfriendHandler) GetModifier(ctx context.Context, userID string, action string) (float64, error) {
 	if action != "auction_win_bonus" {
 		return 0.0, nil
 	}
 
-	return 0.10, nil
+	bonusPercent, _, ok := currentTierValue(ctx, h.BaseEffectHandler.GetDependencies(), userID, "wolfofhyejoo")
+	if !ok {
+		return 0.0, nil
+	}
+	return float64(bonusPercent) / 100.0, nil
 }
 
 // CherryblossHandler implements the "Cherry Blossoms" passive effect
@@ -425,8 +418,8 @@ type CherryblossHandler struct {
 func NewCherryblossHandler(deps *effects.EffectDependencies) *CherryblossHandler {
 	metadata := effects.EffectMetadata{
 		ID:          "cherrybloss",
-		Name:        "Cherry Blossoms",
-		Description: "Card forging costs 50% less",
+		Name:        "Cherry Blossom",
+		Description: "Reduce forge and ascend cost",
 		Type:        effects.EffectTypePassive,
 		Category:    effects.EffectCategoryEconomy,
 		Cooldown:    0,
@@ -462,12 +455,17 @@ func (h *CherryblossHandler) ApplyEffect(ctx context.Context, userID string, act
 		return baseValue, fmt.Errorf("invalid base value type for forge cost")
 	}
 
-	// Apply 50% discount
-	discountedCost := int(float64(baseCost) * 0.50)
+	discountPercent, tier, ok := currentTierValue(ctx, h.BaseEffectHandler.GetDependencies(), userID, "cherrybloss")
+	if !ok {
+		return baseValue, nil
+	}
+	discountedCost := int(float64(baseCost) * (1.0 - float64(discountPercent)/100.0))
 
 	slog.Info("Applied Cherrybloss effect",
 		slog.String("user_id", userID),
 		slog.Int("base_cost", baseCost),
+		slog.Int("tier", tier),
+		slog.Int("discount_percent", discountPercent),
 		slog.Int("discounted_cost", discountedCost))
 
 	return discountedCost, nil
@@ -478,13 +476,17 @@ func (h *CherryblossHandler) IsActive(ctx context.Context, userID string) (bool,
 	return true, nil // Simplified for now
 }
 
-// GetModifier returns the forge discount multiplier (0.50)
+// GetModifier returns the forge discount multiplier for the current tier.
 func (h *CherryblossHandler) GetModifier(ctx context.Context, userID string, action string) (float64, error) {
 	if action != "forge_cost" {
 		return 1.0, nil
 	}
 
-	return 0.50, nil
+	discountPercent, _, ok := currentTierValue(ctx, h.BaseEffectHandler.GetDependencies(), userID, "cherrybloss")
+	if !ok {
+		return 1.0, nil
+	}
+	return 1.0 - (float64(discountPercent) / 100.0), nil
 }
 
 // RulerjeanneHandler implements the "The Ruler Jeanne" passive effect
@@ -498,7 +500,7 @@ func NewRulerjeanneHandler(deps *effects.EffectDependencies) *RulerjeanneHandler
 	metadata := effects.EffectMetadata{
 		ID:          "rulerjeanne",
 		Name:        "The Ruler Jeanne",
-		Description: "Reduces daily cooldown from 20 to 17 hours",
+		Description: "Reduce daily cooldown",
 		Type:        effects.EffectTypePassive,
 		Category:    effects.EffectCategoryDaily,
 		Cooldown:    0,
@@ -529,20 +531,23 @@ func (h *RulerjeanneHandler) ApplyEffect(ctx context.Context, userID string, act
 		return baseValue, nil
 	}
 
-	baseHours, ok := baseValue.(int)
+	baseMinutes, ok := baseValue.(int)
 	if !ok {
 		return baseValue, fmt.Errorf("invalid base value type for daily cooldown")
 	}
 
-	// Reduce from 20 to 17 hours
-	reducedHours := 17
+	reducedMinutes, tier, ok := currentTierValue(ctx, h.BaseEffectHandler.GetDependencies(), userID, "rulerjeanne")
+	if !ok {
+		return baseValue, nil
+	}
 
 	slog.Info("Applied Rulerjeanne effect",
 		slog.String("user_id", userID),
-		slog.Int("base_hours", baseHours),
-		slog.Int("reduced_hours", reducedHours))
+		slog.Int("base_minutes", baseMinutes),
+		slog.Int("tier", tier),
+		slog.Int("reduced_minutes", reducedMinutes))
 
-	return reducedHours, nil
+	return reducedMinutes, nil
 }
 
 // IsActive checks if the effect is currently active
@@ -550,13 +555,17 @@ func (h *RulerjeanneHandler) IsActive(ctx context.Context, userID string) (bool,
 	return true, nil // Simplified for now
 }
 
-// GetModifier returns the daily cooldown in hours (17)
+// GetModifier returns the daily cooldown in minutes.
 func (h *RulerjeanneHandler) GetModifier(ctx context.Context, userID string, action string) (float64, error) {
 	if action != "daily_cooldown" {
-		return 20.0, nil // Default cooldown
+		return 1200.0, nil // Default cooldown in minutes
 	}
 
-	return 17.0, nil
+	reducedMinutes, _, ok := currentTierValue(ctx, h.BaseEffectHandler.GetDependencies(), userID, "rulerjeanne")
+	if !ok {
+		return 1200.0, nil
+	}
+	return float64(reducedMinutes), nil
 }
 
 // SpellcardHandler implements the "Impossible Spell Card" passive effect

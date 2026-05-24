@@ -27,15 +27,27 @@ var Summon = discord.SlashCommandCreate{
 	},
 }
 
+var Draw = discord.SlashCommandCreate{
+	Name:        "draw",
+	Description: "✨ Draw a card from your collection",
+	Options: []discord.ApplicationCommandOption{
+		discord.ApplicationCommandOptionString{
+			Name:        "name",
+			Description: "Name of the card to draw from your collection",
+			Required:    true,
+		},
+	},
+}
+
 func SummonHandler(b *bottemplate.Bot) handler.CommandHandler {
 	cardOperationsService := services.NewCardOperationsService(b.CardRepository, b.UserCardRepository)
 	cardDisplayService := services.NewCardDisplayService(b.CardRepository, b.SpacesService)
 
-    return func(e *handler.CommandEvent) error {
-        // Defer to avoid 3s timeout on search
-        if err := e.DeferCreateMessage(false); err != nil {
-            return err
-        }
+	return func(e *handler.CommandEvent) error {
+		// Defer to avoid 3s timeout on search
+		if err := e.DeferCreateMessage(false); err != nil {
+			return err
+		}
 		cardName := e.SlashCommandInteractionData().String("name")
 		userID := e.User().ID.String()
 
@@ -78,12 +90,18 @@ func SummonHandler(b *bottemplate.Bot) handler.CommandHandler {
 			}
 		}
 
-        if matchedCard == nil {
-            return utils.EH.UpdateInteractionResponse(e, "Card Not Found", fmt.Sprintf("Could not find a card matching '%s' in your collection.", cardName))
-        }
+		if matchedCard == nil {
+			return utils.EH.UpdateInteractionResponse(e, "Card Not Found", fmt.Sprintf("Could not find a card matching '%s' in your collection.", cardName))
+		}
 
-        return displayCard(e, matchedCard, b, cardDisplayService)
-    }
+		if err := displayCard(e, matchedCard, b, cardDisplayService); err != nil {
+			return err
+		}
+		if b.QuestTracker != nil {
+			go b.QuestTracker.TrackCardDrawWithCardID(context.Background(), userID, matchedCard.ID)
+		}
+		return nil
+	}
 }
 
 // displayCard handles the card display logic
@@ -126,8 +144,8 @@ func displayCard(e *handler.CommandEvent, card *models.Card, b *bottemplate.Bot,
 		},
 	}
 
-    _, err := e.UpdateInteractionResponse(discord.MessageUpdate{Embeds: &[]discord.Embed{embed}})
-    return err
+	_, err := e.UpdateInteractionResponse(discord.MessageUpdate{Embeds: &[]discord.Embed{embed}})
+	return err
 }
 
 // getCardQuote returns an inspirational quote based on card level

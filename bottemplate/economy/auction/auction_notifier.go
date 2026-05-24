@@ -4,11 +4,12 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 
 	"github.com/disgoorg/bot-template/bottemplate/database/models"
 	"github.com/disgoorg/disgo/bot"
-	"github.com/disgoorg/disgo/discord"
+	"github.com/disgoorg/disgo/discord" 
 	"github.com/disgoorg/snowflake/v2"
 )
 
@@ -80,22 +81,16 @@ func (n *AuctionNotifier) NotifyAuctionEnd(ctx context.Context, auction *models.
 			cardName))
 	}
 
-	// Try to DM the seller
 	dmChannel, err := client.Rest().CreateDMChannel(snowflake.MustParse(auction.SellerID))
 	if err != nil {
-		slog.Error("Failed to create DM channel with seller",
-			slog.String("seller_id", auction.SellerID),
-			slog.String("error", err.Error()))
-		return err
-	}
-
-	_, err = client.Rest().CreateMessage(dmChannel.ID(), discord.MessageCreate{
-		Embeds: []discord.Embed{sellerEmbed.Build()},
-	})
-	if err != nil {
-		slog.Error("Failed to send message to seller",
-			slog.String("seller_id", auction.SellerID),
-			slog.String("error", err.Error()))
+		logAuctionDMFailure("seller", auction.SellerID, err)
+	} else {
+		_, err = client.Rest().CreateMessage(dmChannel.ID(), discord.MessageCreate{
+			Embeds: []discord.Embed{sellerEmbed.Build()},
+		})
+		if err != nil {
+			logAuctionDMFailure("seller", auction.SellerID, err)
+		}
 	}
 
 	// If there's a winner, notify them too
@@ -109,23 +104,44 @@ func (n *AuctionNotifier) NotifyAuctionEnd(ctx context.Context, auction *models.
 
 		winnerDMChannel, err := client.Rest().CreateDMChannel(snowflake.MustParse(auction.TopBidderID))
 		if err != nil {
-			slog.Error("Failed to create DM channel with winner",
-				slog.String("winner_id", auction.TopBidderID),
-				slog.String("error", err.Error()))
-			return err
-		}
-
-		_, err = client.Rest().CreateMessage(winnerDMChannel.ID(), discord.MessageCreate{
-			Embeds: []discord.Embed{winnerEmbed.Build()},
-		})
-		if err != nil {
-			slog.Error("Failed to send message to winner",
-				slog.String("winner_id", auction.TopBidderID),
-				slog.String("error", err.Error()))
+			logAuctionDMFailure("winner", auction.TopBidderID, err)
+		} else {
+			_, err = client.Rest().CreateMessage(winnerDMChannel.ID(), discord.MessageCreate{
+				Embeds: []discord.Embed{winnerEmbed.Build()},
+			})
+			if err != nil {
+				logAuctionDMFailure("winner", auction.TopBidderID, err)
+			}
 		}
 	}
 
 	return nil
+}
+
+func logAuctionDMFailure(role string, userID string, err error) {
+	attrs := []slog.Attr{
+		slog.String("recipient_role", role),
+		slog.String("user_id", userID),
+		slog.String("error", err.Error()),
+	}
+
+	if isExpectedDMFailure(err) {
+		slog.LogAttrs(context.Background(), slog.LevelDebug, "Skipped auction DM notification", attrs...)
+		return
+	}
+
+	slog.LogAttrs(context.Background(), slog.LevelWarn, "Failed to send auction DM notification", attrs...)
+}
+
+func isExpectedDMFailure(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "no mutual guild") ||
+		strings.Contains(message, "cannot send messages to this user") ||
+		strings.Contains(message, "50007")
 }
 
 func (n *AuctionNotifier) logNotification(message string) {

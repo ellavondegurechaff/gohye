@@ -8,11 +8,11 @@ import (
 	"strings"
 	"time"
 
+	webmodels "github.com/disgoorg/bot-template/backend/models"
 	"github.com/disgoorg/bot-template/bottemplate/database/models"
 	"github.com/disgoorg/bot-template/bottemplate/database/repositories"
 	"github.com/disgoorg/bot-template/bottemplate/economy/utils"
 	"github.com/disgoorg/bot-template/bottemplate/services"
-	webmodels "github.com/disgoorg/bot-template/backend/models"
 	"github.com/uptrace/bun"
 )
 
@@ -42,28 +42,28 @@ func NewCollectionImportService(
 func (cis *CollectionImportService) ValidateAndNormalizeFilename(filename string) (*webmodels.ParsedFilename, error) {
 	re := regexp.MustCompile(FilenamePattern)
 	matches := re.FindStringSubmatch(filename)
-	
+
 	if len(matches) != 4 {
 		return nil, fmt.Errorf("invalid filename format. Expected: {level}_{name}.{ext}")
 	}
-	
+
 	level := 0
 	if l, err := strconv.Atoi(matches[1]); err == nil {
 		level = l
 	} else {
 		return nil, fmt.Errorf("invalid level in filename")
 	}
-	
+
 	if level < 1 || level > 5 {
 		return nil, fmt.Errorf("level must be between 1 and 5")
 	}
-	
+
 	name := strings.ToLower(strings.ReplaceAll(matches[2], " ", "_"))
 	extension := strings.ToLower(matches[3])
 	isAnimated := extension == "gif"
-	
+
 	normalized := fmt.Sprintf("%d_%s.%s", level, name, extension)
-	
+
 	return &webmodels.ParsedFilename{
 		Level:      level,
 		Name:       name,
@@ -95,7 +95,7 @@ func (cis *CollectionImportService) ProcessCollectionImport(ctx context.Context,
 		}
 		validatedFiles = append(validatedFiles, parsed)
 	}
-	
+
 	// 2. Check for duplicate names within the collection
 	nameCount := make(map[string]int)
 	for _, parsed := range validatedFiles {
@@ -107,7 +107,7 @@ func (cis *CollectionImportService) ProcessCollectionImport(ctx context.Context,
 			}, nil
 		}
 	}
-	
+
 	// 3. Get next card ID
 	lastID, err := cis.cardRepo.GetLastCardID(ctx)
 	if err != nil {
@@ -117,7 +117,7 @@ func (cis *CollectionImportService) ProcessCollectionImport(ctx context.Context,
 		}, nil
 	}
 	nextID := lastID + 1
-	
+
 	// 4. Ensure collection exists with proper format
 	err = cis.ensureCollectionExists(ctx, req.CollectionID, req.DisplayName, req.GroupType, req.IsPromo)
 	if err != nil {
@@ -126,15 +126,15 @@ func (cis *CollectionImportService) ProcessCollectionImport(ctx context.Context,
 			ErrorMessage: fmt.Sprintf("Failed to create collection: %s", err.Error()),
 		}, nil
 	}
-	
+
 	// 5. Upload files to Spaces (with cleanup on failure)
 	uploadedFiles := make([]string, 0, len(req.Files))
 	storagePath := cis.GenerateStoragePath(req.GroupType, req.CollectionID, req.IsPromo)
-	
+
 	for i, file := range req.Files {
 		parsed := validatedFiles[i]
 		spacesPath := fmt.Sprintf("%s/%s", storagePath, parsed.Normalized)
-		
+
 		err := cis.uploadFileToSpaces(ctx, file, spacesPath)
 		if err != nil {
 			// Cleanup all uploaded files
@@ -146,7 +146,7 @@ func (cis *CollectionImportService) ProcessCollectionImport(ctx context.Context,
 		}
 		uploadedFiles = append(uploadedFiles, spacesPath)
 	}
-	
+
 	// 6. Create cards in database transaction
 	cards := make([]*models.Card, 0, len(validatedFiles))
 	for i, parsed := range validatedFiles {
@@ -162,12 +162,12 @@ func (cis *CollectionImportService) ProcessCollectionImport(ctx context.Context,
 		}
 		cards = append(cards, card)
 	}
-	
+
 	// Use transaction manager for atomic database operations
 	err = cis.txManager.WithTransaction(ctx, utils.StandardTransactionOptions(), func(ctx context.Context, tx bun.Tx) error {
 		return cis.cardRepo.BatchCreateWithTransaction(ctx, tx, cards)
 	})
-	
+
 	if err != nil {
 		// Cleanup uploaded files and rollback
 		cis.cleanupUploadedFiles(ctx, uploadedFiles)
@@ -176,7 +176,7 @@ func (cis *CollectionImportService) ProcessCollectionImport(ctx context.Context,
 			ErrorMessage: fmt.Sprintf("Database operation failed: %s", err.Error()),
 		}, nil
 	}
-	
+
 	return &webmodels.CollectionImportResult{
 		CollectionID:  req.CollectionID,
 		CardsCreated:  len(cards),
@@ -193,7 +193,7 @@ func (cis *CollectionImportService) ensureCollectionExists(ctx context.Context, 
 	if err == nil && existing != nil {
 		return nil // Collection exists
 	}
-	
+
 	// Create new collection with proper format
 	return cis.collectionRepo.CreateWithStandardFormat(ctx, collectionID, displayName, groupType, isPromo)
 }

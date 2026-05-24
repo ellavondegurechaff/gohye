@@ -140,28 +140,92 @@ func (gi *GameIntegrator) ApplyLiquefyBonus(ctx context.Context, userID string, 
 	return modifiedVials
 }
 
-// GetDailyCooldown returns modified daily cooldown based on passive effects
+// GetDailyCooldown returns modified daily cooldown in minutes based on passive effects.
 func (gi *GameIntegrator) GetDailyCooldown(ctx context.Context, userID string) int {
-	baseHours := 20
+	baseMinutes := 20 * 60
 
-	result, err := gi.applyPassiveEffect(ctx, userID, "daily_cooldown", baseHours)
+	result, err := gi.applyPassiveEffect(ctx, userID, "daily_cooldown", baseMinutes)
 	if err != nil {
 		slog.Warn("Failed to apply passive effects to daily cooldown",
 			slog.String("user_id", userID),
-			slog.Int("base_hours", baseHours),
+			slog.Int("base_minutes", baseMinutes),
 			slog.Any("error", err))
-		return baseHours
+		return baseMinutes
 	}
 
-	modifiedHours, ok := result.(int)
+	modifiedMinutes, ok := result.(int)
 	if !ok {
 		slog.Warn("Invalid result type from passive effect application",
 			slog.String("user_id", userID),
 			slog.String("action", "daily_cooldown"))
-		return baseHours
+		return baseMinutes
 	}
 
-	return modifiedHours
+	return modifiedMinutes
+}
+
+// ApplyWorkReward applies work reward percentage bonuses to a single reward amount.
+func (gi *GameIntegrator) ApplyWorkReward(ctx context.Context, userID string, baseReward int64) int64 {
+	result, err := gi.applyPassiveEffect(ctx, userID, "work_reward", int(baseReward))
+	if err != nil {
+		slog.Warn("Failed to apply work reward effects", slog.String("user_id", userID), slog.Any("error", err))
+		return baseReward
+	}
+	modifiedReward, ok := result.(int)
+	if !ok {
+		return baseReward
+	}
+	return int64(modifiedReward)
+}
+
+// ApplyLevelupXP applies level-up XP percentage bonuses.
+func (gi *GameIntegrator) ApplyLevelupXP(ctx context.Context, userID string, baseXP int64) int64 {
+	result, err := gi.applyPassiveEffect(ctx, userID, "levelup_xp", int(baseXP))
+	if err != nil {
+		slog.Warn("Failed to apply levelup XP effects", slog.String("user_id", userID), slog.Any("error", err))
+		return baseXP
+	}
+	modifiedXP, ok := result.(int)
+	if !ok {
+		return baseXP
+	}
+	return int64(modifiedXP)
+}
+
+// ApplyAuctionWinCashback returns the cashback amount for winning an auction.
+func (gi *GameIntegrator) ApplyAuctionWinCashback(ctx context.Context, userID string, auctionPrice int64) int64 {
+	userEffect, err := gi.effectManager.repo.GetUserEffect(ctx, userID, "wolfofhyejoo")
+	if err != nil || userEffect == nil || !userEffect.Active || userEffect.IsRecipe {
+		return 0
+	}
+	result, err := gi.applyPassiveEffect(ctx, userID, "auction_win_bonus", auctionPrice)
+	if err != nil {
+		slog.Warn("Failed to apply auction win cashback", slog.String("user_id", userID), slog.Any("error", err))
+		return 0
+	}
+	cashback, ok := result.(int64)
+	if !ok {
+		return 0
+	}
+	return cashback
+}
+
+// ApplyAuctionSaleBonus returns the seller bonus amount for a completed auction sale.
+func (gi *GameIntegrator) ApplyAuctionSaleBonus(ctx context.Context, userID string, salePrice int64) int64 {
+	userEffect, err := gi.effectManager.repo.GetUserEffect(ctx, userID, "lambhyejoo")
+	if err != nil || userEffect == nil || !userEffect.Active || userEffect.IsRecipe {
+		return 0
+	}
+	result, err := gi.applyPassiveEffect(ctx, userID, "auction_sale_bonus", salePrice)
+	if err != nil {
+		slog.Warn("Failed to apply auction sale bonus", slog.String("user_id", userID), slog.Any("error", err))
+		return 0
+	}
+	bonus, ok := result.(int64)
+	if !ok {
+		return 0
+	}
+	return bonus
 }
 
 // GetEffectCooldownReduction returns cooldown reduction for active effects

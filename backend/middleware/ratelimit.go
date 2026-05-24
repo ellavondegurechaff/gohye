@@ -5,8 +5,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
 	"github.com/disgoorg/bot-template/backend/utils"
+	"github.com/gofiber/fiber/v2"
 )
 
 // RateLimiter implements a simple in-memory rate limiter
@@ -96,7 +96,7 @@ func RateLimit(limit int, window time.Duration) fiber.Handler {
 
 	return func(c *fiber.Ctx) error {
 		ip := utils.GetIPAddress(c)
-		
+
 		if !limiter.Allow(ip) {
 			slog.Warn("Rate limit exceeded",
 				slog.String("ip", ip),
@@ -105,7 +105,7 @@ func RateLimit(limit int, window time.Duration) fiber.Handler {
 				slog.Int("limit", limit),
 				slog.Duration("window", window))
 
-			return utils.SendError(c, 429, "RATE_LIMIT_EXCEEDED", 
+			return utils.SendError(c, 429, "RATE_LIMIT_EXCEEDED",
 				"Too many requests. Please try again later.", nil)
 		}
 

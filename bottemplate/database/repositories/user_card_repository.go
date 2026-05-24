@@ -170,7 +170,9 @@ func (r *userCardRepository) CleanupZeroAmountCards(ctx context.Context) error {
 	}
 
 	rowsAffected, _ := result.RowsAffected()
-	log.Printf("[INFO] Cleaned up %d cards with zero amount", rowsAffected)
+	if rowsAffected > 0 {
+		log.Printf("[INFO] Cleaned up %d cards with zero amount", rowsAffected)
+	}
 	return nil
 }
 

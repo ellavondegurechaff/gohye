@@ -4,13 +4,31 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
-	"github.com/disgoorg/bot-template/bottemplate/config"
 	"github.com/disgoorg/bot-template/bottemplate/services"
 	"github.com/disgoorg/bot-template/bottemplate/utils"
 	"github.com/disgoorg/disgo/handler"
 )
+
+var questTrackerStore struct {
+	sync.RWMutex
+	tracker *services.QuestTracker
+}
+
+// SetQuestTracker wires command logging into quest progress tracking.
+func SetQuestTracker(tracker *services.QuestTracker) {
+	questTrackerStore.Lock()
+	defer questTrackerStore.Unlock()
+	questTrackerStore.tracker = tracker
+}
+
+func getQuestTracker() *services.QuestTracker {
+	questTrackerStore.RLock()
+	defer questTrackerStore.RUnlock()
+	return questTrackerStore.tracker
+}
 
 // WrapWithLogging wraps a command handler with logging functionality
 func WrapWithLogging(name string, h handler.CommandHandler) handler.CommandHandler {
@@ -29,101 +47,70 @@ func WrapWithLogging(name string, h handler.CommandHandler) handler.CommandHandl
 			)
 		}
 
-		// Execute the command with timeout tracking
-		done := make(chan error, 1)
-		go func() {
-			defer func() {
-				if r := recover(); r != nil {
-					done <- fmt.Errorf("command panic: %v", r)
-				}
-			}()
-			done <- h(e)
-		}()
+		err := runCommandHandler(h, e)
+		duration := time.Since(start)
 
-		// Wait for command completion or timeout
-		select {
-		case err := <-done:
-			duration := time.Since(start)
-
-			// Log command completion with optimized level checking
-			if err != nil {
-				// Always log errors
-				slog.Error("Command failed",
-					slog.String("type", "cmd"),
-					slog.String("name", name),
-					slog.String("user_id", e.User().ID.String()),
-					slog.String("user_name", e.User().Username),
-					slog.Duration("took", duration),
-					slog.Any("error", err),
-					slog.String("status", "failed"),
-				)
-			} else if duration > 2*time.Second {
-				// Always log slow commands
-				slog.Warn("Command executed slowly",
-					slog.String("type", "cmd"),
-					slog.String("name", name),
-					slog.String("user_id", e.User().ID.String()),
-					slog.String("user_name", e.User().Username),
-					slog.Duration("took", duration),
-					slog.String("status", "slow"),
-				)
-			} else if slog.Default().Enabled(nil, slog.LevelDebug) {
-				// Only log successful completions at debug level
-				slog.Debug("Command completed",
-					slog.String("type", "cmd"),
-					slog.String("name", name),
-					slog.String("user_id", e.User().ID.String()),
-					slog.String("user_name", e.User().Username),
-					slog.Duration("took", duration),
-					slog.String("status", "success"),
-				)
-			}
-			return err
-
-		case <-time.After(10 * time.Second):
-			slog.Error("Command timed out",
+		// Log command completion with optimized level checking
+		if err != nil {
+			// Always log errors
+			slog.Error("Command failed",
 				slog.String("type", "cmd"),
 				slog.String("name", name),
 				slog.String("user_id", e.User().ID.String()),
 				slog.String("user_name", e.User().Username),
-				slog.String("status", "timeout"),
-				slog.Duration("timeout", config.CommandExecutionTimeout),
+				slog.Duration("took", duration),
+				slog.Any("error", err),
+				slog.String("status", "failed"),
 			)
-			return fmt.Errorf("command timed out after 10 seconds")
+		} else if duration > 2*time.Second {
+			// Always log slow commands
+			slog.Warn("Command executed slowly",
+				slog.String("type", "cmd"),
+				slog.String("name", name),
+				slog.String("user_id", e.User().ID.String()),
+				slog.String("user_name", e.User().Username),
+				slog.Duration("took", duration),
+				slog.String("status", "slow"),
+			)
+		} else if slog.Default().Enabled(nil, slog.LevelDebug) {
+			// Only log successful completions at debug level
+			slog.Debug("Command completed",
+				slog.String("type", "cmd"),
+				slog.String("name", name),
+				slog.String("user_id", e.User().ID.String()),
+				slog.String("user_name", e.User().Username),
+				slog.Duration("took", duration),
+				slog.String("status", "success"),
+			)
 		}
-	}
-}
-
-// WrapWithLoggingAndQuests wraps a command handler with logging and quest tracking
-func WrapWithLoggingAndQuests(name string, h handler.CommandHandler, b interface{ GetQuestTracker() *services.QuestTracker }) handler.CommandHandler {
-	return func(e *handler.CommandEvent) error {
-		// First apply the logging wrapper
-		loggedHandler := WrapWithLogging(name, h)
-
-		// Execute the command
-		err := loggedHandler(e)
-
-		// Track command for quests if successful
 		if err == nil {
-			if tracker := b.GetQuestTracker(); tracker != nil {
-				// Run quest tracking in background to not slow down response
-				slog.Debug("Tracking command for quest progress",
-					slog.String("user_id", e.User().ID.String()),
-					slog.String("command", name))
+			if tracker := getQuestTracker(); tracker != nil {
 				go tracker.TrackCommand(context.Background(), e.User().ID.String(), name)
-			} else {
-				slog.Warn("Quest tracker is nil, cannot track command")
 			}
 		}
-
 		return err
 	}
 }
 
+func runCommandHandler(h handler.CommandHandler, e *handler.CommandEvent) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("command panic: %v", r)
+		}
+	}()
+	return h(e)
+}
+
+// WrapWithLoggingAndQuests wraps a command handler with logging and quest tracking
+func WrapWithLoggingAndQuests(name string, h handler.CommandHandler, b interface{ GetQuestTracker() *services.QuestTracker }) handler.CommandHandler {
+	_ = b
+	return WrapWithLogging(name, h)
+}
+
 // WrapComponentWithLogging wraps a component handler with logging functionality
 func WrapComponentWithLogging(name string, h handler.ComponentHandler) handler.ComponentHandler {
-    return func(e *handler.ComponentEvent) error {
-        start := time.Now()
+	return func(e *handler.ComponentEvent) error {
+		start := time.Now()
 
 		// Log component interaction start only for debug level
 		if slog.Default().Enabled(nil, slog.LevelDebug) {
@@ -137,76 +124,58 @@ func WrapComponentWithLogging(name string, h handler.ComponentHandler) handler.C
 			)
 		}
 
-        // Execute the component handler with timeout tracking & panic safety
-        done := make(chan error, 1)
-        go func() {
-            defer func() {
-                if r := recover(); r != nil {
-                    // Log and provide a graceful user-facing error
-                    slog.Error("Component panic recovered",
-                        slog.String("type", "component"),
-                        slog.String("name", name),
-                        slog.String("user_id", e.User().ID.String()),
-                        slog.Any("panic", r),
-                    )
-                    // Best-effort ephemeral error (ignore result)
-                    _ = utils.EH.CreateEphemeralError(e, "Something went wrong while handling your action. Please try again.")
-                    done <- fmt.Errorf("component panic: %v", r)
-                }
-            }()
-            done <- h(e)
-        }()
+		err := runComponentHandler(h, e, name)
+		duration := time.Since(start)
 
-		// Wait for component completion or timeout
-		select {
-		case err := <-done:
-			duration := time.Since(start)
-
-			// Log component completion with optimized level checking
-			if err != nil {
-				// Always log errors
-				slog.Error("Component interaction failed",
-					slog.String("type", "component"),
-					slog.String("name", name),
-					slog.String("user_id", e.User().ID.String()),
-					slog.String("user_name", e.User().Username),
-					slog.Duration("took", duration),
-					slog.Any("error", err),
-					slog.String("status", "failed"),
-				)
-			} else if duration > 2*time.Second {
-				// Always log slow interactions
-				slog.Warn("Component interaction executed slowly",
-					slog.String("type", "component"),
-					slog.String("name", name),
-					slog.String("user_id", e.User().ID.String()),
-					slog.String("user_name", e.User().Username),
-					slog.Duration("took", duration),
-					slog.String("status", "slow"),
-				)
-			} else if slog.Default().Enabled(nil, slog.LevelDebug) {
-				// Only log successful completions at debug level
-				slog.Debug("Component interaction completed",
-					slog.String("type", "component"),
-					slog.String("name", name),
-					slog.String("user_id", e.User().ID.String()),
-					slog.String("user_name", e.User().Username),
-					slog.Duration("took", duration),
-					slog.String("status", "success"),
-				)
-			}
-			return err
-
-		case <-time.After(10 * time.Second):
-			slog.Error("Component interaction timed out",
+		// Log component completion with optimized level checking
+		if err != nil {
+			// Always log errors
+			slog.Error("Component interaction failed",
 				slog.String("type", "component"),
 				slog.String("name", name),
 				slog.String("user_id", e.User().ID.String()),
 				slog.String("user_name", e.User().Username),
-				slog.String("status", "timeout"),
-				slog.Duration("timeout", config.CommandExecutionTimeout),
+				slog.Duration("took", duration),
+				slog.Any("error", err),
+				slog.String("status", "failed"),
 			)
-			return fmt.Errorf("component interaction timed out after 10 seconds")
+		} else if duration > 2*time.Second {
+			// Always log slow interactions
+			slog.Warn("Component interaction executed slowly",
+				slog.String("type", "component"),
+				slog.String("name", name),
+				slog.String("user_id", e.User().ID.String()),
+				slog.String("user_name", e.User().Username),
+				slog.Duration("took", duration),
+				slog.String("status", "slow"),
+			)
+		} else if slog.Default().Enabled(nil, slog.LevelDebug) {
+			// Only log successful completions at debug level
+			slog.Debug("Component interaction completed",
+				slog.String("type", "component"),
+				slog.String("name", name),
+				slog.String("user_id", e.User().ID.String()),
+				slog.String("user_name", e.User().Username),
+				slog.Duration("took", duration),
+				slog.String("status", "success"),
+			)
 		}
+		return err
 	}
+}
+
+func runComponentHandler(h handler.ComponentHandler, e *handler.ComponentEvent, name string) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Error("Component panic recovered",
+				slog.String("type", "component"),
+				slog.String("name", name),
+				slog.String("user_id", e.User().ID.String()),
+				slog.Any("panic", r),
+			)
+			_ = utils.EH.CreateEphemeralError(e, "Something went wrong while handling your action. Please try again.")
+			err = fmt.Errorf("component panic: %v", r)
+		}
+	}()
+	return h(e)
 }

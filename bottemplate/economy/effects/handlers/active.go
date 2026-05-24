@@ -20,6 +20,7 @@ type ClaimRecallHandler struct {
 	*effects.BaseEffectHandler
 	userRepo   repositories.UserRepository
 	effectRepo repositories.EffectRepository
+	db         *bun.DB
 }
 
 // NewClaimRecallHandler creates a new Claim Recall effect handler
@@ -41,36 +42,44 @@ func NewClaimRecallHandler(deps *effects.EffectDependencies) *ClaimRecallHandler
 		BaseEffectHandler: effects.NewBaseEffectHandler(metadata, deps),
 		userRepo:          deps.UserRepo.(repositories.UserRepository),
 		effectRepo:        deps.EffectRepo.(repositories.EffectRepository),
+		db:                deps.Database.(*bun.DB),
 	}
 }
 
 // Execute implements the claim recall logic
 func (h *ClaimRecallHandler) Execute(ctx context.Context, params effects.EffectParams) (*effects.EffectResult, error) {
-	user, err := h.userRepo.GetByDiscordID(ctx, params.UserID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get user: %w", err)
-	}
+	var stats models.ClaimStats
+	err := h.db.NewSelect().
+		Model(&stats).
+		Where("user_id = ?", params.UserID).
+		Scan(ctx)
 
-	if user.DailyStats.Claims < 5 {
+	if err != nil || stats.DailyClaims < 4 {
 		return &effects.EffectResult{
 			Success:  false,
-			Message:  "you can only use Claim Recall when you have claimed more than 4 cards!",
+			Message:  "you can only use Claim Recall after at least 4 claims today!",
 			Consumed: false,
 		}, nil
 	}
 
-	// Reduce claim count by 4
-	user.DailyStats.Claims -= 4
-	newCost := user.DailyStats.Claims * 50
+	previousClaims := stats.DailyClaims
+	newClaims := previousClaims - 4
+	newCost := (newClaims + 1) * 700
 
-	if err := h.userRepo.Update(ctx, user); err != nil {
-		return nil, fmt.Errorf("failed to update user: %w", err)
+	_, err = h.db.NewUpdate().
+		Model((*models.ClaimStats)(nil)).
+		Set("daily_claims = ?", newClaims).
+		Set("updated_at = ?", time.Now()).
+		Where("user_id = ?", params.UserID).
+		Exec(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to update claim stats: %w", err)
 	}
 
 	slog.Info("Claim Recall effect executed",
 		slog.String("user_id", params.UserID),
-		slog.Int("previous_claims", user.DailyStats.Claims+4),
-		slog.Int("new_claims", user.DailyStats.Claims),
+		slog.Int("previous_claims", previousClaims),
+		slog.Int("new_claims", newClaims),
 		slog.Int("new_cost", newCost))
 
 	return &effects.EffectResult{
@@ -78,8 +87,8 @@ func (h *ClaimRecallHandler) Execute(ctx context.Context, params effects.EffectP
 		Message:  fmt.Sprintf("claim cost has been reset to **%d**", newCost),
 		Consumed: true,
 		Data: map[string]interface{}{
-			"previous_claims": user.DailyStats.Claims + 4,
-			"new_claims":      user.DailyStats.Claims,
+			"previous_claims": previousClaims,
+			"new_claims":      newClaims,
 			"new_cost":        newCost,
 		},
 		Events: []effects.EffectEvent{
@@ -89,7 +98,7 @@ func (h *ClaimRecallHandler) Execute(ctx context.Context, params effects.EffectP
 				Data: map[string]interface{}{
 					"user_id":         params.UserID,
 					"claims_reduced":  4,
-					"new_claim_count": user.DailyStats.Claims,
+					"new_claim_count": newClaims,
 					"new_cost":        newCost,
 				},
 			},
@@ -130,8 +139,8 @@ type SpaceUnityHandler struct {
 func NewSpaceUnityHandler(deps *effects.EffectDependencies) *SpaceUnityHandler {
 	metadata := effects.EffectMetadata{
 		ID:          "spaceunity",
-		Name:        "The Space Unity",
-		Description: "Gives random unique card from non-promo collection",
+		Name:        "Space Unity",
+		Description: "Gives a random unique card from a non-promo collection",
 		Type:        effects.EffectTypeActive,
 		Category:    effects.EffectCategoryCollection,
 		Cooldown:    40 * time.Hour,
@@ -381,6 +390,93 @@ func (h *SpaceUnityHandler) GetRemainingUses(ctx context.Context, userID string)
 	return h.GetMetadata().MaxUses, nil
 }
 
+// WalpurgisNightHandler implements the "Walpurgis Night" active item.
+type WalpurgisNightHandler struct {
+	*effects.BaseEffectHandler
+	db *bun.DB
+}
+
+// NewWalpurgisNightHandler creates a new Walpurgis Night item handler.
+func NewWalpurgisNightHandler(deps *effects.EffectDependencies) *WalpurgisNightHandler {
+	metadata := effects.EffectMetadata{
+		ID:          "walpurgisnight",
+		Name:        "Walpurgis Night",
+		Description: "Grants an extra draw",
+		Type:        effects.EffectTypeActive,
+		Category:    effects.EffectCategoryClaim,
+		Cooldown:    24 * time.Hour,
+		MaxUses:     20,
+		Animated:    false,
+		Tags:        []string{"active", "claim", "extra_draw"},
+		Version:     "1.0.0",
+	}
+
+	return &WalpurgisNightHandler{
+		BaseEffectHandler: effects.NewBaseEffectHandler(metadata, deps),
+		db:                deps.Database.(*bun.DB),
+	}
+}
+
+// Execute grants an extra draw by rolling today's claim counter back by one.
+func (h *WalpurgisNightHandler) Execute(ctx context.Context, params effects.EffectParams) (*effects.EffectResult, error) {
+	var stats models.ClaimStats
+	err := h.db.NewSelect().
+		Model(&stats).
+		Where("user_id = ?", params.UserID).
+		Scan(ctx)
+	if err != nil || stats.DailyClaims <= 0 {
+		return &effects.EffectResult{
+			Success:  false,
+			Message:  "You need to claim at least once today before Walpurgis Night can grant an extra draw.",
+			Consumed: false,
+		}, nil
+	}
+
+	newClaims := stats.DailyClaims - 1
+	_, err = h.db.NewUpdate().
+		Model((*models.ClaimStats)(nil)).
+		Set("daily_claims = ?", newClaims).
+		Set("updated_at = ?", time.Now()).
+		Where("user_id = ?", params.UserID).
+		Exec(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to grant extra draw: %w", err)
+	}
+
+	return &effects.EffectResult{
+		Success:  true,
+		Message:  "Walpurgis Night granted you an extra draw. Your next claim cost has been rolled back by one claim.",
+		Consumed: true,
+		Data: map[string]interface{}{
+			"previous_claims": stats.DailyClaims,
+			"new_claims":      newClaims,
+		},
+		Events: []effects.EffectEvent{
+			{
+				Type:      "walpurgisnight_used",
+				Timestamp: time.Now(),
+				Data: map[string]interface{}{
+					"user_id":         params.UserID,
+					"claims_reduced":  1,
+					"new_claim_count": newClaims,
+				},
+			},
+		},
+	}, nil
+}
+
+func (h *WalpurgisNightHandler) GetCooldown(ctx context.Context, userID string) (time.Duration, error) {
+	return h.GetMetadata().Cooldown, nil
+}
+
+func (h *WalpurgisNightHandler) ConsumeUse(ctx context.Context, userID string) error {
+	return nil
+}
+
+func (h *WalpurgisNightHandler) GetRemainingUses(ctx context.Context, userID string) (int, error) {
+	return h.GetMetadata().MaxUses, nil
+}
+
 // JudgeDayHandler implements the "The Judgment Day" active effect
 type JudgeDayHandler struct {
 	*effects.BaseEffectHandler
@@ -391,8 +487,8 @@ type JudgeDayHandler struct {
 func NewJudgeDayHandler(deps *effects.EffectDependencies, registry *effects.EffectRegistry) *JudgeDayHandler {
 	metadata := effects.EffectMetadata{
 		ID:          "judgeday",
-		Name:        "The Judgment Day",
-		Description: "Grants effect of almost any usable card",
+		Name:        "Judgement Day",
+		Description: "Can be used as any other item",
 		Type:        effects.EffectTypeActive,
 		Category:    effects.EffectCategoryCollection,
 		Cooldown:    48 * time.Hour,
@@ -437,7 +533,7 @@ func (h *JudgeDayHandler) Execute(ctx context.Context, params effects.EffectPara
 	}
 
 	// Check exclusion list
-	excludedEffects := []string{"memoryval", "memoryxmas", "memorybday", "memoryhall", "judgeday", "walpurgisnight"}
+	excludedEffects := []string{"memoryval", "memoryxmas", "memorybday", "memoryhall", "judgeday"}
 	for _, excluded := range excludedEffects {
 		if effectID == excluded {
 			return &effects.EffectResult{

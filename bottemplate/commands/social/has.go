@@ -32,12 +32,14 @@ var Has = discord.SlashCommandCreate{
 }
 
 func HasHandler(b *bottemplate.Bot) handler.CommandHandler {
-    cardOperationsService := services.NewCardOperationsService(b.CardRepository, b.UserCardRepository)
+	cardOperationsService := services.NewCardOperationsService(b.CardRepository, b.UserCardRepository)
 
-    return func(e *handler.CommandEvent) error {
-        if err := e.DeferCreateMessage(false); err != nil { return err }
-        ctx, cancel := context.WithTimeout(context.Background(), config.DefaultQueryTimeout)
-        defer cancel()
+	return func(e *handler.CommandEvent) error {
+		if err := e.DeferCreateMessage(false); err != nil {
+			return err
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), config.DefaultQueryTimeout)
+		defer cancel()
 
 		// Get target user
 		targetUser := e.SlashCommandInteractionData().User("user")
@@ -53,7 +55,9 @@ func HasHandler(b *bottemplate.Bot) handler.CommandHandler {
 		} else {
 			// Fallback to comprehensive search for fuzzy matches
 			cards, getAllErr := b.CardRepository.GetAll(ctx)
-            if getAllErr != nil { return utils.EH.UpdateInteractionResponse(e, "Error", "Failed to search for cards") }
+			if getAllErr != nil {
+				return utils.EH.UpdateInteractionResponse(e, "Error", "Failed to search for cards")
+			}
 
 			// Use enhanced search filters
 			filters := utils.ParseSearchQuery(query)
@@ -61,18 +65,24 @@ func HasHandler(b *bottemplate.Bot) handler.CommandHandler {
 			filters.SortDesc = true
 
 			searchResults := cardOperationsService.SearchCardsInCollection(ctx, cards, filters)
-            if len(searchResults) == 0 { return utils.EH.UpdateInteractionResponse(e, "Not Found", fmt.Sprintf("No cards found matching '%s'", query)) }
+			if len(searchResults) == 0 {
+				return utils.EH.UpdateInteractionResponse(e, "Not Found", fmt.Sprintf("No cards found matching '%s'", query))
+			}
 
 			card = searchResults[0]
 		}
 
 		// Check if user has the card
 		userCard, err := b.UserCardRepository.GetUserCard(ctx, targetUser.ID.String(), card.ID)
-        var hasEmbed discord.Embed
-        if err != nil { hasEmbed = createHasEmbed(targetUser, card, 0, false, b) } else { hasEmbed = createHasEmbed(targetUser, card, userCard.Amount, true, b) }
-        _, updErr := e.UpdateInteractionResponse(discord.MessageUpdate{Embeds: &[]discord.Embed{hasEmbed}})
-        return updErr
-    }
+		var hasEmbed discord.Embed
+		if err != nil {
+			hasEmbed = createHasEmbed(targetUser, card, 0, false, b)
+		} else {
+			hasEmbed = createHasEmbed(targetUser, card, userCard.Amount, true, b)
+		}
+		_, updErr := e.UpdateInteractionResponse(discord.MessageUpdate{Embeds: &[]discord.Embed{hasEmbed}})
+		return updErr
+	}
 }
 
 func createHasEmbed(user discord.User, card *models.Card, amount int64, hasCard bool, b *bottemplate.Bot) discord.Embed {

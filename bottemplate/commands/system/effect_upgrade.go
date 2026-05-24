@@ -1,15 +1,15 @@
 package system
 
 import (
-    "context"
-    "fmt"
-    "strings"
+	"context"
+	"fmt"
+	"strings"
 
-    "github.com/disgoorg/bot-template/bottemplate"
-    "github.com/disgoorg/bot-template/bottemplate/economy/effects"
-    "github.com/disgoorg/bot-template/bottemplate/utils"
-    "github.com/disgoorg/disgo/discord"
-    "github.com/disgoorg/disgo/handler"
+	"github.com/disgoorg/bot-template/bottemplate"
+	"github.com/disgoorg/bot-template/bottemplate/economy/effects"
+	"github.com/disgoorg/bot-template/bottemplate/utils"
+	"github.com/disgoorg/disgo/discord"
+	"github.com/disgoorg/disgo/handler"
 )
 
 type EffectUpgradeHandler struct {
@@ -97,43 +97,43 @@ func (h *EffectUpgradeHandler) HandleUpgrade(event *handler.CommandEvent) error 
 		SetColor(0x57F287).
 		Build()
 
-    ownerID := userID
-    return event.CreateMessage(discord.MessageCreate{
-        Embeds: []discord.Embed{embed},
-        Components: []discord.ContainerComponent{
-            discord.ActionRowComponent{
-                discord.ButtonComponent{
-                    Label:    "✅ Upgrade",
-                    Style:    discord.ButtonStyleSuccess,
-                    CustomID: fmt.Sprintf("effect_upgrade_confirm_%s@%s", effectID, ownerID),
-                },
-                discord.ButtonComponent{
-                    Label:    "❌ Cancel",
-                    Style:    discord.ButtonStyleDanger,
-                    CustomID: fmt.Sprintf("effect_upgrade_cancel@%s", ownerID),
-                },
-            },
-        },
-    })
+	ownerID := userID
+	return event.CreateMessage(discord.MessageCreate{
+		Embeds: []discord.Embed{embed},
+		Components: []discord.ContainerComponent{
+			discord.ActionRowComponent{
+				discord.ButtonComponent{
+					Label:    "✅ Upgrade",
+					Style:    discord.ButtonStyleSuccess,
+					CustomID: fmt.Sprintf("effect_upgrade_confirm_%s@%s", effectID, ownerID),
+				},
+				discord.ButtonComponent{
+					Label:    "❌ Cancel",
+					Style:    discord.ButtonStyleDanger,
+					CustomID: fmt.Sprintf("effect_upgrade_cancel@%s", ownerID),
+				},
+			},
+		},
+	})
 }
 
 func (h *EffectUpgradeHandler) HandleUpgradeConfirm(event *handler.ComponentEvent) error {
-    ctx := context.Background()
-    userID := event.User().ID.String()
+	ctx := context.Background()
+	userID := event.User().ID.String()
 
-    // Extract effect ID from custom ID
-    customID := event.Data.CustomID()
-    // Support new format: effect_upgrade_confirm_<effectID>@<ownerID>
-    effectID := customID
-    ownerCheck := ""
-    if idx := strings.Index(customID, "@"); idx != -1 {
-        effectID = customID[:idx]
-        ownerCheck = customID[idx+1:]
-    }
-    effectID = strings.TrimPrefix(effectID, "effect_upgrade_confirm_")
-    if ownerCheck != "" && ownerCheck != userID {
-        return utils.EH.CreateEphemeralError(event, "Only the command user can confirm this upgrade.")
-    }
+	// Extract effect ID from custom ID
+	customID := event.Data.CustomID()
+	// Support new format: effect_upgrade_confirm_<effectID>@<ownerID>
+	effectID := customID
+	ownerCheck := ""
+	if idx := strings.Index(customID, "@"); idx != -1 {
+		effectID = customID[:idx]
+		ownerCheck = customID[idx+1:]
+	}
+	effectID = strings.TrimPrefix(effectID, "effect_upgrade_confirm_")
+	if ownerCheck != "" && ownerCheck != userID {
+		return utils.EH.CreateEphemeralError(event, "Only the command user can confirm this upgrade.")
+	}
 
 	// Perform upgrade
 	err := h.effectManager.UpgradeEffectTier(ctx, userID, effectID)
@@ -168,18 +168,18 @@ func (h *EffectUpgradeHandler) HandleUpgradeConfirm(event *handler.ComponentEven
 }
 
 func (h *EffectUpgradeHandler) HandleUpgradeCancel(event *handler.ComponentEvent) error {
-    // Owner validation for new format: effect_upgrade_cancel@<ownerID>
-    if strings.Contains(event.Data.CustomID(), "@") {
-        parts := strings.Split(event.Data.CustomID(), "@")
-        if len(parts) == 2 && parts[1] != event.User().ID.String() {
-            return utils.EH.CreateEphemeralError(event, "Only the command user can cancel this upgrade.")
-        }
-    }
-    embed := discord.NewEmbedBuilder().
-        SetTitle("❌ Upgrade Cancelled").
-        SetDescription("The upgrade has been cancelled. You can upgrade anytime when ready!").
-        SetColor(0xED4245).
-        Build()
+	// Owner validation for new format: effect_upgrade_cancel@<ownerID>
+	if strings.Contains(event.Data.CustomID(), "@") {
+		parts := strings.Split(event.Data.CustomID(), "@")
+		if len(parts) == 2 && parts[1] != event.User().ID.String() {
+			return utils.EH.CreateEphemeralError(event, "Only the command user can cancel this upgrade.")
+		}
+	}
+	embed := discord.NewEmbedBuilder().
+		SetTitle("❌ Upgrade Cancelled").
+		SetDescription("The upgrade has been cancelled. You can upgrade anytime when ready!").
+		SetColor(0xED4245).
+		Build()
 
 	return event.UpdateMessage(discord.MessageUpdate{
 		Embeds:     &[]discord.Embed{embed},
@@ -195,14 +195,14 @@ func (h *EffectUpgradeHandler) formatEffectValue(effectID string, value int) str
 		return fmt.Sprintf("+%d vials/liquify", value)
 	case "wolfofhyejoo":
 		return fmt.Sprintf("%d%% cashback", value)
-	case "lambofhyejoo":
+	case "lambhyejoo":
 		return fmt.Sprintf("%d%% bonus", value)
 	case "cherrybloss":
 		return fmt.Sprintf("%d%% cheaper", value)
 	case "rulerjeanne":
-		hours := float64(value) / 100.0
+		hours := float64(value) / 60.0
 		return fmt.Sprintf("%.1fh cooldown", hours)
-	case "youthyouthbyyoung":
+	case "youthyouth":
 		return fmt.Sprintf("+%d%% bonus", value)
 	case "kisslater":
 		return fmt.Sprintf("+%d%% XP", value)
@@ -219,13 +219,13 @@ func (h *EffectUpgradeHandler) getActionName(effectID string) string {
 		return "liquefies"
 	case "wolfofhyejoo":
 		return "flakes spent"
-	case "lambofhyejoo":
+	case "lambhyejoo":
 		return "flakes earned"
 	case "cherrybloss":
 		return "forges/ascends"
 	case "rulerjeanne":
 		return "dailies"
-	case "youthyouthbyyoung":
+	case "youthyouth":
 		return "works"
 	case "kisslater":
 		return "levelups"

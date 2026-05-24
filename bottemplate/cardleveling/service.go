@@ -28,10 +28,14 @@ func NewService(config *Config, cardRepo repositories.CardRepository) *Service {
 }
 
 func (s *Service) GainExp(ctx context.Context, userCard *models.UserCard) (*LevelingResult, error) {
-    // Basic sanity checks (avoid extra DB verification; caller already provided an owned card)
-    if userCard == nil || userCard.UserID == "" || userCard.CardID == 0 {
-        return nil, errors.New("card not found")
-    }
+	return s.GainExpWithModifier(ctx, userCard, nil)
+}
+
+func (s *Service) GainExpWithModifier(ctx context.Context, userCard *models.UserCard, modifyExp func(int64) int64) (*LevelingResult, error) {
+	// Basic sanity checks (avoid extra DB verification; caller already provided an owned card)
+	if userCard == nil || userCard.UserID == "" || userCard.CardID == 0 {
+		return nil, errors.New("card not found")
+	}
 
 	if userCard.Level >= 5 {
 		return nil, errors.New("level 5 cards cannot gain experience")
@@ -46,6 +50,9 @@ func (s *Service) GainExp(ctx context.Context, userCard *models.UserCard) (*Leve
 	// Calculate exp gain
 	expConfig := s.calculator.CalculateExpGain(userCard.Level, stats)
 	expGained := s.calculator.CalculateFinalExp(expConfig)
+	if modifyExp != nil {
+		expGained = modifyExp(expGained)
+	}
 
 	// Update exp and check for level up
 	newExp := userCard.Exp + expGained
@@ -70,9 +77,9 @@ func (s *Service) GainExp(ctx context.Context, userCard *models.UserCard) (*Leve
 
 	// Update database
 	userCard.Exp = newExp
-    if err := s.cardRepo.UpdateUserCard(ctx, userCard); err != nil {
-        return nil, err
-    }
+	if err := s.cardRepo.UpdateUserCard(ctx, userCard); err != nil {
+		return nil, err
+	}
 
 	// Update stats
 	s.updateStats(userCard.UserID, userCard.CardID, stats)

@@ -142,8 +142,7 @@ func (m *Manager) PurchaseEffect(ctx context.Context, userID string, effectID st
 // CraftEffect crafts an effect from recipe cards
 func (m *Manager) CraftEffect(ctx context.Context, userID string, effectID string) error {
 	// Get effect handler
-	handler, err := m.registry.GetEffect(effectID)
-	if err != nil {
+	if _, err := m.registry.GetEffect(effectID); err != nil {
 		return fmt.Errorf("effect not found: %w", err)
 	}
 
@@ -174,7 +173,7 @@ func (m *Manager) CraftEffect(ctx context.Context, userID string, effectID strin
 	}
 
 	// Create or update user effect
-	if err := m.createUserEffect(ctx, userID, effectID, handler.GetMetadata()); err != nil {
+	if err := m.createUserEffect(ctx, userID, effectID); err != nil {
 		// Rollback: add cards back
 		m.addCardsToUser(ctx, userID, recipe.CardIDs)
 		return fmt.Errorf("failed to create user effect: %w", err)
@@ -487,7 +486,7 @@ func (m *Manager) Shutdown(ctx context.Context) error {
 // Helper methods (keeping existing logic for now)
 
 // createUserEffect creates a new user effect entry
-func (m *Manager) createUserEffect(ctx context.Context, userID string, effectID string, metadata EffectMetadata) error {
+func (m *Manager) createUserEffect(ctx context.Context, userID string, effectID string) error {
 	staticEffect := GetEffectItemByID(effectID)
 	if staticEffect == nil {
 		return fmt.Errorf("effect definition not found: %s", effectID)
@@ -500,14 +499,14 @@ func (m *Manager) createUserEffect(ctx context.Context, userID string, effectID 
 		if staticEffect.Passive {
 			// For passive effects, extend duration if already active
 			if existingEffect.ExpiresAt != nil {
-                // Duration for passive effects is measured in days
-                newExpiry := existingEffect.ExpiresAt.Add(time.Duration(staticEffect.Duration) * 24 * time.Hour)
+				// Duration for passive effects is measured in days
+				newExpiry := existingEffect.ExpiresAt.Add(time.Duration(staticEffect.Duration) * 24 * time.Hour)
 				existingEffect.ExpiresAt = &newExpiry
 				existingEffect.Notified = false
 			} else {
 				// First time activation
-                // Duration for passive effects is measured in days
-                expiry := time.Now().Add(time.Duration(staticEffect.Duration) * 24 * time.Hour)
+				// Duration for passive effects is measured in days
+				expiry := time.Now().Add(time.Duration(staticEffect.Duration) * 24 * time.Hour)
 				existingEffect.ExpiresAt = &expiry
 				existingEffect.Active = true
 				existingEffect.Notified = false
@@ -533,10 +532,11 @@ func (m *Manager) createUserEffect(ctx context.Context, userID string, effectID 
 	}
 
 	if staticEffect.Passive {
-		// Passive effects start inactive and need to be manually activated
-		userEffect.Active = false
+		// Passive effects are always equipped; slots were removed from the new system.
+		expiry := time.Now().Add(time.Duration(staticEffect.Duration) * 24 * time.Hour)
+		userEffect.Active = true
 		userEffect.Uses = 0
-		// Don't set expiry until activated
+		userEffect.ExpiresAt = &expiry
 	} else {
 		// Active effects start active with their use count
 		userEffect.Active = true

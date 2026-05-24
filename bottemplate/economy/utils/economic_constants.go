@@ -52,7 +52,7 @@ const (
 // Transaction Constants
 const (
 	DefaultTxTimeout        = 30 * time.Second       // Default transaction timeout
-	CleanupInterval         = 15 * time.Second       // Cleanup ticker interval
+	CleanupInterval         = 5 * time.Minute        // Background cleanup safety-net interval
 	NotificationDelay       = 100 * time.Millisecond // Delay between notifications
 	UserInactivityThreshold = 30 * 24 * time.Hour    // 30 days user inactivity threshold
 )

@@ -124,11 +124,14 @@ func (etm *EconomicTransactionManager) AddCardToInventory(ctx context.Context, t
 
 // RemoveCardFromInventory removes cards from user inventory
 func (etm *EconomicTransactionManager) RemoveCardFromInventory(ctx context.Context, tx bun.Tx, opts CardOperationOptions) error {
-	// Get current card state for validation
+	// Lock one inventory row. Legacy imports can contain duplicate
+	// (user_id, card_id) rows, so mutations must target a single row by PK.
 	var userCard models.UserCard
 	err := tx.NewSelect().
 		Model(&userCard).
-		Where("user_id = ? AND card_id = ?", opts.UserID, opts.CardID).
+		Where("user_id = ? AND card_id = ? AND amount > 0", opts.UserID, opts.CardID).
+		Order("amount DESC", "id ASC").
+		Limit(1).
 		For("UPDATE").
 		Scan(ctx)
 	if err != nil {
@@ -147,7 +150,7 @@ func (etm *EconomicTransactionManager) RemoveCardFromInventory(ctx context.Conte
 		// Delete the record if removing all cards
 		result, err := tx.NewDelete().
 			Model((*models.UserCard)(nil)).
-			Where("user_id = ? AND card_id = ?", opts.UserID, opts.CardID).
+			Where("id = ?", userCard.ID).
 			Exec(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to delete card: %w", err)
@@ -161,7 +164,7 @@ func (etm *EconomicTransactionManager) RemoveCardFromInventory(ctx context.Conte
 			Model((*models.UserCard)(nil)).
 			Set("amount = amount - ?", opts.Amount).
 			Set("updated_at = ?", time.Now()).
-			Where("user_id = ? AND card_id = ? AND amount >= ?", opts.UserID, opts.CardID, opts.Amount).
+			Where("id = ? AND amount >= ?", userCard.ID, opts.Amount).
 			Exec(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to update card amount: %w", err)

@@ -1,16 +1,16 @@
 package auction
 
 import (
-    "fmt"
-    "strings"
-    "time"
+	"fmt"
+	"strings"
+	"time"
 
-    "github.com/disgoorg/bot-template/bottemplate/database/models"
-    "github.com/disgoorg/bot-template/bottemplate/database/repositories"
-    economicUtils "github.com/disgoorg/bot-template/bottemplate/economy/utils"
-    "github.com/disgoorg/bot-template/bottemplate/utils"
-    "github.com/disgoorg/disgo/bot"
-    "github.com/disgoorg/disgo/discord"
+	"github.com/disgoorg/bot-template/bottemplate/database/models"
+	"github.com/disgoorg/bot-template/bottemplate/database/repositories"
+	economicUtils "github.com/disgoorg/bot-template/bottemplate/economy/utils"
+	"github.com/disgoorg/bot-template/bottemplate/utils"
+	"github.com/disgoorg/disgo/bot"
+	"github.com/disgoorg/disgo/discord"
 )
 
 type AuctionUI struct {
@@ -28,15 +28,15 @@ func NewAuctionUI(client bot.Client, cardRepo repositories.CardRepository, manag
 }
 
 func (ui *AuctionUI) CreateAuctionEmbed(auction *models.Auction, card *models.Card) discord.Embed {
-    builder := discord.NewEmbedBuilder().
-        SetTitle(fmt.Sprintf("Auction #%d: %s", auction.ID, utils.FormatCardName(card.Name))).
-        SetDescription(fmt.Sprintf("```md\n## Auction Details\n* Auction ID: %s\n* Seller: <@%s>\n* Current Price: %d 💰\n* Min Increment: %d 💰\n* Card Level: %s\n* Collection: %s\n```",
-            auction.AuctionID,
-            auction.SellerID,
-            auction.CurrentPrice,
-            auction.MinIncrement,
-            strings.Repeat("⭐", card.Level),
-            card.ColID))
+	builder := discord.NewEmbedBuilder().
+		SetTitle(fmt.Sprintf("Auction #%d: %s", auction.ID, utils.FormatCardName(card.Name))).
+		SetDescription(fmt.Sprintf("```md\n## Auction Details\n* Auction ID: %s\n* Seller: <@%s>\n* Current Price: %d 💰\n* Min Increment: %d 💰\n* Card Level: %s\n* Collection: %s\n```",
+			auction.AuctionID,
+			auction.SellerID,
+			auction.CurrentPrice,
+			auction.MinIncrement,
+			strings.Repeat("⭐", card.Level),
+			card.ColID))
 
 	// Add time remaining
 	remaining := time.Until(auction.EndTime)

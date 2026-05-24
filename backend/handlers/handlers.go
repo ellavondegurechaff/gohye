@@ -10,31 +10,31 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
-	"github.com/disgoorg/bot-template/bottemplate/database"
-	"github.com/disgoorg/bot-template/bottemplate/database/models"
-	"github.com/disgoorg/bot-template/bottemplate/database/repositories"
-	"github.com/disgoorg/bot-template/bottemplate/services"
 	"github.com/disgoorg/bot-template/backend/config"
 	webmodels "github.com/disgoorg/bot-template/backend/models"
 	webservices "github.com/disgoorg/bot-template/backend/services"
 	"github.com/disgoorg/bot-template/backend/utils"
+	"github.com/disgoorg/bot-template/bottemplate/database"
+	"github.com/disgoorg/bot-template/bottemplate/database/models"
+	"github.com/disgoorg/bot-template/bottemplate/database/repositories"
+	"github.com/disgoorg/bot-template/bottemplate/services"
+	"github.com/gofiber/fiber/v2"
 )
 
 // WebApp represents the web application with all dependencies
 type WebApp struct {
-	Config                    *config.WebAppConfig
-	DB                        *database.DB
-	Repos                     *webmodels.Repositories
-	SpacesService             interface{} // Placeholder for now
-	CardMgmtService           *webservices.CardManagementService
-	CardImportService         *webservices.CardImportService
-	SyncMgrService            *webservices.SyncManagerService
-	OAuthService              *webservices.OAuthService
-	SessionService            *webservices.SessionService
-	CollectionImportService   *webservices.CollectionImportService
-	Version                   string
-	Commit                    string
+	Config                  *config.WebAppConfig
+	DB                      *database.DB
+	Repos                   *webmodels.Repositories
+	SpacesService           interface{} // Placeholder for now
+	CardMgmtService         *webservices.CardManagementService
+	CardImportService       *webservices.CardImportService
+	SyncMgrService          *webservices.SyncManagerService
+	OAuthService            *webservices.OAuthService
+	SessionService          *webservices.SessionService
+	CollectionImportService *webservices.CollectionImportService
+	Version                 string
+	Commit                  string
 }
 
 // parseInt64 is a utility function to parse int64 from string
@@ -48,42 +48,42 @@ func getDashboardStats(ctx context.Context, webApp *WebApp) (*webmodels.Dashboar
 	if webApp.DB == nil {
 		return nil, fmt.Errorf("database connection is nil")
 	}
-	
+
 	if webApp.Repos == nil {
 		return nil, fmt.Errorf("repositories are nil")
 	}
-	
+
 	if webApp.Repos.Card == nil {
 		return nil, fmt.Errorf("card repository is nil")
 	}
-	
+
 	if webApp.Repos.Collection == nil {
 		return nil, fmt.Errorf("collection repository is nil")
 	}
-	
+
 	// Get total cards count using optimized COUNT query
 	totalCards, err := webApp.Repos.Card.GetCardCount(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get card count: %w", err)
 	}
-	
+
 	// Get total collections count using optimized COUNT query
 	totalCollections, err := webApp.Repos.Collection.GetCollectionCount(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get collection count: %w", err)
 	}
-	
+
 	// Get total users count
 	totalUsers, err := webApp.Repos.User.GetUserCount(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user count: %w", err)
 	}
-	
+
 	// TODO: Calculate sync percentage and issues
 	// For now, use placeholder values
 	syncPercentage := 98.5 // Placeholder
 	issueCount := 0        // Placeholder
-	
+
 	// TODO: Get recent activity
 	// For now, use placeholder activities
 	recentActivity := []webmodels.ActivityItem{
@@ -98,14 +98,14 @@ func getDashboardStats(ctx context.Context, webApp *WebApp) (*webmodels.Dashboar
 			Timestamp:   time.Now().Add(-2 * time.Hour),
 		},
 	}
-	
+
 	return &webmodels.DashboardStats{
-		TotalCards:      totalCards,
+		TotalCards:       totalCards,
 		TotalCollections: totalCollections,
-		TotalUsers:      totalUsers,
-		SyncPercentage:  syncPercentage,
-		IssueCount:      issueCount,
-		RecentActivity:  recentActivity,
+		TotalUsers:       totalUsers,
+		SyncPercentage:   syncPercentage,
+		IssueCount:       issueCount,
+		RecentActivity:   recentActivity,
 	}, nil
 }
 
@@ -120,7 +120,7 @@ func processUploadedFile(ctx context.Context, webApp *WebApp, file *multipart.Fi
 			"error":    "File too large (max 10MB)",
 		}
 	}
-	
+
 	// Validate file type
 	allowedTypes := map[string]bool{
 		"image/jpeg": true,
@@ -129,7 +129,7 @@ func processUploadedFile(ctx context.Context, webApp *WebApp, file *multipart.Fi
 		"image/webp": true,
 		"image/gif":  true,
 	}
-	
+
 	contentType := file.Header.Get("Content-Type")
 	if !allowedTypes[contentType] {
 		return fiber.Map{
@@ -138,7 +138,7 @@ func processUploadedFile(ctx context.Context, webApp *WebApp, file *multipart.Fi
 			"error":    "Invalid file type (only images allowed)",
 		}
 	}
-	
+
 	// Open file
 	src, err := file.Open()
 	if err != nil {
@@ -149,7 +149,7 @@ func processUploadedFile(ctx context.Context, webApp *WebApp, file *multipart.Fi
 		}
 	}
 	defer src.Close()
-	
+
 	// Read file data
 	fileData := make([]byte, file.Size)
 	_, err = src.Read(fileData)
@@ -160,7 +160,7 @@ func processUploadedFile(ctx context.Context, webApp *WebApp, file *multipart.Fi
 			"error":    "Failed to read file",
 		}
 	}
-	
+
 	// TODO: Upload to spaces service
 	// For now, just return success with placeholder URL
 	return fiber.Map{
@@ -178,7 +178,7 @@ func (w *WebApp) GetSession(c *fiber.Ctx) (*webmodels.UserSession, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	// Convert from service UserSession to webmodels UserSession
 	webSession := &webmodels.UserSession{
 		DiscordID:   session.DiscordID,
@@ -190,7 +190,7 @@ func (w *WebApp) GetSession(c *fiber.Ctx) (*webmodels.UserSession, error) {
 		ExpiresAt:   session.ExpiresAt,
 		IsAdmin:     session.IsAdmin,
 	}
-	
+
 	return webSession, nil
 }
 
@@ -357,7 +357,7 @@ func ValidateSession(webApp *WebApp) fiber.Handler {
 func CardsDetail(webApp *WebApp) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		ctx := c.Context()
-		
+
 		// Parse card ID from params
 		cardIDStr := c.Params("id")
 		cardID, err := parseInt64(cardIDStr)
@@ -370,7 +370,7 @@ func CardsDetail(webApp *WebApp) fiber.Handler {
 		// Get card details
 		card, err := webApp.CardMgmtService.GetCard(ctx, cardID)
 		if err != nil {
-			slog.Error("Failed to get card details", 
+			slog.Error("Failed to get card details",
 				slog.Int64("card_id", cardID),
 				slog.String("error", err.Error()))
 			return utils.SendError(c, 404, "CARD_NOT_FOUND", "Card not found", nil)
@@ -383,9 +383,9 @@ func CardsDetail(webApp *WebApp) fiber.Handler {
 func CardsCreate(webApp *WebApp) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		ctx := c.Context()
-		
+
 		var req webmodels.CardCreateRequest
-		
+
 		// Parse JSON body
 		if err := c.BodyParser(&req); err != nil {
 			return utils.SendError(c, 400, "INVALID_REQUEST", "Invalid request body", map[string]string{
@@ -415,7 +415,7 @@ func CardsCreate(webApp *WebApp) fiber.Handler {
 			})
 		}
 
-		slog.Info("Card created successfully", 
+		slog.Info("Card created successfully",
 			slog.Int64("card_id", card.ID),
 			slog.String("name", card.Name))
 
@@ -426,7 +426,7 @@ func CardsCreate(webApp *WebApp) fiber.Handler {
 func CardsUpdate(webApp *WebApp) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		ctx := c.Context()
-		
+
 		// Parse card ID from params
 		cardIDStr := c.Params("id")
 		cardID, err := parseInt64(cardIDStr)
@@ -437,7 +437,7 @@ func CardsUpdate(webApp *WebApp) fiber.Handler {
 		}
 
 		var req webmodels.CardUpdateRequest
-		
+
 		// Parse JSON body
 		if err := c.BodyParser(&req); err != nil {
 			return utils.SendError(c, 400, "INVALID_REQUEST", "Invalid request body", map[string]string{
@@ -461,7 +461,7 @@ func CardsUpdate(webApp *WebApp) fiber.Handler {
 		// Update card
 		card, err := webApp.CardMgmtService.UpdateCard(ctx, cardID, &req)
 		if err != nil {
-			slog.Error("Failed to update card", 
+			slog.Error("Failed to update card",
 				slog.Int64("card_id", cardID),
 				slog.String("error", err.Error()))
 			return utils.SendError(c, 400, "UPDATE_FAILED", "Failed to update card", map[string]string{
@@ -469,7 +469,7 @@ func CardsUpdate(webApp *WebApp) fiber.Handler {
 			})
 		}
 
-		slog.Info("Card updated successfully", 
+		slog.Info("Card updated successfully",
 			slog.Int64("card_id", cardID),
 			slog.String("name", card.Name))
 
@@ -480,7 +480,7 @@ func CardsUpdate(webApp *WebApp) fiber.Handler {
 func CardsDelete(webApp *WebApp) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		ctx := c.Context()
-		
+
 		// Parse card ID from params
 		cardIDStr := c.Params("id")
 		cardID, err := parseInt64(cardIDStr)
@@ -499,7 +499,7 @@ func CardsDelete(webApp *WebApp) fiber.Handler {
 		// Delete card
 		err = webApp.CardMgmtService.DeleteCard(ctx, cardID)
 		if err != nil {
-			slog.Error("Failed to delete card", 
+			slog.Error("Failed to delete card",
 				slog.Int64("card_id", cardID),
 				slog.String("error", err.Error()))
 			return utils.SendError(c, 400, "DELETION_FAILED", "Failed to delete card", map[string]string{
@@ -507,7 +507,7 @@ func CardsDelete(webApp *WebApp) fiber.Handler {
 			})
 		}
 
-		slog.Info("Card deleted successfully", 
+		slog.Info("Card deleted successfully",
 			slog.Int64("card_id", cardID),
 			slog.String("name", card.Name))
 
@@ -518,9 +518,9 @@ func CardsDelete(webApp *WebApp) fiber.Handler {
 func CardsBulkOperation(webApp *WebApp) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		ctx := c.Context()
-		
+
 		var req webmodels.CardBulkOperation
-		
+
 		// Parse JSON body
 		if err := c.BodyParser(&req); err != nil {
 			return utils.SendError(c, 400, "INVALID_REQUEST", "Invalid request body", map[string]string{
@@ -536,7 +536,7 @@ func CardsBulkOperation(webApp *WebApp) fiber.Handler {
 		// Perform bulk operation
 		err := webApp.CardMgmtService.BulkOperation(ctx, &req)
 		if err != nil {
-			slog.Error("Failed to perform bulk operation", 
+			slog.Error("Failed to perform bulk operation",
 				slog.String("operation", req.Operation),
 				slog.Int("card_count", len(req.CardIDs)),
 				slog.String("error", err.Error()))
@@ -546,7 +546,7 @@ func CardsBulkOperation(webApp *WebApp) fiber.Handler {
 			})
 		}
 
-		slog.Info("Bulk operation completed successfully", 
+		slog.Info("Bulk operation completed successfully",
 			slog.String("operation", req.Operation),
 			slog.Int("card_count", len(req.CardIDs)))
 
@@ -561,20 +561,20 @@ func CardsBulkOperation(webApp *WebApp) fiber.Handler {
 func CollectionsDetail(webApp *WebApp) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		ctx := c.Context()
-		
+
 		// Get collection ID from params
 		collectionID := c.Params("id")
 		if collectionID == "" {
 			return utils.SendError(c, 400, "INVALID_COLLECTION_ID", "Collection ID is required", nil)
 		}
-		
+
 		// Get pagination parameters
 		page := c.QueryInt("page", 1)
 		limit := c.QueryInt("limit", 24) // 24 cards per page for good grid layout
 		search := c.Query("search", "")
 		levelFilter := c.QueryInt("level", 0)
 		typeFilter := c.Query("type", "")
-		
+
 		// Ensure valid pagination
 		if page < 1 {
 			page = 1
@@ -582,28 +582,28 @@ func CollectionsDetail(webApp *WebApp) fiber.Handler {
 		if limit < 1 || limit > 100 {
 			limit = 24
 		}
-		
+
 		// Get collection details
 		collection, err := webApp.Repos.Collection.GetByID(ctx, collectionID)
 		if err != nil {
 			return utils.SendError(c, 404, "COLLECTION_NOT_FOUND", "Collection not found", nil)
 		}
-		
+
 		// Create search filters for collection cards
 		filters := repositories.SearchFilters{
 			Collection: collectionID,
 			Name:       search,
 			Level:      levelFilter,
 		}
-		
+
 		// Handle type filter
 		if typeFilter == "animated" {
 			filters.Animated = true
 		}
-		
+
 		// Calculate offset for pagination
 		offset := (page - 1) * limit
-		
+
 		// Get paginated cards
 		cards, totalCount, err := webApp.Repos.Card.Search(ctx, filters, offset, limit)
 		if err != nil {
@@ -611,7 +611,7 @@ func CollectionsDetail(webApp *WebApp) fiber.Handler {
 			cards = []*models.Card{} // Empty fallback
 			totalCount = 0
 		}
-		
+
 		// Convert cards to DTOs with image URLs if we have spaces service
 		cardDTOs := make([]*webmodels.CardDTO, 0, len(cards))
 		if spacesService, ok := webApp.SpacesService.(*services.SpacesService); ok && spacesService != nil {
@@ -621,7 +621,7 @@ func CollectionsDetail(webApp *WebApp) fiber.Handler {
 				if len(collection.Tags) > 0 {
 					groupType = collection.Tags[0]
 				}
-				
+
 				// Generate image URL using spaces service
 				imageURL := spacesService.GetCardImageURLWithFormat(
 					card.Name,
@@ -630,7 +630,7 @@ func CollectionsDetail(webApp *WebApp) fiber.Handler {
 					groupType,
 					card.Animated,
 				)
-				
+
 				cardDTO := webmodels.ConvertCardToDTO(card, collection, imageURL)
 				cardDTOs = append(cardDTOs, cardDTO)
 			}
@@ -641,15 +641,15 @@ func CollectionsDetail(webApp *WebApp) fiber.Handler {
 				cardDTOs = append(cardDTOs, cardDTO)
 			}
 		}
-		
+
 		// Create pagination info
 		pagination := webmodels.NewPaginationInfo(page, limit, int64(totalCount))
-		
+
 		// Return API response
 		return utils.SendSuccess(c, fiber.Map{
-			"collection": collection,
-			"cards": cardDTOs,
-			"pagination": pagination,
+			"collection":  collection,
+			"cards":       cardDTOs,
+			"pagination":  pagination,
 			"total_count": totalCount,
 		}, "Collection details retrieved successfully")
 	}
@@ -658,30 +658,30 @@ func CollectionsDetail(webApp *WebApp) fiber.Handler {
 func CollectionsCreate(webApp *WebApp) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		ctx := c.Context()
-		
+
 		var req struct {
-			ID          string   `json:"id"`
-			Name        string   `json:"name"`
-			Origin      string   `json:"origin"`
-			Aliases     []string `json:"aliases"`
-			Promo       bool     `json:"promo"`
-			Compressed  bool     `json:"compressed"`
-			Fragments   bool     `json:"fragments"`
-			Tags        []string `json:"tags"`
+			ID         string   `json:"id"`
+			Name       string   `json:"name"`
+			Origin     string   `json:"origin"`
+			Aliases    []string `json:"aliases"`
+			Promo      bool     `json:"promo"`
+			Compressed bool     `json:"compressed"`
+			Fragments  bool     `json:"fragments"`
+			Tags       []string `json:"tags"`
 		}
-		
+
 		// Parse JSON body
 		if err := c.BodyParser(&req); err != nil {
 			return utils.SendError(c, 400, "INVALID_REQUEST", "Invalid request body", map[string]string{
 				"error": err.Error(),
 			})
 		}
-		
+
 		// Validate required fields
 		if req.ID == "" || req.Name == "" {
 			return utils.SendError(c, 400, "MISSING_FIELDS", "ID and Name are required", nil)
 		}
-		
+
 		// Create collection with proper defaults
 		collection := &models.Collection{
 			ID:         req.ID,
@@ -695,15 +695,15 @@ func CollectionsCreate(webApp *WebApp) fiber.Handler {
 			CreatedAt:  time.Now(),
 			UpdatedAt:  time.Now(),
 		}
-		
+
 		// Set defaults if not provided
 		if collection.Origin == "" {
-			collection.Origin = ""  // Empty string is the default
+			collection.Origin = "" // Empty string is the default
 		}
 		if collection.Aliases == nil {
-			collection.Aliases = []string{collection.ID}  // Default to ID in aliases
+			collection.Aliases = []string{collection.ID} // Default to ID in aliases
 		}
-		
+
 		// Save to database
 		err := webApp.Repos.Collection.Create(ctx, collection)
 		if err != nil {
@@ -712,11 +712,11 @@ func CollectionsCreate(webApp *WebApp) fiber.Handler {
 				"error": err.Error(),
 			})
 		}
-		
-		slog.Info("Collection created successfully", 
+
+		slog.Info("Collection created successfully",
 			slog.String("collection_id", collection.ID),
 			slog.String("name", collection.Name))
-		
+
 		return utils.SendSuccess(c, collection, "Collection created successfully")
 	}
 }
@@ -724,36 +724,36 @@ func CollectionsCreate(webApp *WebApp) fiber.Handler {
 func CollectionsUpdate(webApp *WebApp) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		ctx := c.Context()
-		
+
 		// Get collection ID from params
 		collectionID := c.Params("id")
 		if collectionID == "" {
 			return utils.SendError(c, 400, "INVALID_COLLECTION_ID", "Collection ID is required", nil)
 		}
-		
+
 		var req struct {
-			Name        *string  `json:"name"`
-			Origin      *string  `json:"origin"`
-			Aliases     []string `json:"aliases"`
-			Promo       *bool    `json:"promo"`
-			Compressed  *bool    `json:"compressed"`
-			Fragments   *bool    `json:"fragments"`
-			Tags        []string `json:"tags"`
+			Name       *string  `json:"name"`
+			Origin     *string  `json:"origin"`
+			Aliases    []string `json:"aliases"`
+			Promo      *bool    `json:"promo"`
+			Compressed *bool    `json:"compressed"`
+			Fragments  *bool    `json:"fragments"`
+			Tags       []string `json:"tags"`
 		}
-		
+
 		// Parse JSON body
 		if err := c.BodyParser(&req); err != nil {
 			return utils.SendError(c, 400, "INVALID_REQUEST", "Invalid request body", map[string]string{
 				"error": err.Error(),
 			})
 		}
-		
+
 		// Get existing collection
 		collection, err := webApp.Repos.Collection.GetByID(ctx, collectionID)
 		if err != nil {
 			return utils.SendError(c, 404, "COLLECTION_NOT_FOUND", "Collection not found", nil)
 		}
-		
+
 		// Update fields if provided
 		if req.Name != nil {
 			collection.Name = *req.Name
@@ -776,22 +776,22 @@ func CollectionsUpdate(webApp *WebApp) fiber.Handler {
 		if req.Tags != nil {
 			collection.Tags = req.Tags
 		}
-		
+
 		// Update in database
 		err = webApp.Repos.Collection.Update(ctx, collection)
 		if err != nil {
-			slog.Error("Failed to update collection", 
+			slog.Error("Failed to update collection",
 				slog.String("collection_id", collectionID),
 				slog.String("error", err.Error()))
 			return utils.SendError(c, 400, "UPDATE_FAILED", "Failed to update collection", map[string]string{
 				"error": err.Error(),
 			})
 		}
-		
-		slog.Info("Collection updated successfully", 
+
+		slog.Info("Collection updated successfully",
 			slog.String("collection_id", collectionID),
 			slog.String("name", collection.Name))
-		
+
 		return utils.SendSuccess(c, collection, "Collection updated successfully")
 	}
 }
@@ -799,19 +799,19 @@ func CollectionsUpdate(webApp *WebApp) fiber.Handler {
 func CollectionsDelete(webApp *WebApp) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		ctx := c.Context()
-		
+
 		// Get collection ID from params
 		collectionID := c.Params("id")
 		if collectionID == "" {
 			return utils.SendError(c, 400, "INVALID_COLLECTION_ID", "Collection ID is required", nil)
 		}
-		
+
 		// Get collection info before deletion for logging
 		collection, err := webApp.Repos.Collection.GetByID(ctx, collectionID)
 		if err != nil {
 			return utils.SendError(c, 404, "COLLECTION_NOT_FOUND", "Collection not found", nil)
 		}
-		
+
 		// Check if collection has cards
 		cards, err := webApp.Repos.Card.GetByCollectionID(ctx, collectionID)
 		if err == nil && len(cards) > 0 {
@@ -819,22 +819,22 @@ func CollectionsDelete(webApp *WebApp) fiber.Handler {
 				"card_count": fmt.Sprintf("%d", len(cards)),
 			})
 		}
-		
+
 		// Delete collection
 		err = webApp.Repos.Collection.Delete(ctx, collectionID)
 		if err != nil {
-			slog.Error("Failed to delete collection", 
+			slog.Error("Failed to delete collection",
 				slog.String("collection_id", collectionID),
 				slog.String("error", err.Error()))
 			return utils.SendError(c, 400, "DELETION_FAILED", "Failed to delete collection", map[string]string{
 				"error": err.Error(),
 			})
 		}
-		
-		slog.Info("Collection deleted successfully", 
+
+		slog.Info("Collection deleted successfully",
 			slog.String("collection_id", collectionID),
 			slog.String("name", collection.Name))
-		
+
 		return utils.SendSuccess(c, nil, "Collection deleted successfully")
 	}
 }
@@ -842,7 +842,7 @@ func CollectionsDelete(webApp *WebApp) fiber.Handler {
 func CollectionsImport(webApp *WebApp) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		ctx := c.Context()
-		
+
 		// Parse form data
 		form, err := c.MultipartForm()
 		if err != nil {
@@ -850,13 +850,13 @@ func CollectionsImport(webApp *WebApp) fiber.Handler {
 				"error": err.Error(),
 			})
 		}
-		
+
 		// Extract form fields
 		collectionID := ""
 		displayName := ""
 		groupType := ""
 		isPromo := false
-		
+
 		if values, ok := form.Value["collection_id"]; ok && len(values) > 0 {
 			collectionID = values[0]
 		}
@@ -869,17 +869,17 @@ func CollectionsImport(webApp *WebApp) fiber.Handler {
 		if values, ok := form.Value["is_promo"]; ok && len(values) > 0 {
 			isPromo = values[0] == "true"
 		}
-		
+
 		// Validate required fields
 		if collectionID == "" || displayName == "" || groupType == "" {
 			return utils.SendError(c, 400, "MISSING_FIELDS", "Missing required fields", nil)
 		}
-		
+
 		// Validate group type
 		if groupType != "girlgroups" && groupType != "boygroups" {
 			return utils.SendError(c, 400, "INVALID_GROUP_TYPE", "Group type must be 'girlgroups' or 'boygroups'", nil)
 		}
-		
+
 		// Process uploaded files
 		files := []*webmodels.FileUpload{}
 		if fileHeaders, ok := form.File["files"]; ok {
@@ -890,13 +890,13 @@ func CollectionsImport(webApp *WebApp) fiber.Handler {
 					return utils.SendError(c, 400, "FILE_ERROR", fmt.Sprintf("Failed to open file %s", fileHeader.Filename), nil)
 				}
 				defer file.Close()
-				
+
 				// Read file data
 				fileData, err := io.ReadAll(file)
 				if err != nil {
 					return utils.SendError(c, 400, "FILE_ERROR", fmt.Sprintf("Failed to read file %s: %s", fileHeader.Filename, err.Error()), nil)
 				}
-				
+
 				// Create FileUpload struct
 				fileUpload := &webmodels.FileUpload{
 					Name:        fileHeader.Filename,
@@ -907,11 +907,11 @@ func CollectionsImport(webApp *WebApp) fiber.Handler {
 				files = append(files, fileUpload)
 			}
 		}
-		
+
 		if len(files) == 0 {
 			return utils.SendError(c, 400, "NO_FILES", "No files uploaded", nil)
 		}
-		
+
 		// Create request struct
 		req := &webmodels.CollectionImportRequest{
 			CollectionID: collectionID,
@@ -920,16 +920,16 @@ func CollectionsImport(webApp *WebApp) fiber.Handler {
 			IsPromo:      isPromo,
 			Files:        files,
 		}
-		
+
 		result, err := webApp.CollectionImportService.ProcessCollectionImport(ctx, req)
 		if err != nil {
 			return utils.SendError(c, 500, "IMPORT_FAILED", err.Error(), nil)
 		}
-		
+
 		if !result.Success {
 			return utils.SendError(c, 400, "IMPORT_FAILED", result.ErrorMessage, nil)
 		}
-		
+
 		return utils.SendSuccess(c, result, "Collection imported successfully")
 	}
 }
@@ -941,7 +941,7 @@ func CollectionsImport(webApp *WebApp) fiber.Handler {
 func CardsAPI(webApp *WebApp) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		ctx := c.Context()
-		
+
 		// Parse search parameters
 		var searchReq webmodels.CardSearchRequest
 		if err := c.QueryParser(&searchReq); err != nil {
@@ -986,7 +986,7 @@ func CardsAPI(webApp *WebApp) fiber.Handler {
 func UploadAPI(webApp *WebApp) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		ctx := c.Context()
-		
+
 		// Parse multipart form
 		form, err := c.MultipartForm()
 		if err != nil {
@@ -994,20 +994,20 @@ func UploadAPI(webApp *WebApp) fiber.Handler {
 				"error": err.Error(),
 			})
 		}
-		
+
 		// Get files from form
 		files := form.File["images"]
 		if len(files) == 0 {
 			return utils.SendError(c, 400, "NO_FILES", "No files uploaded", nil)
 		}
-		
+
 		// Process each file
 		results := make([]fiber.Map, 0, len(files))
 		for _, file := range files {
 			result := processUploadedFile(ctx, webApp, file)
 			results = append(results, result)
 		}
-		
+
 		return utils.SendSuccess(c, fiber.Map{
 			"files": results,
 			"total": len(results),
@@ -1018,7 +1018,7 @@ func UploadAPI(webApp *WebApp) fiber.Handler {
 func DashboardStatsAPI(webApp *WebApp) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		ctx := c.Context()
-		
+
 		// Get dashboard statistics using existing getDashboardStats function
 		stats, err := getDashboardStats(ctx, webApp)
 		if err != nil {
@@ -1027,7 +1027,7 @@ func DashboardStatsAPI(webApp *WebApp) fiber.Handler {
 				"error": err.Error(),
 			})
 		}
-		
+
 		return utils.SendSuccess(c, stats, "Dashboard statistics retrieved successfully")
 	}
 }
@@ -1037,7 +1037,7 @@ func ActivityAPI(webApp *WebApp) fiber.Handler {
 		// For now, return empty activity list
 		// TODO: Implement real activity tracking
 		activities := []webmodels.ActivityItem{}
-		
+
 		return utils.SendSuccess(c, activities, "Recent activity retrieved successfully")
 	}
 }
@@ -1049,7 +1049,7 @@ func ActivityAPI(webApp *WebApp) fiber.Handler {
 func CollectionsImportPage(webApp *WebApp) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		return utils.SendSuccess(c, fiber.Map{
-			"message": "Collection import page - use Next.js frontend",
+			"message":  "Collection import page - use Next.js frontend",
 			"redirect": "http://localhost:3000/collections/import",
 		}, "Import page available on frontend")
 	}
@@ -1058,7 +1058,7 @@ func CollectionsImportPage(webApp *WebApp) fiber.Handler {
 func SyncStatus(webApp *WebApp) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		ctx := c.Context()
-		
+
 		// Get sync status from sync manager service
 		statuses, err := webApp.SyncMgrService.GetSyncStatus(ctx)
 		if err != nil {
@@ -1067,7 +1067,7 @@ func SyncStatus(webApp *WebApp) fiber.Handler {
 				"error": err.Error(),
 			})
 		}
-		
+
 		return utils.SendSuccess(c, statuses, "Sync status retrieved successfully")
 	}
 }
@@ -1075,25 +1075,25 @@ func SyncStatus(webApp *WebApp) fiber.Handler {
 func SyncFix(webApp *WebApp) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		ctx := c.Context()
-		
+
 		// Get collection ID from query or body
 		collectionID := c.Query("collection_id")
 		if collectionID == "" {
 			return utils.SendError(c, 400, "MISSING_COLLECTION_ID", "Collection ID is required", nil)
 		}
-		
+
 		// Fix sync issues for the collection
 		updatedStatus, err := webApp.SyncMgrService.FixSyncIssues(ctx, collectionID)
 		if err != nil {
-			slog.Error("Failed to fix sync issues", 
+			slog.Error("Failed to fix sync issues",
 				slog.String("collection_id", collectionID),
 				slog.String("error", err.Error()))
 			return utils.SendError(c, 500, "SYNC_FIX_FAILED", "Failed to fix sync issues", map[string]string{
 				"collection_id": collectionID,
-				"error": err.Error(),
+				"error":         err.Error(),
 			})
 		}
-		
+
 		return utils.SendSuccess(c, updatedStatus, "Sync issues fixed successfully")
 	}
 }
@@ -1101,7 +1101,7 @@ func SyncFix(webApp *WebApp) fiber.Handler {
 func SyncCleanup(webApp *WebApp) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		ctx := c.Context()
-		
+
 		// Cleanup orphaned files
 		cleanedCount, err := webApp.SyncMgrService.CleanupOrphans(ctx)
 		if err != nil {
@@ -1110,7 +1110,7 @@ func SyncCleanup(webApp *WebApp) fiber.Handler {
 				"error": err.Error(),
 			})
 		}
-		
+
 		return utils.SendSuccess(c, fiber.Map{
 			"cleaned_count": cleanedCount,
 		}, fmt.Sprintf("Cleanup completed, removed %d orphaned files", cleanedCount))
@@ -1120,24 +1120,24 @@ func SyncCleanup(webApp *WebApp) fiber.Handler {
 func UsersDetail(webApp *WebApp) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		ctx := c.Context()
-		
+
 		// Get user ID from params
 		userID := c.Params("id")
 		if userID == "" {
 			return utils.SendError(c, 400, "MISSING_USER_ID", "User ID is required", nil)
 		}
-		
+
 		// Get user details
 		user, err := webApp.Repos.User.GetByDiscordID(ctx, userID)
 		if err != nil {
-			slog.Error("Failed to get user details", 
+			slog.Error("Failed to get user details",
 				slog.String("user_id", userID),
 				slog.String("error", err.Error()))
 			return utils.SendError(c, 404, "USER_NOT_FOUND", "User not found", map[string]string{
 				"user_id": userID,
 			})
 		}
-		
+
 		return utils.SendSuccess(c, user, "User details retrieved successfully")
 	}
 }
@@ -1145,7 +1145,7 @@ func UsersDetail(webApp *WebApp) fiber.Handler {
 func CollectionsAPI(webApp *WebApp) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		ctx := c.Context()
-		
+
 		// Get all collections with card counts using optimized query
 		collectionsWithCounts, err := webApp.Repos.Collection.GetAllWithCardCounts(ctx)
 		if err != nil {
@@ -1154,13 +1154,13 @@ func CollectionsAPI(webApp *WebApp) fiber.Handler {
 				"error": err.Error(),
 			})
 		}
-		
+
 		// Convert to DTOs
 		collectionDTOs := make([]webmodels.CollectionDTO, len(collectionsWithCounts))
 		for i, collectionWithCount := range collectionsWithCounts {
 			// Determine collection type based on tags or name
 			collectionType := determineCollectionType(collectionWithCount.Collection)
-			
+
 			collectionDTOs[i] = webmodels.CollectionDTO{
 				ID:             collectionWithCount.ID,
 				Name:           collectionWithCount.Name,
@@ -1177,7 +1177,7 @@ func CollectionsAPI(webApp *WebApp) fiber.Handler {
 				UpdatedAt:      collectionWithCount.UpdatedAt,
 			}
 		}
-		
+
 		return utils.SendSuccess(c, collectionDTOs, "Collections retrieved successfully")
 	}
 }
@@ -1194,7 +1194,7 @@ func determineCollectionType(collection *models.Collection) string {
 			return "boy_group"
 		}
 	}
-	
+
 	// Check name as fallback
 	name := strings.ToLower(collection.Name)
 	if strings.Contains(name, "girl") || strings.Contains(name, "female") {
@@ -1203,7 +1203,7 @@ func determineCollectionType(collection *models.Collection) string {
 	if strings.Contains(name, "boy") || strings.Contains(name, "male") {
 		return "boy_group"
 	}
-	
+
 	// Default to "other"
 	return "other"
 }
@@ -1211,43 +1211,43 @@ func determineCollectionType(collection *models.Collection) string {
 func CollectionCardsAPI(webApp *WebApp) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		ctx := c.Context()
-		
+
 		// Get collection ID from params
 		collectionID := c.Params("id")
 		if collectionID == "" {
 			return utils.SendError(c, 400, "MISSING_COLLECTION_ID", "Collection ID is required", nil)
 		}
-		
+
 		// Get collection info first to determine group type
 		collection, err := webApp.Repos.Collection.GetByID(ctx, collectionID)
 		if err != nil {
-			slog.Error("Failed to get collection", 
+			slog.Error("Failed to get collection",
 				slog.String("collection_id", collectionID),
 				slog.String("error", err.Error()))
 			return utils.SendError(c, 500, "COLLECTION_FAILED", "Failed to retrieve collection", map[string]string{
 				"collection_id": collectionID,
-				"error": err.Error(),
+				"error":         err.Error(),
 			})
 		}
-		
+
 		// Get cards for this collection
 		cards, err := webApp.Repos.Card.GetByCollectionID(ctx, collectionID)
 		if err != nil {
-			slog.Error("Failed to get cards for collection", 
+			slog.Error("Failed to get cards for collection",
 				slog.String("collection_id", collectionID),
 				slog.String("error", err.Error()))
 			return utils.SendError(c, 500, "CARDS_FAILED", "Failed to retrieve cards for collection", map[string]string{
 				"collection_id": collectionID,
-				"error": err.Error(),
+				"error":         err.Error(),
 			})
 		}
-		
+
 		// Determine group type from collection
 		groupType := ""
 		if collection != nil && len(collection.Tags) > 0 {
 			groupType = collection.Tags[0]
 		}
-		
+
 		// Convert to DTOs with image URLs
 		cardDTOs := make([]webmodels.CardDTO, len(cards))
 		for i, card := range cards {
@@ -1258,20 +1258,20 @@ func CollectionCardsAPI(webApp *WebApp) fiber.Handler {
 					imageURL = spacesService.GetCardImageURLWithFormat(card.Name, card.ColID, card.Level, groupType, card.Animated)
 				}
 			}
-			
+
 			cardDTOs[i] = webmodels.CardDTO{
-				ID:           card.ID,
-				Name:         card.Name,
-				Level:        card.Level,
-				Animated:     card.Animated,
-				ColID:        card.ColID,
-				Tags:         card.Tags,
-				ImageURL:     imageURL,
-				CreatedAt:    card.CreatedAt,
-				UpdatedAt:    card.UpdatedAt,
+				ID:        card.ID,
+				Name:      card.Name,
+				Level:     card.Level,
+				Animated:  card.Animated,
+				ColID:     card.ColID,
+				Tags:      card.Tags,
+				ImageURL:  imageURL,
+				CreatedAt: card.CreatedAt,
+				UpdatedAt: card.UpdatedAt,
 			}
 		}
-		
+
 		return utils.SendSuccess(c, cardDTOs, "Cards retrieved successfully")
 	}
 }
@@ -1283,16 +1283,16 @@ func ProgressAPI(webApp *WebApp) fiber.Handler {
 		if taskID == "" {
 			return utils.SendError(c, 400, "MISSING_TASK_ID", "Task ID is required", nil)
 		}
-		
+
 		// For now, return placeholder progress
 		// TODO: Implement actual progress tracking
 		progress := fiber.Map{
-			"task_id": taskID,
-			"status": "completed",
+			"task_id":  taskID,
+			"status":   "completed",
 			"progress": 100,
-			"message": "Task completed successfully",
+			"message":  "Task completed successfully",
 		}
-		
+
 		return utils.SendSuccess(c, progress, "Progress retrieved successfully")
 	}
 }
@@ -1305,7 +1305,7 @@ func ProgressAPI(webApp *WebApp) fiber.Handler {
 func CardsImportValidate(webApp *WebApp) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		ctx := c.Context()
-		
+
 		// Parse multipart form
 		form, err := c.MultipartForm()
 		if err != nil {
@@ -1313,27 +1313,27 @@ func CardsImportValidate(webApp *WebApp) fiber.Handler {
 				"error": err.Error(),
 			})
 		}
-		
+
 		// Extract form fields
 		req, err := parseCardImportRequest(form)
 		if err != nil {
 			return utils.SendError(c, 400, "INVALID_REQUEST", err.Error(), nil)
 		}
-		
+
 		// Set validate only mode
 		req.ValidateOnly = true
-		
+
 		// Validate files
 		result, err := webApp.CardImportService.ImportCards(ctx, req)
 		if err != nil {
-			slog.Error("Failed to validate card import", 
+			slog.Error("Failed to validate card import",
 				slog.String("collection_id", req.CollectionID),
 				slog.String("error", err.Error()))
 			return utils.SendError(c, 400, "VALIDATION_FAILED", "Validation failed", map[string]string{
 				"error": err.Error(),
 			})
 		}
-		
+
 		return utils.SendSuccess(c, result, "Validation completed")
 	}
 }
@@ -1342,7 +1342,7 @@ func CardsImportValidate(webApp *WebApp) fiber.Handler {
 func CardsImport(webApp *WebApp) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		ctx := c.Context()
-		
+
 		// Parse multipart form
 		form, err := c.MultipartForm()
 		if err != nil {
@@ -1350,24 +1350,24 @@ func CardsImport(webApp *WebApp) fiber.Handler {
 				"error": err.Error(),
 			})
 		}
-		
+
 		// Extract form fields and files
 		req, err := parseCardImportRequest(form)
 		if err != nil {
 			return utils.SendError(c, 400, "INVALID_REQUEST", err.Error(), nil)
 		}
-		
+
 		// Process import
 		result, err := webApp.CardImportService.ImportCards(ctx, req)
 		if err != nil {
-			slog.Error("Failed to import cards", 
+			slog.Error("Failed to import cards",
 				slog.String("collection_id", req.CollectionID),
 				slog.String("error", err.Error()))
 			return utils.SendError(c, 500, "IMPORT_FAILED", "Import failed", map[string]string{
 				"error": err.Error(),
 			})
 		}
-		
+
 		// Log successful import
 		if result.Success {
 			slog.Info("Card import completed successfully",
@@ -1376,7 +1376,7 @@ func CardsImport(webApp *WebApp) fiber.Handler {
 				slog.Int("files_processed", len(result.FilesUploaded)),
 				slog.Int64("duration_ms", result.ProcessingTimeMs))
 		}
-		
+
 		return utils.SendSuccess(c, result, "Import completed")
 	}
 }
@@ -1385,25 +1385,25 @@ func CardsImport(webApp *WebApp) fiber.Handler {
 func CardsBulkOperations(webApp *WebApp) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		ctx := c.Context()
-		
+
 		var req webmodels.CardBatchOperation
-		
+
 		// Parse JSON body
 		if err := c.BodyParser(&req); err != nil {
 			return utils.SendError(c, 400, "INVALID_REQUEST", "Invalid request body", map[string]string{
 				"error": err.Error(),
 			})
 		}
-		
+
 		// Validate request
 		if err := req.Validate(); err != nil {
 			return utils.SendError(c, 400, "INVALID_REQUEST", err.Error(), nil)
 		}
-		
+
 		// Execute bulk operation based on type
 		var result *webmodels.CardBatchResult
 		var err error
-		
+
 		switch req.Operation {
 		case "delete":
 			result, err = webApp.executeBulkDelete(ctx, &req)
@@ -1422,7 +1422,7 @@ func CardsBulkOperations(webApp *WebApp) fiber.Handler {
 				"operation": req.Operation,
 			})
 		}
-		
+
 		if err != nil {
 			slog.Error("Failed to execute bulk operation",
 				slog.String("operation", req.Operation),
@@ -1430,17 +1430,17 @@ func CardsBulkOperations(webApp *WebApp) fiber.Handler {
 				slog.String("error", err.Error()))
 			return utils.SendError(c, 400, "BULK_OPERATION_FAILED", "Bulk operation failed", map[string]string{
 				"operation": req.Operation,
-				"error": err.Error(),
+				"error":     err.Error(),
 			})
 		}
-		
+
 		// Log successful operation
 		slog.Info("Bulk operation completed",
 			slog.String("operation", req.Operation),
 			slog.Int("total_cards", result.TotalCards),
 			slog.Int("processed_cards", result.ProcessedCards),
 			slog.Bool("success", result.Success))
-		
+
 		return utils.SendSuccess(c, result, fmt.Sprintf("Bulk %s operation completed", req.Operation))
 	}
 }
@@ -1455,24 +1455,24 @@ func CardsImportCollections(webApp *WebApp) fiber.Handler {
 				"error": err.Error(),
 			})
 		}
-		
+
 		// Extract collections data (JSON format)
 		collectionsJSON := ""
 		if values, ok := form.Value["collections"]; ok && len(values) > 0 {
 			collectionsJSON = values[0]
 		}
-		
+
 		if collectionsJSON == "" {
 			return utils.SendError(c, 400, "MISSING_COLLECTIONS", "Collections data is required", nil)
 		}
-		
+
 		// TODO: Implement batch collection import
 		// For now, return placeholder
 		result := fiber.Map{
-			"message": "Batch collection import not yet implemented",
+			"message":           "Batch collection import not yet implemented",
 			"use_single_import": "/api/cards/import",
 		}
-		
+
 		return utils.SendSuccess(c, result, "Batch import placeholder")
 	}
 }
@@ -1490,7 +1490,7 @@ func parseCardImportRequest(form *multipart.Form) (*webmodels.CardImportRequest,
 	isPromo := false
 	createCollection := false
 	overwriteMode := "skip"
-	
+
 	if values, ok := form.Value["collection_id"]; ok && len(values) > 0 {
 		collectionID = values[0]
 	}
@@ -1509,7 +1509,7 @@ func parseCardImportRequest(form *multipart.Form) (*webmodels.CardImportRequest,
 	if values, ok := form.Value["overwrite_mode"]; ok && len(values) > 0 {
 		overwriteMode = values[0]
 	}
-	
+
 	// Validate required fields
 	if collectionID == "" {
 		return nil, fmt.Errorf("collection_id is required")
@@ -1520,7 +1520,7 @@ func parseCardImportRequest(form *multipart.Form) (*webmodels.CardImportRequest,
 	if groupType == "" {
 		return nil, fmt.Errorf("group_type is required")
 	}
-	
+
 	// Process uploaded files
 	files := []*webmodels.FileUpload{}
 	if fileHeaders, ok := form.File["files"]; ok {
@@ -1531,13 +1531,13 @@ func parseCardImportRequest(form *multipart.Form) (*webmodels.CardImportRequest,
 				return nil, fmt.Errorf("failed to open file %s: %w", fileHeader.Filename, err)
 			}
 			defer file.Close()
-			
+
 			// Read file data
 			fileData, err := io.ReadAll(file)
 			if err != nil {
 				return nil, fmt.Errorf("failed to read file %s: %w", fileHeader.Filename, err)
 			}
-			
+
 			// Create FileUpload struct
 			fileUpload := &webmodels.FileUpload{
 				Name:        fileHeader.Filename,
@@ -1548,11 +1548,11 @@ func parseCardImportRequest(form *multipart.Form) (*webmodels.CardImportRequest,
 			files = append(files, fileUpload)
 		}
 	}
-	
+
 	if len(files) == 0 {
 		return nil, fmt.Errorf("no files uploaded")
 	}
-	
+
 	// Create request struct
 	req := &webmodels.CardImportRequest{
 		CollectionID:     collectionID,
@@ -1563,19 +1563,19 @@ func parseCardImportRequest(form *multipart.Form) (*webmodels.CardImportRequest,
 		CreateCollection: createCollection,
 		OverwriteMode:    overwriteMode,
 	}
-	
+
 	return req, nil
 }
 
 // executeBulkDelete executes bulk delete operation
 func (w *WebApp) executeBulkDelete(ctx context.Context, req *webmodels.CardBatchOperation) (*webmodels.CardBatchResult, error) {
 	result := &webmodels.CardBatchResult{
-		Operation:   req.Operation,
-		TotalCards:  len(req.CardIDs),
-		DryRun:      req.DryRun,
-		Errors:      make([]webmodels.CardOperationError, 0),
+		Operation:  req.Operation,
+		TotalCards: len(req.CardIDs),
+		DryRun:     req.DryRun,
+		Errors:     make([]webmodels.CardOperationError, 0),
 	}
-	
+
 	for _, cardID := range req.CardIDs {
 		if req.DryRun {
 			// For dry run, just check if card exists
@@ -1612,7 +1612,7 @@ func (w *WebApp) executeBulkDelete(ctx context.Context, req *webmodels.CardBatch
 			}
 		}
 	}
-	
+
 	result.Success = result.FailedCards == 0
 	return result, nil
 }
@@ -1620,12 +1620,12 @@ func (w *WebApp) executeBulkDelete(ctx context.Context, req *webmodels.CardBatch
 // executeBulkUpdate executes bulk update operation
 func (w *WebApp) executeBulkUpdate(ctx context.Context, req *webmodels.CardBatchOperation) (*webmodels.CardBatchResult, error) {
 	result := &webmodels.CardBatchResult{
-		Operation:   req.Operation,
-		TotalCards:  len(req.CardIDs),
-		DryRun:      req.DryRun,
-		Errors:      make([]webmodels.CardOperationError, 0),
+		Operation:  req.Operation,
+		TotalCards: len(req.CardIDs),
+		DryRun:     req.DryRun,
+		Errors:     make([]webmodels.CardOperationError, 0),
 	}
-	
+
 	for _, cardID := range req.CardIDs {
 		if req.DryRun {
 			// For dry run, preview the changes
@@ -1651,7 +1651,7 @@ func (w *WebApp) executeBulkUpdate(ctx context.Context, req *webmodels.CardBatch
 				if req.Updates.ColID != nil {
 					changes["collection"] = *req.Updates.ColID
 				}
-				
+
 				result.PreviewResults = append(result.PreviewResults, webmodels.CardPreview{
 					CardID:   cardID,
 					CardName: card.Name,
@@ -1673,7 +1673,7 @@ func (w *WebApp) executeBulkUpdate(ctx context.Context, req *webmodels.CardBatch
 			}
 		}
 	}
-	
+
 	result.Success = result.FailedCards == 0
 	return result, nil
 }
@@ -1684,7 +1684,7 @@ func (w *WebApp) executeBulkMove(ctx context.Context, req *webmodels.CardBatchOp
 	updates := &webmodels.CardUpdateRequest{
 		ColID: &req.TargetCollection,
 	}
-	
+
 	// Use bulk update with the move operation
 	moveReq := &webmodels.CardBatchOperation{
 		Operation: "update",
@@ -1692,7 +1692,7 @@ func (w *WebApp) executeBulkMove(ctx context.Context, req *webmodels.CardBatchOp
 		Updates:   updates,
 		DryRun:    req.DryRun,
 	}
-	
+
 	return w.executeBulkUpdate(ctx, moveReq)
 }
 
@@ -1702,7 +1702,7 @@ func (w *WebApp) executeBulkLevelUpdate(ctx context.Context, req *webmodels.Card
 	updates := &webmodels.CardUpdateRequest{
 		Level: req.NewLevel,
 	}
-	
+
 	// Use bulk update with the level change
 	levelReq := &webmodels.CardBatchOperation{
 		Operation: "update",
@@ -1710,19 +1710,19 @@ func (w *WebApp) executeBulkLevelUpdate(ctx context.Context, req *webmodels.Card
 		Updates:   updates,
 		DryRun:    req.DryRun,
 	}
-	
+
 	return w.executeBulkUpdate(ctx, levelReq)
 }
 
 // executeBulkToggleAnimated executes bulk toggle animated operation
 func (w *WebApp) executeBulkToggleAnimated(ctx context.Context, req *webmodels.CardBatchOperation) (*webmodels.CardBatchResult, error) {
 	result := &webmodels.CardBatchResult{
-		Operation:   req.Operation,
-		TotalCards:  len(req.CardIDs),
-		DryRun:      req.DryRun,
-		Errors:      make([]webmodels.CardOperationError, 0),
+		Operation:  req.Operation,
+		TotalCards: len(req.CardIDs),
+		DryRun:     req.DryRun,
+		Errors:     make([]webmodels.CardOperationError, 0),
 	}
-	
+
 	for _, cardID := range req.CardIDs {
 		card, err := w.CardMgmtService.GetCard(ctx, cardID)
 		if err != nil {
@@ -1734,10 +1734,10 @@ func (w *WebApp) executeBulkToggleAnimated(ctx context.Context, req *webmodels.C
 			result.FailedCards++
 			continue
 		}
-		
+
 		// Toggle animated status
 		newAnimated := !card.Animated
-		
+
 		if req.DryRun {
 			result.PreviewResults = append(result.PreviewResults, webmodels.CardPreview{
 				CardID:   cardID,
@@ -1751,7 +1751,7 @@ func (w *WebApp) executeBulkToggleAnimated(ctx context.Context, req *webmodels.C
 			updates := &webmodels.CardUpdateRequest{
 				Animated: &newAnimated,
 			}
-			
+
 			if _, err := w.CardMgmtService.UpdateCard(ctx, cardID, updates); err != nil {
 				result.Errors = append(result.Errors, webmodels.CardOperationError{
 					CardID:      cardID,
@@ -1765,7 +1765,7 @@ func (w *WebApp) executeBulkToggleAnimated(ctx context.Context, req *webmodels.C
 			}
 		}
 	}
-	
+
 	result.Success = result.FailedCards == 0
 	return result, nil
 }
@@ -1773,16 +1773,16 @@ func (w *WebApp) executeBulkToggleAnimated(ctx context.Context, req *webmodels.C
 // executeBulkExport executes bulk export operation
 func (w *WebApp) executeBulkExport(ctx context.Context, req *webmodels.CardBatchOperation) (*webmodels.CardBatchResult, error) {
 	result := &webmodels.CardBatchResult{
-		Operation:   req.Operation,
-		TotalCards:  len(req.CardIDs),
-		DryRun:      false, // Export is always a read operation
-		Errors:      make([]webmodels.CardOperationError, 0),
+		Operation:  req.Operation,
+		TotalCards: len(req.CardIDs),
+		DryRun:     false, // Export is always a read operation
+		Errors:     make([]webmodels.CardOperationError, 0),
 	}
-	
+
 	// TODO: Implement actual export functionality
 	// For now, just mark as processed
 	result.ProcessedCards = len(req.CardIDs)
 	result.Success = true
-	
+
 	return result, nil
 }

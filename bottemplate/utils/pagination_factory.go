@@ -68,111 +68,115 @@ func NewPaginationFactory(config PaginationFactoryConfig) *PaginationFactory {
 
 // CreateHandler creates a unified pagination handler
 func (pf *PaginationFactory) CreateHandler() handler.ComponentHandler {
-    return func(e *handler.ComponentEvent) error {
-        ctx := context.Background()
-        // Acknowledge immediately to avoid 3s timeout (10062)
-        _ = e.DeferUpdateMessage()
-        // Safely get customID from any component data that supports it
-        var customID string
-        if d, ok := any(e.Data).(interface{ CustomID() string }); ok {
-            customID = d.CustomID()
-        } else {
-            return nil // unsupported component type
-        }
+	return func(e *handler.ComponentEvent) error {
+		ctx := context.Background()
+		// Acknowledge immediately to avoid 3s timeout (10062)
+		if err := e.DeferUpdateMessage(); err != nil {
+			return err
+		}
+		// Safely get customID from any component data that supports it
+		var customID string
+		if d, ok := any(e.Data).(interface{ CustomID() string }); ok {
+			customID = d.CustomID()
+		} else {
+			return nil // unsupported component type
+		}
 
-        // Parse component ID
-        params, err := pf.config.Parser.Parse(customID)
-        if err != nil {
-            return nil // Invalid component ID, ignore
-        }
+		// Parse component ID
+		params, err := pf.config.Parser.Parse(customID)
+		if err != nil {
+			return nil // Invalid component ID, ignore
+		}
 
-        // Validate user if validator provided
-        if pf.config.Validator != nil && !pf.config.Validator.ValidateUser(e.User().ID.String(), params) {
-            // After deferring, use a follow-up ephemeral, not a first response
-            _, err := e.CreateFollowupMessage(discord.MessageCreate{Content: "Only the command user can navigate through these items.", Flags: discord.MessageFlagEphemeral})
-            return err
-        }
+		// Validate user if validator provided
+		if pf.config.Validator != nil && !pf.config.Validator.ValidateUser(e.User().ID.String(), params) {
+			// After deferring, use a follow-up ephemeral, not a first response
+			_, err := e.CreateFollowupMessage(discord.MessageCreate{Content: "Only the command user can navigate through these items.", Flags: discord.MessageFlagEphemeral})
+			return err
+		}
 
-        // Handle copy button (no defer, we reply ephemerally)
-        if strings.Contains(customID, "/copy/") {
-            return pf.handleCopyButton(ctx, e, params)
-        }
+		// Handle copy button (no defer, we reply ephemerally)
+		if strings.Contains(customID, "/copy/") {
+			return pf.handleCopyButton(ctx, e, params)
+		}
 
-        // Handle navigation with a single UpdateMessage response
-        return pf.handleNavigation(ctx, e, customID, params)
-    }
+		// Handle navigation with a single UpdateMessage response
+		return pf.handleNavigation(ctx, e, customID, params)
+	}
 }
 
 // handleCopyButton handles copy button interactions
 func (pf *PaginationFactory) handleCopyButton(ctx context.Context, e *handler.ComponentEvent, params PaginationParams) error {
-    // Fetch data
-    items, err := pf.config.Fetcher.FetchData(ctx, params)
-    if err != nil {
-        _, ferr := e.CreateFollowupMessage(discord.MessageCreate{Content: "Failed to fetch data", Flags: discord.MessageFlagEphemeral})
-        return ferr
-    }
+	// Fetch data
+	items, err := pf.config.Fetcher.FetchData(ctx, params)
+	if err != nil {
+		_, ferr := e.CreateFollowupMessage(discord.MessageCreate{Content: "Failed to fetch data", Flags: discord.MessageFlagEphemeral})
+		return ferr
+	}
 
 	// Calculate page items
 	startIdx := params.Page * pf.config.ItemsPerPage
 	endIdx := min(startIdx+pf.config.ItemsPerPage, len(items))
 
-    if startIdx >= len(items) {
-        _, ferr := e.CreateFollowupMessage(discord.MessageCreate{Content: "No items to copy", Flags: discord.MessageFlagEphemeral})
-        return ferr
-    }
+	if startIdx >= len(items) {
+		_, ferr := e.CreateFollowupMessage(discord.MessageCreate{Content: "No items to copy", Flags: discord.MessageFlagEphemeral})
+		return ferr
+	}
 
 	// Format copy text
-    copyText := pf.config.Formatter.FormatCopy(items[startIdx:endIdx], params)
-    _, ferr := e.CreateFollowupMessage(discord.MessageCreate{Content: "```\n" + copyText + "```", Flags: discord.MessageFlagEphemeral})
-    return ferr
+	copyText := pf.config.Formatter.FormatCopy(items[startIdx:endIdx], params)
+	_, ferr := e.CreateFollowupMessage(discord.MessageCreate{Content: "```\n" + copyText + "```", Flags: discord.MessageFlagEphemeral})
+	return ferr
 }
 
 // handleNavigation handles navigation button interactions
 func (pf *PaginationFactory) handleNavigation(ctx context.Context, e *handler.ComponentEvent, customID string, params PaginationParams) error {
-    // Fetch fresh data
-    items, err := pf.config.Fetcher.FetchData(ctx, params)
-    if err != nil {
-        errEmbed := discord.NewEmbedBuilder().
-            SetTitle("❌ Error").
-            SetDescription("Failed to fetch data").
-            SetColor(0xFF0000).
-            Build()
-        return e.UpdateMessage(discord.MessageUpdate{Embeds: &[]discord.Embed{errEmbed}})
-    }
+	// Fetch fresh data
+	items, err := pf.config.Fetcher.FetchData(ctx, params)
+	if err != nil {
+		errEmbed := discord.NewEmbedBuilder().
+			SetTitle("❌ Error").
+			SetDescription("Failed to fetch data").
+			SetColor(0xFF0000).
+			Build()
+		_, err := e.UpdateInteractionResponse(discord.MessageUpdate{Embeds: &[]discord.Embed{errEmbed}})
+		return err
+	}
 
-    if len(items) == 0 {
-        infoEmbed := discord.NewEmbedBuilder().
-            SetTitle("ℹ️ No Items").
-            SetDescription("No items found").
-            SetColor(0x0099FF).
-            Build()
-        return e.UpdateMessage(discord.MessageUpdate{Embeds: &[]discord.Embed{infoEmbed}, Components: &[]discord.ContainerComponent{}})
-    }
+	if len(items) == 0 {
+		infoEmbed := discord.NewEmbedBuilder().
+			SetTitle("ℹ️ No Items").
+			SetDescription("No items found").
+			SetColor(0x0099FF).
+			Build()
+		_, err := e.UpdateInteractionResponse(discord.MessageUpdate{Embeds: &[]discord.Embed{infoEmbed}, Components: &[]discord.ContainerComponent{}})
+		return err
+	}
 
-    // Guard against misconfiguration
-    if pf.config.ItemsPerPage <= 0 {
-        pf.config.ItemsPerPage = 10
-    }
-    totalPages := int(math.Ceil(float64(len(items)) / float64(pf.config.ItemsPerPage)))
-    if totalPages <= 0 {
-        totalPages = 1
-    }
+	// Guard against misconfiguration
+	if pf.config.ItemsPerPage <= 0 {
+		pf.config.ItemsPerPage = 10
+	}
+	totalPages := int(math.Ceil(float64(len(items)) / float64(pf.config.ItemsPerPage)))
+	if totalPages <= 0 {
+		totalPages = 1
+	}
 
 	// Calculate new page
 	newPage := params.Page
-    if strings.Contains(customID, "/next/") {
-        newPage = (params.Page + 1) % totalPages
-    } else if strings.Contains(customID, "/prev/") {
-        newPage = (params.Page - 1 + totalPages) % totalPages
-    }
+	if strings.Contains(customID, "/next/") {
+		newPage = (params.Page + 1) % totalPages
+	} else if strings.Contains(customID, "/prev/") {
+		newPage = (params.Page - 1 + totalPages) % totalPages
+	}
 
-    // Update params with new page
-    newParams := params
-    if newPage < 0 || newPage >= totalPages {
-        newParams.Page = 0
-    } else {
-        newParams.Page = newPage
-    }
+	// Update params with new page
+	newParams := params
+	if newPage < 0 || newPage >= totalPages {
+		newParams.Page = 0
+	} else {
+		newParams.Page = newPage
+	}
 
 	// Calculate page items
 	startIdx := newPage * pf.config.ItemsPerPage
@@ -186,23 +190,25 @@ func (pf *PaginationFactory) handleNavigation(ctx context.Context, e *handler.Co
 	pageItems := items[startIdx:endIdx]
 
 	// Create embed for new page
-    embed, err := pf.config.Formatter.FormatItems(pageItems, newPage, totalPages, newParams)
-    if err != nil {
-        errEmbed := discord.NewEmbedBuilder().
-            SetTitle("❌ Error").
-            SetDescription("Failed to format items").
-            SetColor(0xFF0000).
-            Build()
-        return e.UpdateMessage(discord.MessageUpdate{Embeds: &[]discord.Embed{errEmbed}})
-    }
+	embed, err := pf.config.Formatter.FormatItems(pageItems, newPage, totalPages, newParams)
+	if err != nil {
+		errEmbed := discord.NewEmbedBuilder().
+			SetTitle("❌ Error").
+			SetDescription("Failed to format items").
+			SetColor(0xFF0000).
+			Build()
+		_, err := e.UpdateInteractionResponse(discord.MessageUpdate{Embeds: &[]discord.Embed{errEmbed}})
+		return err
+	}
 
 	// Create pagination components
 	components := pf.createPaginationComponents(totalPages, newParams)
 
-	return e.UpdateMessage(discord.MessageUpdate{
+	_, err = e.UpdateInteractionResponse(discord.MessageUpdate{
 		Embeds:     &[]discord.Embed{embed},
 		Components: &components,
 	})
+	return err
 }
 
 // createPaginationComponents creates the pagination buttons

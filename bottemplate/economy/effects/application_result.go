@@ -97,13 +97,13 @@ func formatEffectMessage(effect AppliedEffectInfo) string {
 			return fmt.Sprintf("%s **%s**: %d%% forge cost discount", emoji, effect.EffectName, discount)
 		}
 	case "vial_reward":
-		if modifier, ok := effect.Modifier.(float64); ok && modifier > 1.0 {
-			increase := int((modifier - 1.0) * 100)
-			return fmt.Sprintf("%s **%s**: +%d%% vials from 1-2 star cards", emoji, effect.EffectName, increase)
+		if bonus, ok := effect.Modifier.(float64); ok && bonus > 0 {
+			return fmt.Sprintf("%s **%s**: +%.0f vials per liquify", emoji, effect.EffectName, bonus)
 		}
 	case "daily_cooldown":
-		if hours, ok := effect.Modifier.(int); ok && hours < 20 {
-			return fmt.Sprintf("%s **%s**: Daily cooldown reduced to %d hours", emoji, effect.EffectName, hours)
+		if minutes, ok := effect.Modifier.(float64); ok && minutes < 20*60 {
+			hours := minutes / 60.0
+			return fmt.Sprintf("%s **%s**: Daily cooldown reduced to %.1f hours", emoji, effect.EffectName, hours)
 		}
 	case "effect_cooldown_reduction":
 		if reduction, ok := effect.Modifier.(float64); ok && reduction > 0.0 {

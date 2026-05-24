@@ -17,10 +17,6 @@ import (
 	"github.com/disgoorg/bot-template/bottemplate/cardleveling"
 )
 
-func intPtr(v int) *int {
-	return &v
-}
-
 var LevelUp = discord.SlashCommandCreate{
 	Name:        "levelup",
 	Description: "Level up or combine your cards",
@@ -62,8 +58,8 @@ func (c *LevelUpCommand) Handle(event *handler.CommandEvent) error {
 
 	cardQuery := event.SlashCommandInteractionData().String("card_name")
 
-    // Search only within user's owned cards (fast join search)
-    card, err := c.findCard(ctx, event.User().ID.String(), cardQuery)
+	// Search only within user's owned cards (fast join search)
+	card, err := c.findCard(ctx, event.User().ID.String(), cardQuery)
 	if err != nil {
 		return createErrorEmbed(event, "Card Not Found", fmt.Sprintf("Could not find a card matching '%s' in your collection. Use /cards to see your cards.", cardQuery))
 	}
@@ -83,7 +79,13 @@ func (c *LevelUpCommand) Handle(event *handler.CommandEvent) error {
 		return c.handleCombine(event, userCard, combineWith)
 	}
 
-	result, err := c.levelingService.GainExp(ctx, userCard)
+	oldLevel := userCard.Level
+	result, err := c.levelingService.GainExpWithModifier(ctx, userCard, func(baseXP int64) int64 {
+		if c.bot != nil && c.bot.EffectIntegrator != nil {
+			return c.bot.EffectIntegrator.ApplyLevelupXP(ctx, event.User().ID.String(), baseXP)
+		}
+		return baseXP
+	})
 	if err != nil {
 		if err.Error() == "exp gain on cooldown" {
 			return createCooldownEmbed(event, userCard)
@@ -100,14 +102,24 @@ func (c *LevelUpCommand) Handle(event *handler.CommandEvent) error {
 	go c.bot.CompletionChecker.CheckCompletionForCards(context.Background(), event.User().ID.String(), []int64{userCard.CardID})
 
 	// Track quest progress
+	if c.bot.QuestTracker != nil {
+		reachedMaxLevel := result.NewLevel == 5 && oldLevel < 5
+		metadata := map[string]interface{}{
+			"is_max_level": reachedMaxLevel,
+			"new_level":    result.NewLevel,
+			"old_level":    oldLevel,
+			"action":       "levelup",
+		}
+		go c.bot.QuestTracker.TrackCardLevelUpWithMetadata(context.Background(), event.User().ID.String(), 1, metadata)
+	}
 
 	// Track effect progress for Kiss Later
 	if c.bot.EffectManager != nil {
 		go c.bot.EffectManager.UpdateEffectProgress(context.Background(), event.User().ID.String(), "kisslater", 1)
 	}
 
-    // Use card details we already have from search (avoid extra DB call)
-    cardDetails := card
+	// Use card details we already have from search (avoid extra DB call)
+	cardDetails := card
 
 	// Safety check for bot services
 	if c.bot == nil || c.bot.SpacesService == nil {
@@ -168,9 +180,11 @@ func (c *LevelUpCommand) Handle(event *handler.CommandEvent) error {
 		embed.SetDescription(description)
 	}
 
-    // Send followup asynchronously to keep handler fast
-    go func() { _, _ = event.CreateFollowupMessage(discord.MessageCreate{Embeds: []discord.Embed{embed.Build()}}) }()
-    return nil
+	// Send followup asynchronously to keep handler fast
+	go func() {
+		_, _ = event.CreateFollowupMessage(discord.MessageCreate{Embeds: []discord.Embed{embed.Build()}})
+	}()
+	return nil
 }
 
 func (c *LevelUpCommand) handleCombine(event *handler.CommandEvent, mainCard *models.UserCard, fodderCardQuery string) error {
@@ -194,6 +208,7 @@ func (c *LevelUpCommand) handleCombine(event *handler.CommandEvent, mainCard *mo
 		return createErrorEmbed(event, "Fodder Card Data Error", "Fodder card data is invalid.")
 	}
 
+	oldLevel := mainCard.Level
 	result, err := c.levelingService.CombineCards(ctx, mainCard, userFodderCard)
 	if err != nil {
 		return createErrorEmbed(event, "Combination Failed", err.Error())
@@ -210,7 +225,6 @@ func (c *LevelUpCommand) handleCombine(event *handler.CommandEvent, mainCard *mo
 	// Track quest progress for combine
 	if c.bot.QuestTracker != nil {
 		// Check if card reached level 5 (max level) after combination
-		oldLevel := mainCard.Level - (result.NewLevel - mainCard.Level) // Calculate old level before combine
 		reachedMaxLevel := result.NewLevel == 5 && oldLevel < 5
 		metadata := map[string]interface{}{
 			"is_max_level": reachedMaxLevel,
@@ -274,9 +288,11 @@ func (c *LevelUpCommand) handleCombine(event *handler.CommandEvent, mainCard *mo
 		SetThumbnail(cardInfo.ImageURL).
 		SetDescription(description)
 
-    // Send followup asynchronously to keep handler fast
-    go func() { _, _ = event.CreateFollowupMessage(discord.MessageCreate{Embeds: []discord.Embed{embed.Build()}}) }()
-    return nil
+	// Send followup asynchronously to keep handler fast
+	go func() {
+		_, _ = event.CreateFollowupMessage(discord.MessageCreate{Embeds: []discord.Embed{embed.Build()}})
+	}()
+	return nil
 }
 
 func createErrorEmbed(event *handler.CommandEvent, title, description string) error {
@@ -343,40 +359,40 @@ func (c *LevelUpCommand) findCard(ctx context.Context, userID, query string) (*m
 		}
 	}
 
-    // Fallback to single-query owned fuzzy search
-    ownedCards, err := c.cardRepo.SearchOwnedByUserFuzzy(ctx, userID, query, 3)
-    if err == nil && len(ownedCards) > 0 {
-        return ownedCards[0], nil
-    }
+	// Fallback to single-query owned fuzzy search
+	ownedCards, err := c.cardRepo.SearchOwnedByUserFuzzy(ctx, userID, query, 3)
+	if err == nil && len(ownedCards) > 0 {
+		return ownedCards[0], nil
+	}
 
-    // Final resilient fallback: weighted search within user's cards
-    userCards, err2 := c.cardRepo.GetAllByUserID(ctx, userID)
-    if err2 != nil {
-        return nil, fmt.Errorf("failed to fetch user cards: %v", err2)
-    }
+	// Final resilient fallback: weighted search within user's cards
+	userCards, err2 := c.cardRepo.GetAllByUserID(ctx, userID)
+	if err2 != nil {
+		return nil, fmt.Errorf("failed to fetch user cards: %v", err2)
+	}
 
-    // Collect IDs and map
-    cardIDs := make([]int64, 0, len(userCards))
-    userCardMap := make(map[int64]*models.UserCard, len(userCards))
-    for _, uc := range userCards {
-        if uc.Amount > 0 {
-            cardIDs = append(cardIDs, uc.CardID)
-            userCardMap[uc.CardID] = uc
-        }
-    }
-    if len(cardIDs) == 0 {
-        return nil, fmt.Errorf("you don't have any cards available")
-    }
-    cards, err3 := c.cardRepo.GetByIDs(ctx, cardIDs)
-    if err3 != nil {
-        return nil, fmt.Errorf("failed to fetch card details: %v", err3)
-    }
-    filters := utils.ParseSearchQuery(query)
-    results := utils.WeightedSearchWithMulti(cards, filters, userCardMap)
-    if len(results) == 0 {
-        return nil, fmt.Errorf("no cards found matching '%s'", query)
-    }
-    return results[0], nil
+	// Collect IDs and map
+	cardIDs := make([]int64, 0, len(userCards))
+	userCardMap := make(map[int64]*models.UserCard, len(userCards))
+	for _, uc := range userCards {
+		if uc.Amount > 0 {
+			cardIDs = append(cardIDs, uc.CardID)
+			userCardMap[uc.CardID] = uc
+		}
+	}
+	if len(cardIDs) == 0 {
+		return nil, fmt.Errorf("you don't have any cards available")
+	}
+	cards, err3 := c.cardRepo.GetByIDs(ctx, cardIDs)
+	if err3 != nil {
+		return nil, fmt.Errorf("failed to fetch card details: %v", err3)
+	}
+	filters := utils.ParseSearchQuery(query)
+	results := utils.WeightedSearchWithMulti(cards, filters, userCardMap)
+	if len(results) == 0 {
+		return nil, fmt.Errorf("no cards found matching '%s'", query)
+	}
+	return results[0], nil
 }
 
 func LevelUpHandler(b *bottemplate.Bot) handler.CommandHandler {

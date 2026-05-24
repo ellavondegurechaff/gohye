@@ -190,7 +190,7 @@ func (h *EffectInfoHandler) formatEffectValue(effectID string, value int) string
 		return fmt.Sprintf("+%d flakes/claim", value)
 	case "holygrail":
 		return fmt.Sprintf("+%d vials/liquify", value)
-	case "skyfriend":
+	case "wolfofhyejoo":
 		return fmt.Sprintf("%d%% cashback from auction wins", value)
 	case "lambhyejoo":
 		return fmt.Sprintf("%d%% bonus from auction sales", value)
@@ -214,7 +214,7 @@ func (h *EffectInfoHandler) getActionName(effectID string) string {
 		return "claims"
 	case "holygrail":
 		return "liquefies"
-	case "skyfriend":
+	case "wolfofhyejoo":
 		return "flakes spent on wins"
 	case "lambhyejoo":
 		return "flakes earned from sales"
@@ -237,7 +237,7 @@ func (h *EffectInfoHandler) getProgressDescription(effectID string) string {
 		return "Use `/claim` to claim cards. Each claim counts toward your progress."
 	case "holygrail":
 		return "Use `/liquefy` to convert cards to vials. Each liquefied card counts."
-	case "skyfriend":
+	case "wolfofhyejoo":
 		return "Win auctions to progress. The amount you spend on winning bids counts."
 	case "lambhyejoo":
 		return "Sell cards on auction. The flakes you earn from sales count."

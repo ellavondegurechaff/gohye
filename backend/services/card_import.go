@@ -11,9 +11,9 @@ import (
 	"strings"
 	"time"
 
+	webmodels "github.com/disgoorg/bot-template/backend/models"
 	"github.com/disgoorg/bot-template/bottemplate/database/models"
 	"github.com/disgoorg/bot-template/bottemplate/services"
-	webmodels "github.com/disgoorg/bot-template/backend/models"
 	"github.com/uptrace/bun"
 )
 
@@ -38,7 +38,7 @@ func NewCardImportService(repos *webmodels.Repositories, spacesService *services
 // ImportCards performs the complete card import pipeline
 func (cis *CardImportService) ImportCards(ctx context.Context, req *webmodels.CardImportRequest) (*webmodels.CardImportResult, error) {
 	startTime := time.Now()
-	
+
 	slog.Info("Starting card import operation",
 		slog.String("collection_id", req.CollectionID),
 		slog.String("group_type", req.GroupType),
@@ -56,7 +56,7 @@ func (cis *CardImportService) ImportCards(ctx context.Context, req *webmodels.Ca
 		ProcessingErrors: make([]webmodels.ProcessingError, 0),
 		FilesUploaded:    make([]string, 0),
 		FilesSkipped:     make([]string, 0),
-		ImportSummary:    &webmodels.ImportSummary{
+		ImportSummary: &webmodels.ImportSummary{
 			TotalFiles:    len(req.Files),
 			LevelStats:    make(map[int]int),
 			FileTypeStats: make(map[string]int),
@@ -123,7 +123,7 @@ func (cis *CardImportService) ImportCards(ctx context.Context, req *webmodels.Ca
 func (cis *CardImportService) ValidateFiles(files []*webmodels.FileUpload) []webmodels.ValidationError {
 	var errors []webmodels.ValidationError
 	namesSeen := make(map[string]bool)
-	
+
 	for _, file := range files {
 		// Basic file validation
 		if err := file.Validate(); err != nil {
@@ -144,8 +144,8 @@ func (cis *CardImportService) ValidateFiles(files []*webmodels.FileUpload) []web
 		normalizedName := fmt.Sprintf("%d_%s", parsed.Level, parsed.Name)
 		if namesSeen[normalizedName] {
 			errors = append(errors, webmodels.CreateValidationError(
-				file.Name, "duplicate_name", 
-				fmt.Sprintf("Duplicate card name '%s' at level %d", parsed.Name, parsed.Level), 
+				file.Name, "duplicate_name",
+				fmt.Sprintf("Duplicate card name '%s' at level %d", parsed.Name, parsed.Level),
 				"high"))
 		}
 		namesSeen[normalizedName] = true
@@ -159,8 +159,8 @@ func (cis *CardImportService) ValidateFiles(files []*webmodels.FileUpload) []web
 		// File size warnings
 		if file.Size > 5*1024*1024 { // 5MB
 			errors = append(errors, webmodels.CreateValidationError(
-				file.Name, "large_file", 
-				fmt.Sprintf("File size %.2fMB is large", float64(file.Size)/(1024*1024)), 
+				file.Name, "large_file",
+				fmt.Sprintf("File size %.2fMB is large", float64(file.Size)/(1024*1024)),
 				"low"))
 		}
 	}
@@ -173,7 +173,7 @@ func (cis *CardImportService) ParseFilename(filename string) (*webmodels.ParsedF
 	// Pattern: level_name(_additional_names).ext
 	// Examples: 1_hello.jpg, 1_member1_member2_member3.jpg
 	pattern := regexp.MustCompile(`^(\d+)_(.+)\.(jpg|jpeg|png|gif)$`)
-	
+
 	matches := pattern.FindStringSubmatch(strings.ToLower(filename))
 	if len(matches) != 4 {
 		return &webmodels.ParsedFilename{
@@ -225,7 +225,7 @@ func (cis *CardImportService) validateMimeType(file *webmodels.FileUpload) error
 	expectedTypes := []string{
 		"image/jpeg", "image/jpg", "image/png", "image/gif",
 	}
-	
+
 	validType := false
 	for _, expected := range expectedTypes {
 		if file.ContentType == expected {
@@ -233,7 +233,7 @@ func (cis *CardImportService) validateMimeType(file *webmodels.FileUpload) error
 			break
 		}
 	}
-	
+
 	if !validType {
 		return fmt.Errorf("invalid content type %s, expected image type", file.ContentType)
 	}
@@ -413,7 +413,7 @@ func (cis *CardImportService) handleExistingCard(ctx context.Context, req *webmo
 		for _, existing := range existingCards {
 			if err := cis.repos.Card.Delete(ctx, existing.ID); err != nil {
 				result.ProcessingErrors = append(result.ProcessingErrors,
-					webmodels.CreateProcessingError(parsed.Original, "database", "delete_error", 
+					webmodels.CreateProcessingError(parsed.Original, "database", "delete_error",
 						fmt.Sprintf("Failed to delete existing card %d: %v", existing.ID, err), true))
 				return false
 			}

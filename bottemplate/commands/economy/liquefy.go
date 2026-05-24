@@ -47,6 +47,10 @@ func NewLiquefyHandler(b *bottemplate.Bot) *LiquefyHandler {
 }
 
 func (h *LiquefyHandler) HandleLiquefy(e *handler.CommandEvent) error {
+	if err := e.DeferCreateMessage(true); err != nil {
+		return err
+	}
+
 	vm := vials.NewVialManager(h.bot.DB, h.bot.PriceCalculator)
 	query := strings.ReplaceAll(strings.TrimSpace(e.SlashCommandInteractionData().String("query")), " ", "_")
 	ctx := context.Background()
@@ -54,87 +58,14 @@ func (h *LiquefyHandler) HandleLiquefy(e *handler.CommandEvent) error {
 
 	log.Printf("[DEBUG] Searching for card with query: %s", query)
 
-	// Try parsing as ID first
-	if cardID, err := strconv.ParseInt(query, 10, 64); err == nil {
-		card, err := h.bot.CardRepository.GetByID(ctx, cardID)
-		if err == nil {
-			userCard, err := h.bot.UserCardRepository.GetByUserIDAndCardID(ctx, userID, cardID)
-			if err != nil {
-				log.Printf("[ERROR] Error checking card ownership: %v", err)
-				return e.CreateMessage(discord.MessageCreate{
-					Content: fmt.Sprintf("❌ Error checking card ownership: %v", err),
-					Flags:   discord.MessageFlagEphemeral,
-				})
-			}
-			if userCard == nil || userCard.Amount <= 0 {
-				return e.CreateMessage(discord.MessageCreate{
-					Content: "❌ You don't own this card",
-					Flags:   discord.MessageFlagEphemeral,
-				})
-			}
-			// Check liquefy eligibility
-			if !utils.IsCardLiquefyEligible(card, userCard) {
-				return e.CreateMessage(discord.MessageCreate{
-					Content: "❌ This card cannot be liquefied (may be locked, favorite with 1 copy, level 4+, or from restricted collection)",
-					Flags:   discord.MessageFlagEphemeral,
-				})
-			}
-			return h.showLiquefyConfirmation(e, card, vm)
-		}
+	card, _, err := h.findOwnedLiquefyCard(ctx, query, userID)
+	if err != nil {
+		log.Printf("[DEBUG] No owned liquefy card found for query: %s, error: %v", query, err)
+		return updateLiquefyCommandContent(e, fmt.Sprintf("❌ %s", err.Error()))
 	}
 
-	// For name search, try exact match first
-	card, err := h.bot.CardRepository.GetByQuery(ctx, query)
-	if err == nil && card != nil {
-		log.Printf("[DEBUG] Found exact match: %+v", card)
-		userCard, err := h.bot.UserCardRepository.GetByUserIDAndCardID(ctx, userID, card.ID)
-		if err == nil && userCard != nil && userCard.Amount > 0 {
-			// Check liquefy eligibility
-			if !utils.IsCardLiquefyEligible(card, userCard) {
-				return e.CreateMessage(discord.MessageCreate{
-					Content: "❌ This card cannot be liquefied (may be locked, favorite with 1 copy, level 4+, or from restricted collection)",
-					Flags:   discord.MessageFlagEphemeral,
-				})
-			}
-			return h.showLiquefyConfirmation(e, card, vm)
-		}
-	}
-
-	// If exact match fails, try weighted search (like forge command)
-	card, err = h.findCardByName(ctx, query, userID)
-	if err == nil && card != nil {
-		log.Printf("[DEBUG] Found weighted match: %+v", card)
-		userCard, err := h.bot.UserCardRepository.GetByUserIDAndCardID(ctx, userID, card.ID)
-		if err != nil {
-			log.Printf("[ERROR] Error checking card ownership: %v", err)
-			return e.CreateMessage(discord.MessageCreate{
-				Content: fmt.Sprintf("❌ Error checking card ownership: %v", err),
-				Flags:   discord.MessageFlagEphemeral,
-			})
-		}
-		if userCard == nil || userCard.Amount <= 0 {
-			log.Printf("[DEBUG] User doesn't own card: %+v", userCard)
-			return e.CreateMessage(discord.MessageCreate{
-				Content: "❌ You don't own this card",
-				Flags:   discord.MessageFlagEphemeral,
-			})
-		}
-		// Check liquefy eligibility for weighted search result
-		if !utils.IsCardLiquefyEligible(card, userCard) {
-			return e.CreateMessage(discord.MessageCreate{
-				Content: "❌ This card cannot be liquefied (may be locked, favorite with 1 copy, level 4+, or from restricted collection)",
-				Flags:   discord.MessageFlagEphemeral,
-			})
-		}
-		return h.showLiquefyConfirmation(e, card, vm)
-	}
-
-	// If no card found or error occurred
-	log.Printf("[DEBUG] No card found for query: %s, error: %v", query, err)
-	return e.CreateMessage(discord.MessageCreate{
-		Content: fmt.Sprintf("❌ Card '%s' not found or you don't own it", query),
-		Flags:   discord.MessageFlagEphemeral,
-	})
+	log.Printf("[DEBUG] Found owned liquefy match: %+v", card)
+	return h.showLiquefyConfirmation(e, card, vm)
 }
 
 func (h *LiquefyHandler) showLiquefyConfirmation(e *handler.CommandEvent, card *models.Card, vm *vials.VialManager) error {
@@ -142,97 +73,104 @@ func (h *LiquefyHandler) showLiquefyConfirmation(e *handler.CommandEvent, card *
 	userID := strconv.FormatInt(int64(e.User().ID), 10)
 	vials, err := vm.CalculateVialYieldWithEffects(context.Background(), card, userID, h.bot.EffectIntegrator)
 	if err != nil {
-		return e.CreateMessage(discord.MessageCreate{
-			Content: "❌ Failed to calculate vial yield: " + err.Error(),
-			Flags:   discord.MessageFlagEphemeral,
-		})
+		return updateLiquefyCommandContent(e, "❌ Failed to calculate vial yield: "+err.Error())
 	}
 
-    embed := discord.NewEmbedBuilder().
-        SetTitle("🍷 Confirm Liquefication").
-        SetColor(config.BackgroundColor).
-        SetDescription(fmt.Sprintf("```md\n## Card Details\n* Name: %s\n* Collection: %s\n* Level: %s\n* Vial Yield: %d 🍷\n```\n⚠️ Warning: This action cannot be undone!",
-            utils.FormatCardName(card.Name),
-            card.ColID,
-            utils.GetPromoRarityPlainText(card.ColID, card.Level),
-            vials)).
+	embed := discord.NewEmbedBuilder().
+		SetTitle("🍷 Confirm Liquefication").
+		SetColor(config.BackgroundColor).
+		SetDescription(fmt.Sprintf("```md\n## Card Details\n* Name: %s\n* Collection: %s\n* Level: %s\n* Vial Yield: %d 🍷\n```\n⚠️ Warning: This action cannot be undone!",
+			utils.FormatCardName(card.Name),
+			card.ColID,
+			utils.GetPromoRarityPlainText(card.ColID, card.Level),
+			vials)).
 		SetTimestamp(time.Now()).
 		Build()
 
-    ownerID := e.User().ID.String()
-    actionRow := discord.NewActionRow(
-        discord.NewSuccessButton(
-            "Confirm",
-            fmt.Sprintf("/liquefy/confirm/%s/%d", ownerID, card.ID)),
-        discord.NewDangerButton(
-            "Cancel",
-            fmt.Sprintf("/liquefy/cancel/%s/%d", ownerID, card.ID)),
-    )
+	ownerID := e.User().ID.String()
+	actionRow := discord.NewActionRow(
+		discord.NewSuccessButton(
+			"Confirm",
+			fmt.Sprintf("/liquefy/confirm/%s/%d", ownerID, card.ID)),
+		discord.NewDangerButton(
+			"Cancel",
+			fmt.Sprintf("/liquefy/cancel/%s/%d", ownerID, card.ID)),
+	)
 
-	return e.CreateMessage(discord.MessageCreate{
-		Embeds:     []discord.Embed{embed},
-		Components: []discord.ContainerComponent{actionRow},
-		Flags:      discord.MessageFlagEphemeral,
+	_, err = e.UpdateInteractionResponse(discord.MessageUpdate{
+		Embeds:     &[]discord.Embed{embed},
+		Components: &[]discord.ContainerComponent{actionRow},
 	})
+	return err
 }
 
 func (h *LiquefyHandler) HandleComponent(e *handler.ComponentEvent) error {
+	if err := e.DeferUpdateMessage(); err != nil {
+		return err
+	}
+
 	vm := vials.NewVialManager(h.bot.DB, h.bot.PriceCalculator)
 	userID := int64(e.User().ID)
 	ctx := context.Background()
 
-    parts := strings.Split(e.Data.CustomID(), "/")
-    if len(parts) != 5 {
-        return e.UpdateMessage(discord.MessageUpdate{
-            Content:    utils.Ptr("��� Invalid interaction"),
-            Components: &[]discord.ContainerComponent{},
-        })
-    }
+	parts := strings.Split(e.Data.CustomID(), "/")
+	if len(parts) != 5 {
+		_, err := e.UpdateInteractionResponse(discord.MessageUpdate{
+			Content:    utils.Ptr("❌ Invalid interaction"),
+			Components: &[]discord.ContainerComponent{},
+		})
+		return err
+	}
 
-    if parts[3] != e.User().ID.String() {
-        return utils.EH.CreateEphemeralError(e, "Only the command user can use these buttons.")
-    }
+	if parts[3] != e.User().ID.String() {
+		return utils.EH.CreateEphemeralError(e, "Only the command user can use these buttons.")
+	}
 
-    cardID, err := strconv.ParseInt(parts[4], 10, 64)
-    if err != nil {
-        return e.UpdateMessage(discord.MessageUpdate{
-            Content:    utils.Ptr("❌ Invalid card ID"),
-            Components: &[]discord.ContainerComponent{},
-        })
-    }
+	cardID, err := strconv.ParseInt(parts[4], 10, 64)
+	if err != nil {
+		_, err := e.UpdateInteractionResponse(discord.MessageUpdate{
+			Content:    utils.Ptr("❌ Invalid card ID"),
+			Components: &[]discord.ContainerComponent{},
+		})
+		return err
+	}
 
 	// Check if user owns the card first
 	userCard, err := h.bot.UserCardRepository.GetByUserIDAndCardID(ctx, strconv.FormatInt(userID, 10), cardID)
 	if err != nil {
-		return e.UpdateMessage(discord.MessageUpdate{
+		_, err := e.UpdateInteractionResponse(discord.MessageUpdate{
 			Content:    utils.Ptr("❌ Failed to liquefy card: card not found in your inventory"),
 			Components: &[]discord.ContainerComponent{},
 		})
+		return err
 	}
 
 	if userCard == nil || userCard.Amount <= 0 {
-		return e.UpdateMessage(discord.MessageUpdate{
+		_, err := e.UpdateInteractionResponse(discord.MessageUpdate{
 			Content:    utils.Ptr("❌ Failed to liquefy card: you don't own this card"),
 			Components: &[]discord.ContainerComponent{},
 		})
+		return err
 	}
 
-    switch parts[2] {
-    case "confirm":
+	switch parts[2] {
+	case "confirm":
 		card, err := h.bot.CardRepository.GetByID(context.Background(), cardID)
 		if err != nil {
-			return e.UpdateMessage(discord.MessageUpdate{
+			_, err := e.UpdateInteractionResponse(discord.MessageUpdate{
 				Content:    utils.Ptr("❌ Card not found"),
 				Components: &[]discord.ContainerComponent{},
 			})
+			return err
 		}
 
-		vials, err := vm.LiquefyCard(context.Background(), userID, cardID)
+		vials, err := vm.LiquefyCardWithEffects(context.Background(), userID, cardID, h.bot.EffectIntegrator)
 		if err != nil {
-			return e.UpdateMessage(discord.MessageUpdate{
+			_, err := e.UpdateInteractionResponse(discord.MessageUpdate{
 				Content:    utils.Ptr(fmt.Sprintf("❌ Failed to liquefy card: %s", err.Error())),
 				Components: &[]discord.ContainerComponent{},
 			})
+			return err
 		}
 
 		embed := discord.NewEmbedBuilder().
@@ -248,103 +186,127 @@ func (h *LiquefyHandler) HandleComponent(e *handler.ComponentEvent) error {
 			go h.bot.EffectManager.UpdateEffectProgress(context.Background(), e.User().ID.String(), "holygrail", 1)
 		}
 
-		return e.UpdateMessage(discord.MessageUpdate{
+		_, err = e.UpdateInteractionResponse(discord.MessageUpdate{
 			Embeds:     &[]discord.Embed{embed.Build()},
 			Components: &[]discord.ContainerComponent{},
 		})
+		return err
 
 	case "cancel":
-		return e.UpdateMessage(discord.MessageUpdate{
+		_, err := e.UpdateInteractionResponse(discord.MessageUpdate{
 			Content:    utils.Ptr("❌ Liquefication cancelled."),
 			Components: &[]discord.ContainerComponent{},
 		})
+		return err
 
 	default:
-		return e.UpdateMessage(discord.MessageUpdate{
+		_, err := e.UpdateInteractionResponse(discord.MessageUpdate{
 			Content:    utils.Ptr("❌ Invalid action"),
 			Components: &[]discord.ContainerComponent{},
 		})
+		return err
 	}
 }
 
-// findCardByName finds a card by name using enhanced search
-func (h *LiquefyHandler) findCardByName(ctx context.Context, query, userID string) (*models.Card, error) {
-	// Handle empty query
+func updateLiquefyCommandContent(e *handler.CommandEvent, content string) error {
+	_, err := e.UpdateInteractionResponse(discord.MessageUpdate{
+		Content:    utils.Ptr(content),
+		Embeds:     &[]discord.Embed{},
+		Components: &[]discord.ContainerComponent{},
+	})
+	return err
+}
+
+// findOwnedLiquefyCard searches only the user's owned inventory, so the card
+// shown in confirmation is guaranteed to be the same card ID later removed.
+func (h *LiquefyHandler) findOwnedLiquefyCard(ctx context.Context, query, userID string) (*models.Card, *models.UserCard, error) {
 	if query == "" {
-		return nil, fmt.Errorf("please provide a card name")
+		return nil, nil, fmt.Errorf("please provide a card name")
 	}
 
-	// Try direct query first (optimized approach)
-	card, err := h.bot.CardRepository.GetByQuery(ctx, query)
-	if err == nil {
-		// Check if user owns this card
-		userCard, err := h.bot.CardRepository.GetUserCard(ctx, userID, card.ID)
-		if err == nil && userCard.Amount > 0 {
-			return card, nil
+	userCards, err := h.bot.UserCardRepository.GetAllByUserID(ctx, userID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to fetch user cards: %v", err)
+	}
+	if len(userCards) == 0 {
+		return nil, nil, fmt.Errorf("you don't have any cards available")
+	}
+
+	userCardMap := make(map[int64]*models.UserCard)
+	cardIDs := make([]int64, 0, len(userCards))
+	for _, uc := range userCards {
+		if uc == nil || uc.Amount <= 0 {
+			continue
+		}
+		if existing, ok := userCardMap[uc.CardID]; ok {
+			existing.Amount += uc.Amount
+			existing.Favorite = existing.Favorite || uc.Favorite
+			existing.Locked = existing.Locked || uc.Locked
+			continue
+		}
+		copyUC := *uc
+		userCardMap[uc.CardID] = &copyUC
+		cardIDs = append(cardIDs, uc.CardID)
+	}
+
+	cards, err := h.bot.CardRepository.GetByIDs(ctx, cardIDs)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to fetch card details: %v", err)
+	}
+
+	cardByID := make(map[int64]*models.Card, len(cards))
+	for _, card := range cards {
+		cardByID[card.ID] = card
+	}
+
+	if cardID, err := strconv.ParseInt(query, 10, 64); err == nil && cardID > 0 {
+		card := cardByID[cardID]
+		userCard := userCardMap[cardID]
+		if card == nil || userCard == nil {
+			return nil, nil, fmt.Errorf("card '%s' not found in your inventory", query)
+		}
+		if !utils.IsCardLiquefyEligible(card, userCard) {
+			return nil, nil, fmt.Errorf("this card cannot be liquefied (may be locked, favorite with 1 copy, level 4+, or from restricted collection)")
+		}
+		return card, userCard, nil
+	}
+
+	normalizedQuery := normalizeLiquefySearchTerm(query)
+	var ownedCards []*models.Card
+	for _, card := range cards {
+		userCard := userCardMap[card.ID]
+		if userCard == nil {
+			continue
+		}
+		ownedCards = append(ownedCards, card)
+		if normalizeLiquefySearchTerm(card.Name) == normalizedQuery {
+			if !utils.IsCardLiquefyEligible(card, userCard) {
+				return nil, nil, fmt.Errorf("this card cannot be liquefied (may be locked, favorite with 1 copy, level 4+, or from restricted collection)")
+			}
+			return card, userCard, nil
 		}
 	}
 
-    // Fast path: single-query fuzzy search limited to owned cards
-    if strings.TrimSpace(query) != "" {
-        owned, err := h.bot.CardRepository.SearchOwnedByUserFuzzy(ctx, userID, query, 5)
-        if err == nil && len(owned) > 0 {
-            // pick first eligible
-            for _, c := range owned {
-                uc, _ := h.bot.CardRepository.GetUserCard(ctx, userID, c.ID)
-                if utils.IsCardLiquefyEligible(c, uc) {
-                    return c, nil
-                }
-            }
-        }
-    }
+	filters := utils.ParseSearchQuery(query)
+	searchResults := utils.WeightedSearchWithMulti(ownedCards, filters, userCardMap)
+	for _, card := range searchResults {
+		userCard := userCardMap[card.ID]
+		if utils.IsCardLiquefyEligible(card, userCard) {
+			return card, userCard, nil
+		}
+	}
 
-    // Fallback to comprehensive search within user's cards
-    userCards, err := h.bot.CardRepository.GetAllByUserID(ctx, userID)
-    if err != nil {
-        return nil, fmt.Errorf("failed to fetch user cards: %v", err)
-    }
+	if len(searchResults) > 0 {
+		return nil, nil, fmt.Errorf("matching cards cannot be liquefied (may be locked, favorite with 1 copy, level 4+, or from restricted collection)")
+	}
+	return nil, nil, fmt.Errorf("card '%s' not found in your inventory", query)
+}
 
-    // Get card IDs and create lookup map
-    cardIDs := make([]int64, 0, len(userCards))
-    userCardMap := make(map[int64]*models.UserCard)
-    for _, uc := range userCards {
-        cardIDs = append(cardIDs, uc.CardID)
-        userCardMap[uc.CardID] = uc
-    }
-
-    if len(cardIDs) == 0 {
-        return nil, fmt.Errorf("you don't have any cards available")
-    }
-
-    // Get card details
-    cards, err := h.bot.CardRepository.GetByIDs(ctx, cardIDs)
-    if err != nil {
-        return nil, fmt.Errorf("failed to fetch card details: %v", err)
-    }
-
-    // Filter cards using centralized liquefy eligibility logic
-    var liquefyEligibleCards []*models.Card
-    eligibleUserCardMap := make(map[int64]*models.UserCard)
-    for _, card := range cards {
-        userCard := userCardMap[card.ID]
-        if utils.IsCardLiquefyEligible(card, userCard) {
-            liquefyEligibleCards = append(liquefyEligibleCards, card)
-            eligibleUserCardMap[card.ID] = userCard
-        }
-    }
-
-    if len(liquefyEligibleCards) == 0 {
-        return nil, fmt.Errorf("no cards available for liquefying (cards may be locked, favorites, level 4+, or from restricted collections)")
-    }
-
-    // Use enhanced search filters on eligible cards
-    filters := utils.ParseSearchQuery(query)
-    searchResults := utils.WeightedSearchWithMulti(liquefyEligibleCards, filters, eligibleUserCardMap)
-
-    if len(searchResults) == 0 {
-        return nil, fmt.Errorf("no cards found matching '%s'", query)
-    }
-
-    // Return the best match
-    return searchResults[0], nil
+func normalizeLiquefySearchTerm(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	value = strings.ReplaceAll(value, " ", "_")
+	for strings.Contains(value, "__") {
+		value = strings.ReplaceAll(value, "__", "_")
+	}
+	return value
 }

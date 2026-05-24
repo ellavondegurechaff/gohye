@@ -38,30 +38,30 @@ type PaginationInfo struct {
 
 // UploadProgress represents file upload progress
 type UploadProgress struct {
-	ID          string    `json:"id"`
-	Filename    string    `json:"filename"`
-	BytesRead   int64     `json:"bytes_read"`
-	TotalBytes  int64     `json:"total_bytes"`
-	Percentage  float64   `json:"percentage"`
-	Status      string    `json:"status"` // uploading, processing, completed, failed
-	Message     string    `json:"message,omitempty"`
-	StartedAt   time.Time `json:"started_at"`
+	ID          string     `json:"id"`
+	Filename    string     `json:"filename"`
+	BytesRead   int64      `json:"bytes_read"`
+	TotalBytes  int64      `json:"total_bytes"`
+	Percentage  float64    `json:"percentage"`
+	Status      string     `json:"status"` // uploading, processing, completed, failed
+	Message     string     `json:"message,omitempty"`
+	StartedAt   time.Time  `json:"started_at"`
 	CompletedAt *time.Time `json:"completed_at,omitempty"`
 }
 
 // ImportProgress represents collection import progress
 type ImportProgress struct {
-	ID             string    `json:"id"`
-	CollectionName string    `json:"collection_name"`
-	TotalFiles    int       `json:"total_files"`
-	ProcessedFiles int      `json:"processed_files"`
-	SuccessCount  int       `json:"success_count"`
-	ErrorCount    int       `json:"error_count"`
-	Status        string    `json:"status"` // processing, completed, failed, cancelled
-	CurrentFile   string    `json:"current_file,omitempty"`
-	Errors        []ImportError `json:"errors,omitempty"`
-	StartedAt     time.Time `json:"started_at"`
-	CompletedAt   *time.Time `json:"completed_at,omitempty"`
+	ID             string        `json:"id"`
+	CollectionName string        `json:"collection_name"`
+	TotalFiles     int           `json:"total_files"`
+	ProcessedFiles int           `json:"processed_files"`
+	SuccessCount   int           `json:"success_count"`
+	ErrorCount     int           `json:"error_count"`
+	Status         string        `json:"status"` // processing, completed, failed, cancelled
+	CurrentFile    string        `json:"current_file,omitempty"`
+	Errors         []ImportError `json:"errors,omitempty"`
+	StartedAt      time.Time     `json:"started_at"`
+	CompletedAt    *time.Time    `json:"completed_at,omitempty"`
 }
 
 // ImportError represents an error during import
@@ -73,8 +73,8 @@ type ImportError struct {
 
 // FieldValidationError represents a field validation error
 type FieldValidationError struct {
-	Field   string `json:"field"`
-	Message string `json:"message"`
+	Field   string      `json:"field"`
+	Message string      `json:"message"`
 	Value   interface{} `json:"value,omitempty"`
 }
 
@@ -129,9 +129,9 @@ func NewPaginationInfo(page, limit int, total int64) *PaginationInfo {
 
 // HealthCheck represents a health check response
 type HealthCheck struct {
-	Status     string                 `json:"status"`
-	Timestamp  time.Time              `json:"timestamp"`
-	Version    string                 `json:"version"`
+	Status     string                     `json:"status"`
+	Timestamp  time.Time                  `json:"timestamp"`
+	Version    string                     `json:"version"`
 	Components map[string]ComponentHealth `json:"components"`
 }
 
@@ -159,7 +159,7 @@ func (h *HealthCheck) AddComponent(name, status, message string, details map[str
 		Message: message,
 		Details: details,
 	}
-	
+
 	// If any component is unhealthy, mark overall status as unhealthy
 	if status != "healthy" && h.Status == "healthy" {
 		h.Status = "unhealthy"

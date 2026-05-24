@@ -106,6 +106,10 @@ func (vm *VialManager) CalculateVialYieldWithEffects(ctx context.Context, card *
 	return baseVials, nil
 }
 
+func (vm *VialManager) LiquefyCardWithEffects(ctx context.Context, userID int64, cardNameOrID interface{}, effectIntegrator interface{}) (int64, error) {
+	return vm.liquefyCard(ctx, userID, cardNameOrID, effectIntegrator)
+}
+
 // findCardByName is a helper function to find a card by name
 func (vm *VialManager) findCardByName(ctx context.Context, cardName string) (*models.Card, error) {
 	var card models.Card
@@ -173,6 +177,10 @@ func (vm *VialManager) findCardByName(ctx context.Context, cardName string) (*mo
 
 // LiquefyCard converts a card into vials
 func (vm *VialManager) LiquefyCard(ctx context.Context, userID int64, cardNameOrID interface{}) (int64, error) {
+	return vm.liquefyCard(ctx, userID, cardNameOrID, nil)
+}
+
+func (vm *VialManager) liquefyCard(ctx context.Context, userID int64, cardNameOrID interface{}, effectIntegrator interface{}) (int64, error) {
 	vm.mu.Lock()
 	defer vm.mu.Unlock()
 
@@ -211,7 +219,11 @@ func (vm *VialManager) LiquefyCard(ctx context.Context, userID int64, cardNameOr
 
 		// Calculate vial yield
 		var err error
-		vials, err = vm.CalculateVialYield(ctx, &card)
+		if effectIntegrator != nil {
+			vials, err = vm.CalculateVialYieldWithEffects(ctx, &card, userIDStr, effectIntegrator)
+		} else {
+			vials, err = vm.CalculateVialYield(ctx, &card)
+		}
 		if err != nil {
 			return err
 		}

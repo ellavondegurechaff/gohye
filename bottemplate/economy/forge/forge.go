@@ -69,6 +69,10 @@ func (fm *ForgeManager) CalculateForgeCostWithEffects(ctx context.Context, card1
 }
 
 func (fm *ForgeManager) ForgeCards(ctx context.Context, userID int64, card1ID, card2ID int64) (*models.Card, error) {
+	return fm.ForgeCardsWithEffects(ctx, userID, card1ID, card2ID, nil)
+}
+
+func (fm *ForgeManager) ForgeCardsWithEffects(ctx context.Context, userID int64, card1ID, card2ID int64, effectIntegrator interface{}) (*models.Card, error) {
 	fm.mu.Lock()
 	defer fm.mu.Unlock()
 
@@ -89,7 +93,7 @@ func (fm *ForgeManager) ForgeCards(ctx context.Context, userID int64, card1ID, c
 		}
 
 		// Calculate forge cost
-		forgeCost, err := fm.CalculateForgeCost(ctx, &card1, &card2)
+		forgeCost, err := fm.CalculateForgeCostWithEffects(ctx, &card1, &card2, userIDStr, effectIntegrator)
 		if err != nil {
 			return err
 		}

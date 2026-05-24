@@ -1,18 +1,18 @@
 package admin
 
 import (
-    "context"
-    "fmt"
-    "strings"
-    "time"
+	"context"
+	"fmt"
+	"strings"
+	"time"
 
-    "github.com/disgoorg/bot-template/bottemplate"
-    "github.com/disgoorg/bot-template/bottemplate/database/models"
-    "github.com/disgoorg/bot-template/bottemplate/database/repositories"
-    "github.com/disgoorg/bot-template/bottemplate/utils"
-    "github.com/disgoorg/disgo/discord"
-    "github.com/disgoorg/disgo/handler"
-    "github.com/uptrace/bun"
+	"github.com/disgoorg/bot-template/bottemplate"
+	"github.com/disgoorg/bot-template/bottemplate/database/models"
+	"github.com/disgoorg/bot-template/bottemplate/database/repositories"
+	"github.com/disgoorg/bot-template/bottemplate/utils"
+	"github.com/disgoorg/disgo/discord"
+	"github.com/disgoorg/disgo/handler"
+	"github.com/uptrace/bun"
 )
 
 var Gift = discord.SlashCommandCreate{
@@ -58,9 +58,11 @@ var Gift = discord.SlashCommandCreate{
 }
 
 func GiftHandler(b *bottemplate.Bot) handler.CommandHandler {
-    return func(e *handler.CommandEvent) error {
-        if err := e.DeferCreateMessage(false); err != nil { return err }
-        ctx := context.Background()
+	return func(e *handler.CommandEvent) error {
+		if err := e.DeferCreateMessage(false); err != nil {
+			return err
+		}
+		ctx := context.Background()
 
 		// Get command parameters
 		targetUser := e.SlashCommandInteractionData().User("user")
@@ -93,18 +95,27 @@ func GiftHandler(b *bottemplate.Bot) handler.CommandHandler {
 		}
 
 		// Validate at least one gift is provided
-        if balance <= 0 && cardName == "" && itemName == "" { _, err := e.UpdateInteractionResponse(discord.MessageUpdate{Content: utils.Ptr("❌ You must provide either balance, card_name, or item_name (or any combination).")}); return err }
+		if balance <= 0 && cardName == "" && itemName == "" {
+			_, err := e.UpdateInteractionResponse(discord.MessageUpdate{Content: utils.Ptr("❌ You must provide either balance, card_name, or item_name (or any combination).")})
+			return err
+		}
 
 		// Validate target user exists in database
 		targetUserID := targetUser.ID.String()
-        _, err := b.UserRepository.GetByDiscordID(ctx, targetUserID)
-        if err != nil { _, updErr := e.UpdateInteractionResponse(discord.MessageUpdate{Content: utils.Ptr(fmt.Sprintf("❌ User %s not found in database. They need to use a bot command first.", targetUser.Username))}); return updErr }
+		_, err := b.UserRepository.GetByDiscordID(ctx, targetUserID)
+		if err != nil {
+			_, updErr := e.UpdateInteractionResponse(discord.MessageUpdate{Content: utils.Ptr(fmt.Sprintf("❌ User %s not found in database. They need to use a bot command first.", targetUser.Username))})
+			return updErr
+		}
 
 		// Find card by name if card_name provided
 		var card *models.Card
 		if cardName != "" {
 			card, err = findCardByName(ctx, b, cardName)
-            if err != nil { _, updErr := e.UpdateInteractionResponse(discord.MessageUpdate{Content: utils.Ptr(fmt.Sprintf("❌ Card not found: %v", err))}); return updErr }
+			if err != nil {
+				_, updErr := e.UpdateInteractionResponse(discord.MessageUpdate{Content: utils.Ptr(fmt.Sprintf("❌ Card not found: %v", err))})
+				return updErr
+			}
 		}
 
 		// Find item by name if item_name provided
@@ -112,7 +123,10 @@ func GiftHandler(b *bottemplate.Bot) handler.CommandHandler {
 		var itemInfo *itemDisplayInfo
 		if itemName != "" {
 			itemID, itemInfo, err = findItemByName(itemName)
-            if err != nil { _, updErr := e.UpdateInteractionResponse(discord.MessageUpdate{Content: utils.Ptr(fmt.Sprintf("❌ Item not found: %v", err))}); return updErr }
+			if err != nil {
+				_, updErr := e.UpdateInteractionResponse(discord.MessageUpdate{Content: utils.Ptr(fmt.Sprintf("❌ Item not found: %v", err))})
+				return updErr
+			}
 		}
 
 		// Start transaction
@@ -169,7 +183,10 @@ func GiftHandler(b *bottemplate.Bot) handler.CommandHandler {
 		}
 
 		// Commit transaction
-        if err = tx.Commit(); err != nil { _, updErr := e.UpdateInteractionResponse(discord.MessageUpdate{Content: utils.Ptr("❌ Failed to commit transaction.")}); return updErr }
+		if err = tx.Commit(); err != nil {
+			_, updErr := e.UpdateInteractionResponse(discord.MessageUpdate{Content: utils.Ptr("❌ Failed to commit transaction.")})
+			return updErr
+		}
 
 		// Create success message
 		successMessage := fmt.Sprintf("🎁 **Gifts sent to %s:**\n%s",
@@ -182,9 +199,9 @@ func GiftHandler(b *bottemplate.Bot) handler.CommandHandler {
 			}
 		}
 
-        _, updErr := e.UpdateInteractionResponse(discord.MessageUpdate{Content: utils.Ptr(successMessage)})
-        return updErr
-    }
+		_, updErr := e.UpdateInteractionResponse(discord.MessageUpdate{Content: utils.Ptr(successMessage)})
+		return updErr
+	}
 }
 
 // addBalanceToUser adds balance to a user (following UserRepository.UpdateBalance pattern)

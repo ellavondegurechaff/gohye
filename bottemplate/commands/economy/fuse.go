@@ -54,7 +54,7 @@ func (h *FuseHandler) Handle(e *handler.CommandEvent) error {
 	}
 
 	// Show fusion confirmation
-	return h.showFusionConfirmation(e, userItems)
+	return h.showFusionConfirmation(e)
 }
 
 func checkRequirements(userItems []*models.UserItem, requirements map[string]int) (bool, []string) {
@@ -129,7 +129,7 @@ func (h *FuseHandler) showMissingItemsEmbed(e *handler.CommandEvent, userItems [
 	})
 }
 
-func (h *FuseHandler) showFusionConfirmation(e *handler.CommandEvent, userItems []*models.UserItem) error {
+func (h *FuseHandler) showFusionConfirmation(e *handler.CommandEvent) error {
 	var description strings.Builder
 	description.WriteString("```ansi\n")
 	description.WriteString("\u001b[1;36m🔮 Album Card Fusion\u001b[0m\n\n")
@@ -148,13 +148,13 @@ func (h *FuseHandler) showFusionConfirmation(e *handler.CommandEvent, userItems 
 		SetColor(config.InfoColor).
 		Build()
 
-    ownerID := e.User().ID.String()
-    components := []discord.ContainerComponent{
-        discord.NewActionRow(
-            discord.NewSuccessButton("✨ Fuse", "fuse/confirm/"+ownerID),
-            discord.NewDangerButton("Cancel", "fuse/cancel/"+ownerID),
-        ),
-    }
+	ownerID := e.User().ID.String()
+	components := []discord.ContainerComponent{
+		discord.NewActionRow(
+			discord.NewSuccessButton("✨ Fuse", "fuse/confirm/"+ownerID),
+			discord.NewDangerButton("Cancel", "fuse/cancel/"+ownerID),
+		),
+	}
 
 	return e.CreateMessage(discord.MessageCreate{
 		Embeds:     []discord.Embed{embed},
@@ -163,28 +163,28 @@ func (h *FuseHandler) showFusionConfirmation(e *handler.CommandEvent, userItems 
 }
 
 func (h *FuseHandler) HandleComponent(e *handler.ComponentEvent) error {
-    parts := strings.Split(e.Data.CustomID(), "/")
-    if len(parts) < 2 {
-        return e.UpdateMessage(discord.MessageUpdate{
-            Content: utils.Ptr("❌ Invalid interaction"),
-        })
-    }
+	parts := strings.Split(e.Data.CustomID(), "/")
+	if len(parts) < 2 {
+		return e.UpdateMessage(discord.MessageUpdate{
+			Content: utils.Ptr("❌ Invalid interaction"),
+		})
+	}
 
-    action := parts[1]
-    switch action {
-    case "confirm":
-        if len(parts) < 3 || parts[2] != e.User().ID.String() {
-            return utils.EH.CreateEphemeralError(e, "Only the command user can confirm this action.")
-        }
-        return h.handleFusionConfirm(e)
-    case "cancel":
-        if len(parts) < 3 || parts[2] != e.User().ID.String() {
-            return utils.EH.CreateEphemeralError(e, "Only the command user can cancel this action.")
-        }
-        return e.UpdateMessage(discord.MessageUpdate{
-            Content:    utils.Ptr("🔮 Fusion cancelled."),
-            Components: &[]discord.ContainerComponent{},
-        })
+	action := parts[1]
+	switch action {
+	case "confirm":
+		if len(parts) < 3 || parts[2] != e.User().ID.String() {
+			return utils.EH.CreateEphemeralError(e, "Only the command user can confirm this action.")
+		}
+		return h.handleFusionConfirm(e)
+	case "cancel":
+		if len(parts) < 3 || parts[2] != e.User().ID.String() {
+			return utils.EH.CreateEphemeralError(e, "Only the command user can cancel this action.")
+		}
+		return e.UpdateMessage(discord.MessageUpdate{
+			Content:    utils.Ptr("🔮 Fusion cancelled."),
+			Components: &[]discord.ContainerComponent{},
+		})
 	default:
 		return e.UpdateMessage(discord.MessageUpdate{
 			Content: utils.Ptr("❌ Invalid action"),

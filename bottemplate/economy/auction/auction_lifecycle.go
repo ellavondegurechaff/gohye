@@ -210,6 +210,11 @@ func (l *AuctionLifecycleManager) completeAuction(ctx context.Context, auctionID
 		go l.manager.questSnowflakesTrackerFunc(auction.SellerID, auction.CurrentPrice, "auction")
 	}
 
+	if auction.TopBidderID != "" && l.manager.effectProgressFunc != nil {
+		go l.manager.effectProgressFunc(auction.TopBidderID, "wolfofhyejoo", int(auction.CurrentPrice))
+		go l.manager.effectProgressFunc(auction.SellerID, "lambhyejoo", int(auction.CurrentPrice))
+	}
+
 	return nil
 }
 
@@ -240,6 +245,30 @@ func (l *AuctionLifecycleManager) handleWinningBidCompletion(ctx context.Context
 		Amount: auction.CurrentPrice,
 	}); err != nil {
 		return fmt.Errorf("failed to transfer balance to seller: %w", err)
+	}
+
+	if l.manager.auctionSaleBonusFunc != nil {
+		bonus := l.manager.auctionSaleBonusFunc(ctx, auction.SellerID, auction.CurrentPrice)
+		if bonus > 0 {
+			if err := l.manager.txManager.ValidateAndUpdateBalance(ctx, tx, economicUtils.BalanceOperationOptions{
+				UserID: auction.SellerID,
+				Amount: bonus,
+			}); err != nil {
+				return fmt.Errorf("failed to apply auction sale bonus: %w", err)
+			}
+		}
+	}
+
+	if l.manager.auctionWinCashbackFunc != nil {
+		cashback := l.manager.auctionWinCashbackFunc(ctx, auction.TopBidderID, auction.CurrentPrice)
+		if cashback > 0 {
+			if err := l.manager.txManager.ValidateAndUpdateBalance(ctx, tx, economicUtils.BalanceOperationOptions{
+				UserID: auction.TopBidderID,
+				Amount: cashback,
+			}); err != nil {
+				return fmt.Errorf("failed to apply auction win cashback: %w", err)
+			}
+		}
 	}
 
 	return nil

@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
+	webmodels "github.com/disgoorg/bot-template/backend/models"
 	"github.com/disgoorg/bot-template/bottemplate/database/models"
 	"github.com/disgoorg/bot-template/bottemplate/services"
-	webmodels "github.com/disgoorg/bot-template/backend/models"
 )
 
 // SyncManagerService manages synchronization between database and storage
@@ -42,7 +42,7 @@ func (sms *SyncManagerService) GetSyncStatus(ctx context.Context) ([]*webmodels.
 			slog.Error("Failed to get sync status for collection",
 				slog.String("collection_id", collection.ID),
 				slog.String("error", err.Error()))
-			
+
 			// Create error status
 			status = &webmodels.SyncStatus{
 				CollectionID:   collection.ID,
@@ -81,7 +81,7 @@ func (sms *SyncManagerService) getCollectionSyncStatus(ctx context.Context, coll
 
 	// TODO: Implement storage file checking when SpacesService has the necessary methods
 	// For now, we'll create a basic sync status
-	
+
 	status := &webmodels.SyncStatus{
 		CollectionID:   collectionID,
 		CollectionName: collection.Name,
@@ -254,10 +254,10 @@ func (sms *SyncManagerService) ValidateNamingConventions(ctx context.Context, co
 
 	for _, card := range cards {
 		_ = card // Placeholder to avoid unused variable error
-		
+
 		// Generate expected file name
 		// expectedName := generateExpectedFileName(card)
-		
+
 		// Check if actual file name matches
 		// if actualName != expectedName {
 		//     issues = append(issues, webmodels.SyncIssue{
@@ -278,7 +278,7 @@ func (sms *SyncManagerService) generateExpectedFileName(cardName, colID string, 
 	// Sanitize card name for use in file path
 	safeName := strings.ReplaceAll(cardName, " ", "_")
 	safeName = strings.ToLower(safeName)
-	
+
 	// Remove special characters
 	var builder strings.Builder
 	for _, r := range safeName {

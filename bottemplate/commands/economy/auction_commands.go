@@ -136,31 +136,31 @@ func (h *AuctionHandler) HandleCreate(event *handler.CommandEvent) error {
 	}
 
 	// Create confirmation embed
-    embed := discord.NewEmbedBuilder().
-        SetTitle("🏛️ Confirm Auction Creation").
-        SetDescription(fmt.Sprintf("Please confirm that you want to create an auction for **%s**", utils.FormatCardName(card.Name))).
-        AddField("Card", fmt.Sprintf("%s %s", utils.GetPromoRarityPlainText(card.ColID, card.Level), utils.FormatCardName(card.Name)), false).
-        AddField("Start Price", fmt.Sprintf("%d 💰", startPrice), true).
-        AddField("Duration", formatDuration(duration), true).
-        AddField("Collection", strings.ToUpper(card.ColID), true).
-        SetColor(config.BackgroundColor).
-        SetFooter("This auction will be visible to all users", "").
-        Build()
+	embed := discord.NewEmbedBuilder().
+		SetTitle("🏛️ Confirm Auction Creation").
+		SetDescription(fmt.Sprintf("Please confirm that you want to create an auction for **%s**", utils.FormatCardName(card.Name))).
+		AddField("Card", fmt.Sprintf("%s %s", utils.GetPromoRarityPlainText(card.ColID, card.Level), utils.FormatCardName(card.Name)), false).
+		AddField("Start Price", fmt.Sprintf("%d 💰", startPrice), true).
+		AddField("Duration", formatDuration(duration), true).
+		AddField("Collection", strings.ToUpper(card.ColID), true).
+		SetColor(config.BackgroundColor).
+		SetFooter("This auction will be visible to all users", "").
+		Build()
 
-    // Create confirmation buttons (restrict to command user)
-    ownerID := event.User().ID.String()
-    components := []discord.ContainerComponent{
-        discord.NewActionRow(
-            discord.NewSuccessButton(
-                "Confirm",
-                fmt.Sprintf("/auction/confirm/%s/%d/%d/%d", ownerID, card.ID, startPrice, int64(duration.Seconds())),
-            ),
-            discord.NewDangerButton(
-                "Cancel",
-                fmt.Sprintf("/auction/cancel/%s", ownerID),
-            ),
-        ),
-    }
+	// Create confirmation buttons (restrict to command user)
+	ownerID := event.User().ID.String()
+	components := []discord.ContainerComponent{
+		discord.NewActionRow(
+			discord.NewSuccessButton(
+				"Confirm",
+				fmt.Sprintf("/auction/confirm/%s/%d/%d/%d", ownerID, card.ID, startPrice, int64(duration.Seconds())),
+			),
+			discord.NewDangerButton(
+				"Cancel",
+				fmt.Sprintf("/auction/cancel/%s", ownerID),
+			),
+		),
+	}
 
 	return event.CreateMessage(discord.MessageCreate{
 		Embeds:     []discord.Embed{embed},
@@ -294,24 +294,24 @@ func (h *AuctionHandler) HandleList(event *handler.CommandEvent) error {
 }
 
 func (h *AuctionHandler) HandleCancel(event *handler.ComponentEvent) error {
-    // Validate only the command user can cancel
-    parts := strings.Split(event.Data.CustomID(), "/")
-    if len(parts) >= 4 {
-        ownerID := parts[3]
-        if ownerID != event.User().ID.String() {
-            return utils.EH.CreateEphemeralError(event, "Only the command user can cancel this action.")
-        }
-    }
-    return event.UpdateMessage(discord.MessageUpdate{
-        Embeds: &[]discord.Embed{
-            discord.NewEmbedBuilder().
-                SetTitle("❌ Auction Cancelled").
-                SetDescription("The auction creation was cancelled.").
-                SetColor(0xFF0000).
-                Build(),
-        },
-        Components: &[]discord.ContainerComponent{},
-    })
+	// Validate only the command user can cancel
+	parts := strings.Split(event.Data.CustomID(), "/")
+	if len(parts) >= 4 {
+		ownerID := parts[3]
+		if ownerID != event.User().ID.String() {
+			return utils.EH.CreateEphemeralError(event, "Only the command user can cancel this action.")
+		}
+	}
+	return event.UpdateMessage(discord.MessageUpdate{
+		Embeds: &[]discord.Embed{
+			discord.NewEmbedBuilder().
+				SetTitle("❌ Auction Cancelled").
+				SetDescription("The auction creation was cancelled.").
+				SetColor(0xFF0000).
+				Build(),
+		},
+		Components: &[]discord.ContainerComponent{},
+	})
 }
 
 // CreateAuctionListComponentHandler creates component handler for auction list pagination
@@ -381,8 +381,8 @@ func (f *AuctionListDataFetcher) FetchData(ctx context.Context, params utils.Pag
 type AuctionListFormatter struct{}
 
 func (f *AuctionListFormatter) FormatItems(allItems []interface{}, page, totalPages int, params utils.PaginationParams) (discord.Embed, error) {
-    // Items are already page-scoped by PaginationFactory
-    pageItems := allItems
+	// Items are already page-scoped by PaginationFactory
+	pageItems := allItems
 
 	var description strings.Builder
 	description.WriteString("```ansi\n")
@@ -395,8 +395,8 @@ func (f *AuctionListFormatter) FormatItems(allItems []interface{}, page, totalPa
 		timeLeft := time.Until(auction.EndTime).Round(time.Second)
 		timeStr := formatDuration(timeLeft)
 
-        // Format card display name (no underscores)
-        cardName := utils.FormatCardName(card.Name)
+		// Format card display name (no underscores)
+		cardName := utils.FormatCardName(card.Name)
 
 		// Format auction entry with enhanced colors and show current price
 		priceDisplay := fmt.Sprintf("%d 💰", auction.CurrentPrice)
@@ -435,14 +435,14 @@ func min(a, b int) int {
 }
 
 func (f *AuctionListFormatter) FormatCopy(items []interface{}, params utils.PaginationParams) string {
-    var result []string
-    for _, item := range items {
-        auctionItem := item.(AuctionListItem)
-        auction := auctionItem.Auction
-        card := auctionItem.Card
-        result = append(result, fmt.Sprintf("%s: %s - %d 💰", auction.AuctionID, utils.FormatCardName(card.Name), auction.CurrentPrice))
-    }
-    return strings.Join(result, "\n")
+	var result []string
+	for _, item := range items {
+		auctionItem := item.(AuctionListItem)
+		auction := auctionItem.Auction
+		card := auctionItem.Card
+		result = append(result, fmt.Sprintf("%s: %s - %d 💰", auction.AuctionID, utils.FormatCardName(card.Name), auction.CurrentPrice))
+	}
+	return strings.Join(result, "\n")
 }
 
 // AuctionListValidator implements UserValidator for auction list

@@ -49,45 +49,45 @@ func NewForgeHandler(b *bottemplate.Bot) *ForgeHandler {
 }
 
 func (h *ForgeHandler) HandleForge(e *handler.CommandEvent) error {
-    // Defer immediately to avoid Discord 3s timeout (10062)
-    if err := e.DeferCreateMessage(false); err != nil {
-        return err
-    }
+	// Defer immediately to avoid Discord 3s timeout (10062)
+	if err := e.DeferCreateMessage(false); err != nil {
+		return err
+	}
 
-    fm := forge.NewForgeManager(h.bot.DB, h.bot.PriceCalculator)
+	fm := forge.NewForgeManager(h.bot.DB, h.bot.PriceCalculator)
 	query1 := strings.TrimSpace(e.SlashCommandInteractionData().String("card_query_1"))
 	query2 := strings.TrimSpace(e.SlashCommandInteractionData().String("card_query_2"))
 	ctx := context.Background()
 	userID := strconv.FormatInt(int64(e.User().ID), 10)
 
 	// Find first card
-    card1, err := h.findCard(ctx, query1, userID, 0)
-    if err != nil {
-        return utils.EH.UpdateInteractionResponse(e, "Forge", fmt.Sprintf("Error finding first card: %v", err))
-    }
+	card1, err := h.findCard(ctx, query1, userID, 0)
+	if err != nil {
+		return utils.EH.UpdateInteractionResponse(e, "Forge", fmt.Sprintf("Error finding first card: %v", err))
+	}
 
 	// Find second card, excluding the first card
-    card2, err := h.findCard(ctx, query2, userID, card1.ID)
-    if err != nil {
-        return utils.EH.UpdateInteractionResponse(e, "Forge", fmt.Sprintf("Error finding second card: %v", err))
-    }
+	card2, err := h.findCard(ctx, query2, userID, card1.ID)
+	if err != nil {
+		return utils.EH.UpdateInteractionResponse(e, "Forge", fmt.Sprintf("Error finding second card: %v", err))
+	}
 
 	// Validate cards can be forged
-    if card1.Level != card2.Level {
-        return utils.EH.UpdateInteractionResponse(e, "Forge", "Cards must be of the same level to forge")
-    }
+	if card1.Level != card2.Level {
+		return utils.EH.UpdateInteractionResponse(e, "Forge", "Cards must be of the same level to forge")
+	}
 
-    if card1.ID == card2.ID {
-        return utils.EH.UpdateInteractionResponse(e, "Forge", "You must use two different cards to forge")
-    }
+	if card1.ID == card2.ID {
+		return utils.EH.UpdateInteractionResponse(e, "Forge", "You must use two different cards to forge")
+	}
 
 	// Calculate forge cost with effect discounts
-    cost, err := fm.CalculateForgeCostWithEffects(ctx, card1, card2, userID, h.bot.EffectIntegrator)
-    if err != nil {
-        return utils.EH.UpdateInteractionResponse(e, "Forge", fmt.Sprintf("Error calculating forge cost: %v", err))
-    }
+	cost, err := fm.CalculateForgeCostWithEffects(ctx, card1, card2, userID, h.bot.EffectIntegrator)
+	if err != nil {
+		return utils.EH.UpdateInteractionResponse(e, "Forge", fmt.Sprintf("Error calculating forge cost: %v", err))
+	}
 
-    return h.showForgeConfirmation(e, card1, card2, cost)
+	return h.showForgeConfirmation(e, card1, card2, cost)
 }
 
 func (h *ForgeHandler) showForgeConfirmation(e *handler.CommandEvent, card1, card2 *models.Card, cost int64) error {
@@ -134,57 +134,59 @@ func (h *ForgeHandler) showForgeConfirmation(e *handler.CommandEvent, card1, car
 		SetTimestamp(time.Now()).
 		Build()
 
-    ownerID := e.User().ID.String()
-    actionRow := discord.NewActionRow(
-        discord.NewSuccessButton("Confirm", fmt.Sprintf("/forge/confirm/%s/%d/%d", ownerID, card1.ID, card2.ID)),
-        discord.NewDangerButton("Cancel", fmt.Sprintf("/forge/cancel/%s/%d/%d", ownerID, card1.ID, card2.ID)),
-    )
+	ownerID := e.User().ID.String()
+	actionRow := discord.NewActionRow(
+		discord.NewSuccessButton("Confirm", fmt.Sprintf("/forge/confirm/%s/%d/%d", ownerID, card1.ID, card2.ID)),
+		discord.NewDangerButton("Cancel", fmt.Sprintf("/forge/cancel/%s/%d/%d", ownerID, card1.ID, card2.ID)),
+	)
 
-    _, err := e.UpdateInteractionResponse(discord.MessageUpdate{
-        Embeds:     &[]discord.Embed{embed},
-        Components: &[]discord.ContainerComponent{actionRow},
-    })
-    return err
+	_, err := e.UpdateInteractionResponse(discord.MessageUpdate{
+		Embeds:     &[]discord.Embed{embed},
+		Components: &[]discord.ContainerComponent{actionRow},
+	})
+	return err
 }
 
 func (h *ForgeHandler) HandleComponent(e *handler.ComponentEvent) error {
-    // Defer immediately to acknowledge interaction, then update/ follow up
-    _ = e.DeferUpdateMessage()
+	// Defer immediately to acknowledge interaction, then update/ follow up
+	if err := e.DeferUpdateMessage(); err != nil {
+		return err
+	}
 
-    fm := forge.NewForgeManager(h.bot.DB, h.bot.PriceCalculator)
+	fm := forge.NewForgeManager(h.bot.DB, h.bot.PriceCalculator)
 	userID := int64(e.User().ID)
 	ctx := context.Background()
 
-    parts := strings.Split(e.Data.CustomID(), "/")
-    if len(parts) != 6 {
-        _, err := e.CreateFollowupMessage(discord.MessageCreate{Content: "⚠️ Invalid interaction", Flags: discord.MessageFlagEphemeral})
-        return err
-    }
-    // parts[3] is ownerID
-    if parts[3] != e.User().ID.String() {
-        _, err := e.CreateFollowupMessage(discord.MessageCreate{Content: "Only the command user can use these buttons.", Flags: discord.MessageFlagEphemeral})
-        return err
-    }
+	parts := strings.Split(e.Data.CustomID(), "/")
+	if len(parts) != 6 {
+		_, err := e.CreateFollowupMessage(discord.MessageCreate{Content: "⚠️ Invalid interaction", Flags: discord.MessageFlagEphemeral})
+		return err
+	}
+	// parts[3] is ownerID
+	if parts[3] != e.User().ID.String() {
+		_, err := e.CreateFollowupMessage(discord.MessageCreate{Content: "Only the command user can use these buttons.", Flags: discord.MessageFlagEphemeral})
+		return err
+	}
 
-    card1ID, err := strconv.ParseInt(parts[4], 10, 64)
-    if err != nil {
-        _, ferr := e.CreateFollowupMessage(discord.MessageCreate{Content: "⚠️ Invalid card ID", Flags: discord.MessageFlagEphemeral})
-        return ferr
-    }
+	card1ID, err := strconv.ParseInt(parts[4], 10, 64)
+	if err != nil {
+		_, ferr := e.CreateFollowupMessage(discord.MessageCreate{Content: "⚠️ Invalid card ID", Flags: discord.MessageFlagEphemeral})
+		return ferr
+	}
 
-    card2ID, err := strconv.ParseInt(parts[5], 10, 64)
-    if err != nil {
-        _, ferr := e.CreateFollowupMessage(discord.MessageCreate{Content: "⚠️ Invalid card ID", Flags: discord.MessageFlagEphemeral})
-        return ferr
-    }
+	card2ID, err := strconv.ParseInt(parts[5], 10, 64)
+	if err != nil {
+		_, ferr := e.CreateFollowupMessage(discord.MessageCreate{Content: "⚠️ Invalid card ID", Flags: discord.MessageFlagEphemeral})
+		return ferr
+	}
 
 	switch parts[2] {
-    case "confirm":
-        newCard, err := fm.ForgeCards(ctx, userID, card1ID, card2ID)
-        if err != nil {
-            _, ferr := e.CreateFollowupMessage(discord.MessageCreate{Content: fmt.Sprintf("🔧 Failed to forge cards: %s", err.Error()), Flags: discord.MessageFlagEphemeral})
-            return ferr
-        }
+	case "confirm":
+		newCard, err := fm.ForgeCardsWithEffects(ctx, userID, card1ID, card2ID, h.bot.EffectIntegrator)
+		if err != nil {
+			_, ferr := e.CreateFollowupMessage(discord.MessageCreate{Content: fmt.Sprintf("🔧 Failed to forge cards: %s", err.Error()), Flags: discord.MessageFlagEphemeral})
+			return ferr
+		}
 
 		// Track effect progress for Cherry Blossom
 		if h.bot.EffectManager != nil {
@@ -221,21 +223,22 @@ func (h *ForgeHandler) HandleComponent(e *handler.ComponentEvent) error {
 			SetTimestamp(time.Now()).
 			Build()
 
-        // Update the original message publicly (non-ephemeral) with the result and clear components
-        return e.UpdateMessage(discord.MessageUpdate{Embeds: &[]discord.Embed{embed}, Components: &[]discord.ContainerComponent{}})
+		_, err = e.UpdateInteractionResponse(discord.MessageUpdate{Embeds: &[]discord.Embed{embed}, Components: &[]discord.ContainerComponent{}})
+		return err
 
-    case "cancel":
-        embed := discord.NewEmbedBuilder().
-            SetTitle("Forge Cancelled").
-            SetDescription("The forging process has been cancelled.").
-            SetColor(0xED4245).
-            SetTimestamp(time.Now()).
-            Build()
-        return e.UpdateMessage(discord.MessageUpdate{Embeds: &[]discord.Embed{embed}, Components: &[]discord.ContainerComponent{}})
+	case "cancel":
+		embed := discord.NewEmbedBuilder().
+			SetTitle("Forge Cancelled").
+			SetDescription("The forging process has been cancelled.").
+			SetColor(0xED4245).
+			SetTimestamp(time.Now()).
+			Build()
+		_, err := e.UpdateInteractionResponse(discord.MessageUpdate{Embeds: &[]discord.Embed{embed}, Components: &[]discord.ContainerComponent{}})
+		return err
 
-    default:
-        _, ferr := e.CreateFollowupMessage(discord.MessageCreate{Content: "⚠️ Invalid action", Flags: discord.MessageFlagEphemeral})
-        return ferr
+	default:
+		_, ferr := e.CreateFollowupMessage(discord.MessageCreate{Content: "⚠️ Invalid action", Flags: discord.MessageFlagEphemeral})
+		return ferr
 	}
 }
 
@@ -255,73 +258,75 @@ func (h *ForgeHandler) findCard(ctx context.Context, query, userID string, exclu
 		}
 	}
 
-    // Fast path: single-query fuzzy search limited to owned cards
-    if strings.TrimSpace(query) != "" {
-        owned, err := h.bot.CardRepository.SearchOwnedByUserFuzzy(ctx, userID, query, 5)
-        if err == nil && len(owned) > 0 {
-            // pick first eligible and not excluded
-            for _, c := range owned {
-                if c.ID == excludeCardID { continue }
-                // ensure eligibility
-                uc, _ := h.bot.CardRepository.GetUserCard(ctx, userID, c.ID)
-                if utils.IsCardForgeEligible(c, uc) {
-                    return c, nil
-                }
-            }
-        }
-    }
+	// Fast path: single-query fuzzy search limited to owned cards
+	if strings.TrimSpace(query) != "" {
+		owned, err := h.bot.CardRepository.SearchOwnedByUserFuzzy(ctx, userID, query, 5)
+		if err == nil && len(owned) > 0 {
+			// pick first eligible and not excluded
+			for _, c := range owned {
+				if c.ID == excludeCardID {
+					continue
+				}
+				// ensure eligibility
+				uc, _ := h.bot.CardRepository.GetUserCard(ctx, userID, c.ID)
+				if utils.IsCardForgeEligible(c, uc) {
+					return c, nil
+				}
+			}
+		}
+	}
 
-    // Fallback to comprehensive in-memory search
-    userCards, err := h.bot.CardRepository.GetAllByUserID(ctx, userID)
-    if err != nil {
-        return nil, fmt.Errorf("failed to fetch user cards: %v", err)
-    }
+	// Fallback to comprehensive in-memory search
+	userCards, err := h.bot.CardRepository.GetAllByUserID(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch user cards: %v", err)
+	}
 
-    // Get card IDs and create lookup map
-    cardIDs := make([]int64, 0, len(userCards))
-    userCardMap := make(map[int64]*models.UserCard)
-    for _, uc := range userCards {
-        if uc.CardID != excludeCardID {
-            cardIDs = append(cardIDs, uc.CardID)
-            userCardMap[uc.CardID] = uc
-        }
-    }
+	// Get card IDs and create lookup map
+	cardIDs := make([]int64, 0, len(userCards))
+	userCardMap := make(map[int64]*models.UserCard)
+	for _, uc := range userCards {
+		if uc.CardID != excludeCardID {
+			cardIDs = append(cardIDs, uc.CardID)
+			userCardMap[uc.CardID] = uc
+		}
+	}
 
-    if len(cardIDs) == 0 {
-        return nil, fmt.Errorf("you don't have any cards available for forging")
-    }
+	if len(cardIDs) == 0 {
+		return nil, fmt.Errorf("you don't have any cards available for forging")
+	}
 
-    // Get card details
-    cards, err := h.bot.CardRepository.GetByIDs(ctx, cardIDs)
-    if err != nil {
-        return nil, fmt.Errorf("failed to fetch card details: %v", err)
-    }
+	// Get card details
+	cards, err := h.bot.CardRepository.GetByIDs(ctx, cardIDs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch card details: %v", err)
+	}
 
-    // Filter cards using centralized forge eligibility logic
-    var forgeEligibleCards []*models.Card
-    eligibleUserCardMap := make(map[int64]*models.UserCard)
-    for _, card := range cards {
-        userCard := userCardMap[card.ID]
-        if utils.IsCardForgeEligible(card, userCard) {
-            forgeEligibleCards = append(forgeEligibleCards, card)
-            eligibleUserCardMap[card.ID] = userCard
-        }
-    }
+	// Filter cards using centralized forge eligibility logic
+	var forgeEligibleCards []*models.Card
+	eligibleUserCardMap := make(map[int64]*models.UserCard)
+	for _, card := range cards {
+		userCard := userCardMap[card.ID]
+		if utils.IsCardForgeEligible(card, userCard) {
+			forgeEligibleCards = append(forgeEligibleCards, card)
+			eligibleUserCardMap[card.ID] = userCard
+		}
+	}
 
-    if len(forgeEligibleCards) == 0 {
-        return nil, fmt.Errorf("no cards available for forging (cards may be locked, favorites, or from restricted collections)")
-    }
+	if len(forgeEligibleCards) == 0 {
+		return nil, fmt.Errorf("no cards available for forging (cards may be locked, favorites, or from restricted collections)")
+	}
 
-    // Use enhanced search filters on eligible cards
-    filters := utils.ParseSearchQuery(query)
-    searchResults := utils.WeightedSearchWithMulti(forgeEligibleCards, filters, eligibleUserCardMap)
+	// Use enhanced search filters on eligible cards
+	filters := utils.ParseSearchQuery(query)
+	searchResults := utils.WeightedSearchWithMulti(forgeEligibleCards, filters, eligibleUserCardMap)
 
-    if len(searchResults) == 0 {
-        return nil, fmt.Errorf("no cards found matching '%s'", query)
-    }
+	if len(searchResults) == 0 {
+		return nil, fmt.Errorf("no cards found matching '%s'", query)
+	}
 
-    // Return the best match
-    return searchResults[0], nil
+	// Return the best match
+	return searchResults[0], nil
 }
 
 func getSameCollectionBonus(card1, card2 *models.Card) string {

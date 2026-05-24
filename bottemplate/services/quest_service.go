@@ -244,14 +244,14 @@ func (qs *QuestService) UpdateProgress(ctx context.Context, userID string, actio
 			case models.RequirementTypeWorkDays:
 				// Track unique days for work command
 				if action == "work" {
-					shouldUpdate = qs.trackWorkDay(quest, metadata)
+					shouldUpdate = qs.trackWorkDay(quest)
 				}
 
 			case models.RequirementTypeCardLevelUp:
 				// Check if this quest tracks days instead of total levelups
 				if quest.QuestDefinition.RequirementMetadata != nil {
 					if trackDays, ok := quest.QuestDefinition.RequirementMetadata["track_days"].(bool); ok && trackDays {
-						shouldUpdate = qs.trackLevelUpDay(quest, metadata)
+						shouldUpdate = qs.trackLevelUpDay(quest)
 					} else {
 						// Standard levelup tracking
 						quest.CurrentProgress++
@@ -262,6 +262,9 @@ func (qs *QuestService) UpdateProgress(ctx context.Context, userID string, actio
 					quest.CurrentProgress++
 					shouldUpdate = true
 				}
+
+			case models.RequirementTypeCardDraw:
+				shouldUpdate = qs.trackUniqueCardDraw(quest, metadata)
 
 			case models.RequirementTypeCommandCount:
 				// Track unique commands used
@@ -286,7 +289,7 @@ func (qs *QuestService) UpdateProgress(ctx context.Context, userID string, actio
 
 			case models.RequirementTypeCombo:
 				// Track multiple requirements for combo quests
-				shouldUpdate = qs.trackComboProgress(quest, action, metadata)
+				shouldUpdate = qs.trackComboProgress(quest, action)
 
 			default:
 				// Standard increment for other quest types
@@ -407,15 +410,9 @@ func (qs *QuestService) ClaimRewards(ctx context.Context, userID string) (*Quest
 		}
 	}
 
-	// Update user balance
-	user, err := qs.userRepo.GetByDiscordID(ctx, userID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get user: %w", err)
-	}
-
 	// Update snowflakes
 	if result.TotalSnowflakes > 0 {
-		if err := qs.userRepo.UpdateBalance(ctx, userID, user.Balance+result.TotalSnowflakes); err != nil {
+		if err := qs.userRepo.UpdateBalance(ctx, userID, result.TotalSnowflakes); err != nil {
 			return nil, fmt.Errorf("failed to update balance: %w", err)
 		}
 
@@ -432,7 +429,17 @@ func (qs *QuestService) ClaimRewards(ctx context.Context, userID string) (*Quest
 		}
 	}
 
-	// TODO: Update vials and XP when those systems are implemented
+	if result.TotalVials > 0 {
+		if err := qs.userRepo.AddVials(ctx, userID, int64(result.TotalVials)); err != nil {
+			return nil, fmt.Errorf("failed to update vials: %w", err)
+		}
+	}
+
+	if result.TotalXP > 0 {
+		if err := qs.userRepo.AddXP(ctx, userID, int64(result.TotalXP)); err != nil {
+			return nil, fmt.Errorf("failed to update xp: %w", err)
+		}
+	}
 
 	result.DailyCount = dailyCount
 	result.WeeklyCount = weeklyCount
@@ -658,7 +665,7 @@ func (qs *QuestService) updateLeaderboard(ctx context.Context, userID string, qu
 }
 
 // trackWorkDay tracks unique days for work command quests
-func (qs *QuestService) trackWorkDay(quest *models.UserQuestProgress, metadata map[string]interface{}) bool {
+func (qs *QuestService) trackWorkDay(quest *models.UserQuestProgress) bool {
 	// Defensive check
 	if quest == nil {
 		return false
@@ -697,7 +704,7 @@ func (qs *QuestService) trackWorkDay(quest *models.UserQuestProgress, metadata m
 }
 
 // trackLevelUpDay tracks unique days for levelup command quests (like Level Addict)
-func (qs *QuestService) trackLevelUpDay(quest *models.UserQuestProgress, metadata map[string]interface{}) bool {
+func (qs *QuestService) trackLevelUpDay(quest *models.UserQuestProgress) bool {
 	// Defensive check
 	if quest == nil {
 		return false
@@ -733,6 +740,44 @@ func (qs *QuestService) trackLevelUpDay(quest *models.UserQuestProgress, metadat
 	}
 
 	return false
+}
+
+// trackUniqueCardDraw tracks distinct card IDs for draw/summon quests.
+func (qs *QuestService) trackUniqueCardDraw(quest *models.UserQuestProgress, metadata map[string]interface{}) bool {
+	if quest == nil {
+		return false
+	}
+	if quest.Metadata == nil {
+		quest.Metadata = make(map[string]interface{})
+	}
+
+	cardID, ok := metadata["card_id"]
+	if !ok {
+		quest.CurrentProgress++
+		return true
+	}
+
+	cardKey := fmt.Sprintf("%v", cardID)
+	drawnCardsData, exists := quest.Metadata["drawn_cards"]
+	drawnCards := make(map[string]bool)
+	if exists {
+		if data, ok := drawnCardsData.(map[string]interface{}); ok {
+			for k, v := range data {
+				if b, ok := v.(bool); ok {
+					drawnCards[k] = b
+				}
+			}
+		}
+	}
+
+	if drawnCards[cardKey] {
+		return false
+	}
+
+	drawnCards[cardKey] = true
+	quest.Metadata["drawn_cards"] = drawnCards
+	quest.CurrentProgress = len(drawnCards)
+	return true
 }
 
 // trackUniqueCommand tracks unique commands for command count quests
@@ -786,7 +831,7 @@ func (qs *QuestService) trackUniqueCommand(quest *models.UserQuestProgress, meta
 }
 
 // trackComboProgress tracks multiple requirements for combo quests
-func (qs *QuestService) trackComboProgress(quest *models.UserQuestProgress, action string, metadata map[string]interface{}) bool {
+func (qs *QuestService) trackComboProgress(quest *models.UserQuestProgress, action string) bool {
 	// Defensive check
 	if quest == nil || quest.QuestDefinition == nil {
 		return false
@@ -885,6 +930,7 @@ func (qs *QuestService) updateCompletionQuests(ctx context.Context, userID strin
 		return
 	}
 
+	newlyCompletedByType := make(map[string]int)
 	for _, quest := range activeQuests {
 		if quest.Completed || quest.QuestDefinition == nil {
 			continue
@@ -892,30 +938,82 @@ func (qs *QuestService) updateCompletionQuests(ctx context.Context, userID strin
 
 		switch quest.QuestDefinition.RequirementType {
 		case models.RequirementTypeDailyComplete:
-			if count, ok := completedByType[models.QuestTypeDaily]; ok && count > 0 {
-				quest.CurrentProgress += count
+			if _, ok := completedByType[models.QuestTypeDaily]; !ok {
+				continue
+			}
+			dayStart := qs.getPeriodStart(models.QuestTypeDaily)
+			completedCount, err := qs.questRepo.GetCompletedQuestCount(ctx, userID, models.QuestTypeDaily, dayStart)
+			if err != nil || completedCount < 3 {
+				continue
+			}
+			if qs.trackCompletionSet(quest, "daily_completion_days", dayStart.Format("2006-01-02")) {
+				wasCompleted := quest.Completed
 				quest.CheckMilestones()
-
 				if err := qs.questRepo.UpdateQuestProgress(ctx, quest); err != nil {
 					slog.Error("Failed to update daily completion quest",
 						slog.String("user_id", userID),
 						slog.Any("error", err))
 				}
+				if !wasCompleted && quest.Completed {
+					newlyCompletedByType[quest.QuestDefinition.Type]++
+				}
 			}
 
 		case models.RequirementTypeWeeklyComplete:
-			if count, ok := completedByType[models.QuestTypeWeekly]; ok && count > 0 {
-				quest.CurrentProgress += count
+			if _, ok := completedByType[models.QuestTypeWeekly]; !ok {
+				continue
+			}
+			weekStart := qs.getPeriodStart(models.QuestTypeWeekly)
+			completedCount, err := qs.questRepo.GetCompletedQuestCount(ctx, userID, models.QuestTypeWeekly, weekStart)
+			if err != nil || completedCount < 3 {
+				continue
+			}
+			weekKey := weekStart.Format("2006-01-02")
+			if qs.trackCompletionSet(quest, "weekly_completion_weeks", weekKey) {
+				wasCompleted := quest.Completed
 				quest.CheckMilestones()
-
 				if err := qs.questRepo.UpdateQuestProgress(ctx, quest); err != nil {
 					slog.Error("Failed to update weekly completion quest",
 						slog.String("user_id", userID),
 						slog.Any("error", err))
 				}
+				if !wasCompleted && quest.Completed {
+					newlyCompletedByType[quest.QuestDefinition.Type]++
+				}
 			}
 		}
 	}
+
+	if len(newlyCompletedByType) > 0 {
+		qs.updateCompletionQuests(ctx, userID, newlyCompletedByType)
+	}
+}
+
+func (qs *QuestService) trackCompletionSet(quest *models.UserQuestProgress, metadataKey string, periodKey string) bool {
+	if quest.Metadata == nil {
+		quest.Metadata = make(map[string]interface{})
+	}
+
+	seenData, exists := quest.Metadata[metadataKey]
+	seen := make(map[string]bool)
+	if exists {
+		if data, ok := seenData.(map[string]interface{}); ok {
+			for k, v := range data {
+				if b, ok := v.(bool); ok {
+					seen[k] = b
+				}
+			}
+		}
+	}
+
+	if seen[periodKey] {
+		return false
+	}
+
+	seen[periodKey] = true
+	quest.Metadata[metadataKey] = seen
+	quest.CurrentProgress = len(seen)
+	return true
 }
 
 func (qs *QuestService) getPeriodStart(periodType string) time.Time {

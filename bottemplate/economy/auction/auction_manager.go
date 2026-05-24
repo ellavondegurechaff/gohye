@@ -43,6 +43,9 @@ type Manager struct {
 	// Quest tracking
 	questTrackerFunc           func(userID string)
 	questSnowflakesTrackerFunc func(userID string, amount int64, source string)
+	auctionWinCashbackFunc     func(ctx context.Context, userID string, amount int64) int64
+	auctionSaleBonusFunc       func(ctx context.Context, userID string, amount int64) int64
+	effectProgressFunc         func(userID string, effectID string, increment int)
 }
 
 func NewManager(repo repositories.AuctionRepository, userCardRepo repositories.UserCardRepository, cardRepo repositories.CardRepository, client bot.Client) *Manager {
@@ -338,6 +341,16 @@ func (m *Manager) SetQuestTracker(trackerFunc func(userID string)) {
 // SetQuestSnowflakesTracker sets the quest tracking function for snowflakes earned
 func (m *Manager) SetQuestSnowflakesTracker(trackerFunc func(userID string, amount int64, source string)) {
 	m.questSnowflakesTrackerFunc = trackerFunc
+}
+
+func (m *Manager) SetAuctionEffectHandlers(
+	winCashback func(ctx context.Context, userID string, amount int64) int64,
+	saleBonus func(ctx context.Context, userID string, amount int64) int64,
+	progress func(userID string, effectID string, increment int),
+) {
+	m.auctionWinCashbackFunc = winCashback
+	m.auctionSaleBonusFunc = saleBonus
+	m.effectProgressFunc = progress
 }
 
 // Shutdown gracefully stops all auction manager processes

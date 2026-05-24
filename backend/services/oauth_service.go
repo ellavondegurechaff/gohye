@@ -13,9 +13,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
 	"github.com/disgoorg/bot-template/backend/config"
 	"github.com/disgoorg/bot-template/backend/models"
+	"github.com/gofiber/fiber/v2"
 )
 
 // DiscordUser represents a Discord user from the API
@@ -71,7 +71,7 @@ func (o *OAuthService) ExchangeCodeForToken(ctx context.Context, code string) (s
 	data.Set("code", code)
 	data.Set("redirect_uri", o.config.Config.Web.OAuth.RedirectURL)
 
-	req, err := http.NewRequestWithContext(ctx, "POST", "https://discord.com/api/oauth2/token", 
+	req, err := http.NewRequestWithContext(ctx, "POST", "https://discord.com/api/oauth2/token",
 		strings.NewReader(data.Encode()))
 	if err != nil {
 		return "", fmt.Errorf("failed to create token request: %w", err)
@@ -229,9 +229,9 @@ func (o *OAuthService) isAdminUser(userID string) bool {
 	slog.Info("Checking admin user",
 		slog.String("user_id", userID),
 		slog.Any("admin_users", o.config.Config.Web.AdminUsers))
-	
+
 	for _, adminID := range o.config.Config.Web.AdminUsers {
-		slog.Info("Comparing admin IDs", 
+		slog.Info("Comparing admin IDs",
 			slog.String("user_id", userID),
 			slog.String("admin_id", adminID))
 		if adminID == userID {
