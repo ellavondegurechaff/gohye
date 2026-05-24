@@ -76,7 +76,8 @@ func (h *ShopHandler) Handle(event *handler.CommandEvent) error {
 }
 
 func (h *ShopHandler) handleList(event *handler.CommandEvent) error {
-	ctx := context.Background()
+    ctx := context.Background()
+    ownerID := event.User().ID.String()
 
 	items, err := h.effectManager.ListEffectItems(ctx)
 	if err != nil {
@@ -95,10 +96,10 @@ func (h *ShopHandler) handleList(event *handler.CommandEvent) error {
 		title = "Shop - Effects"
 	}
 
-	components := []discord.ContainerComponent{
-		createShopComponents("active")[0],
-		createItemSelectMenu(currentItems, "active"),
-	}
+    components := []discord.ContainerComponent{
+        createShopComponents("active", ownerID)[0],
+        createItemSelectMenu(currentItems, "active", ownerID),
+    }
 
 	// Handle empty shop case with appropriate messaging  
 	var embed discord.Embed
@@ -129,8 +130,18 @@ func (h *ShopHandler) handleList(event *handler.CommandEvent) error {
 }
 
 func (h *ShopHandler) handleBuy(event *handler.ComponentEvent) error {
-	customID := event.Data.CustomID()
-	itemID := strings.TrimPrefix(customID, "/shop_buy/")
+    customID := event.Data.CustomID()
+    // Expect /shop_buy/{userID}/{itemID}
+    parts := strings.Split(customID, "/")
+    if len(parts) < 4 {
+        return utils.EH.CreateEphemeralError(event, "Invalid purchase action")
+    }
+    ownerID := parts[2]
+    itemID := parts[3]
+
+    if ownerID != event.User().ID.String() {
+        return utils.EH.CreateEphemeralError(event, "Only the command user can buy from this view.")
+    }
 
 	ctx := context.Background()
 	err := h.effectManager.PurchaseEffect(ctx, event.User().ID.String(), itemID)
@@ -153,17 +164,25 @@ func (h *ShopHandler) handleBuy(event *handler.ComponentEvent) error {
 		})
 	}
 
-	embed := discord.NewEmbedBuilder().
-		SetTitle("✅ Purchase Successful").
-		SetColor(config.SuccessColor).
-		SetDescription(fmt.Sprintf("```md\n# Item Purchased\n* %s %s\n* Price: %d %s\n* Duration: %d hours```\n> 💡 **Tip**: Use `/inventory` to view your purchased items!",
-			getTypeEmoji(item.Type),
-			item.Name,
-			item.Price,
-			getCurrencyEmoji(item.Currency),
-			item.Duration)).
-		SetFooter("Item added to your inventory", "").
-		Build()
+    // Determine duration/uses text
+    durationText := ""
+    if item.Passive {
+        durationText = fmt.Sprintf("%d days", item.Duration)
+    } else {
+        durationText = fmt.Sprintf("%d uses", item.Duration)
+    }
+
+    embed := discord.NewEmbedBuilder().
+        SetTitle("✅ Purchase Successful").
+        SetColor(config.SuccessColor).
+        SetDescription(fmt.Sprintf("```md\n# Item Purchased\n* %s %s\n* Price: %d %s\n* Duration: %s```\n> 💡 **Tip**: Use `/inventory` to view your purchased items!",
+            getTypeEmoji(item.Type),
+            item.Name,
+            item.Price,
+            getCurrencyEmoji(item.Currency),
+            durationText)).
+        SetFooter("Item added to your inventory", "").
+        Build()
 
 	flags := discord.MessageFlagEphemeral
 	return event.UpdateMessage(discord.MessageUpdate{
@@ -232,49 +251,70 @@ func (h *ShopHandler) formatEffectValue(effectID string, value int) string {
 }
 
 func (h *ShopHandler) HandleComponent(event *handler.ComponentEvent) error {
-	customID := event.Data.CustomID()
+    // Do not defer globally; respond immediately per-path to avoid 40060
+    customID := event.Data.CustomID()
 
-	switch {
-	case customID == "/shop_category":
-		return h.handleCategorySelect(event)
-	case customID == "/shop_item_disabled":
-		// Handle disabled select menu interaction gracefully
-		return event.CreateMessage(discord.MessageCreate{
-			Content: "❌ This category is currently empty. Please try the other category.",
-			Flags:   discord.MessageFlagEphemeral,
-		})
-	case strings.HasPrefix(customID, "/shop_item"):
-		return h.handleItemSelect(event)
-	case strings.HasPrefix(customID, "/shop_buy/"):
-		return h.handleBuy(event)
-	default:
-		return nil
-	}
+    switch {
+    case strings.HasPrefix(customID, "/shop_category/"):
+        parts := strings.Split(customID, "/")
+        if len(parts) < 3 || parts[2] == "" || event.User().ID.String() != parts[2] {
+            return event.CreateMessage(discord.MessageCreate{Content: "Only the command user can interact with this shop view.", Flags: discord.MessageFlagEphemeral})
+        }
+        return h.handleCategorySelect(event)
+    case strings.HasPrefix(customID, "/shop_item_disabled/"):
+        parts := strings.Split(customID, "/")
+        if len(parts) < 3 || parts[2] == "" || event.User().ID.String() != parts[2] {
+            return event.CreateMessage(discord.MessageCreate{Content: "Only the command user can interact with this shop view.", Flags: discord.MessageFlagEphemeral})
+        }
+        // Handle disabled select menu interaction gracefully
+        return event.CreateMessage(discord.MessageCreate{Content: "❌ This category is currently empty. Please try the other category.", Flags: discord.MessageFlagEphemeral})
+    case strings.HasPrefix(customID, "/shop_item/"):
+        parts := strings.Split(customID, "/")
+        if len(parts) < 3 || parts[2] == "" || event.User().ID.String() != parts[2] {
+            return event.CreateMessage(discord.MessageCreate{Content: "Only the command user can interact with this shop view.", Flags: discord.MessageFlagEphemeral})
+        }
+        return h.handleItemSelect(event)
+    case strings.HasPrefix(customID, "/shop_buy/"):
+        parts := strings.Split(customID, "/")
+        if len(parts) < 4 || parts[2] == "" || event.User().ID.String() != parts[2] {
+            return event.CreateMessage(discord.MessageCreate{Content: "Only the command user can buy from this view.", Flags: discord.MessageFlagEphemeral})
+        }
+        return h.handleBuy(event)
+    default:
+        return nil
+    }
 }
 
 func (h *ShopHandler) handleCategorySelect(event *handler.ComponentEvent) error {
-	var selectedValue string
+    var selectedValue string
+    ownerID := ""
 
 	// Handle both button and select menu interactions
 	switch data := event.Data.(type) {
-	case discord.StringSelectMenuInteractionData:
-		if len(data.Values) == 0 {
-			return event.CreateMessage(discord.MessageCreate{
-				Content: "Invalid interaction data",
-				Flags:   discord.MessageFlagEphemeral,
-			})
-		}
-		selectedValue = data.Values[0]
-	case discord.ButtonInteractionData:
-		selectedValue = "active" // Default to active when coming from back button
-	default:
-		return event.CreateMessage(discord.MessageCreate{
-			Content: "Invalid interaction data",
-			Flags:   discord.MessageFlagEphemeral,
-		})
+    case discord.StringSelectMenuInteractionData:
+        if len(data.Values) == 0 {
+            return event.CreateMessage(discord.MessageCreate{Content: "Invalid interaction data", Flags: discord.MessageFlagEphemeral})
+        }
+        selectedValue = data.Values[0]
+        parts := strings.Split(data.CustomID(), "/")
+        if len(parts) >= 3 {
+            ownerID = parts[2]
+        }
+    case discord.ButtonInteractionData:
+        selectedValue = "active" // Default to active when coming from back button
+        parts := strings.Split(data.CustomID(), "/")
+        if len(parts) >= 3 {
+            ownerID = parts[2]
+        }
+    default:
+        return event.CreateMessage(discord.MessageCreate{Content: "Invalid interaction data", Flags: discord.MessageFlagEphemeral})
 	}
 
-	ctx := context.Background()
+    if ownerID == "" || ownerID != event.User().ID.String() {
+        return event.CreateMessage(discord.MessageCreate{Content: "Only the command user can interact with this shop view.", Flags: discord.MessageFlagEphemeral})
+    }
+
+    ctx := context.Background()
 	items, err := h.effectManager.ListEffectItems(ctx)
 	if err != nil {
 		return event.CreateMessage(discord.MessageCreate{
@@ -296,10 +336,10 @@ func (h *ShopHandler) handleCategorySelect(event *handler.ComponentEvent) error 
 		title = "Shop - Effects"
 	}
 
-	components := []discord.ContainerComponent{
-		createShopComponents(selectedValue)[0],
-		createItemSelectMenu(currentItems, selectedValue),
-	}
+    components := []discord.ContainerComponent{
+        createShopComponents(selectedValue, ownerID)[0],
+        createItemSelectMenu(currentItems, selectedValue, ownerID),
+    }
 
 	// Handle empty category case with appropriate messaging
 	var embed discord.Embed
@@ -329,10 +369,10 @@ func (h *ShopHandler) handleCategorySelect(event *handler.ComponentEvent) error 
 	})
 }
 
-func createShopComponents(selectedValue string) []discord.ContainerComponent {
+func createShopComponents(selectedValue string, ownerID string) []discord.ContainerComponent {
 	return []discord.ContainerComponent{
 		discord.NewActionRow(
-			discord.NewStringSelectMenu("/shop_category", "Select Category",
+            discord.NewStringSelectMenu("/shop_category/"+ownerID, "Select Category",
 				discord.StringSelectMenuOption{
 					Label:       "Items",
 					Value:       "active",
@@ -352,12 +392,12 @@ func createShopComponents(selectedValue string) []discord.ContainerComponent {
 	}
 }
 
-func createItemSelectMenu(items []*models.EffectItem, _ string) discord.ContainerComponent {
+func createItemSelectMenu(items []*models.EffectItem, _ string, ownerID string) discord.ContainerComponent {
 	// Handle empty items array to prevent Discord API error
 	if len(items) == 0 {
 		// Return a disabled placeholder select menu
 		return discord.NewActionRow(
-			discord.NewStringSelectMenu("/shop_item_disabled", "No items available",
+            discord.NewStringSelectMenu("/shop_item_disabled/"+ownerID, "No items available",
 				discord.StringSelectMenuOption{
 					Label:       "No items in this category",
 					Value:       "disabled",
@@ -368,42 +408,52 @@ func createItemSelectMenu(items []*models.EffectItem, _ string) discord.Containe
 		)
 	}
 
-	options := make([]discord.StringSelectMenuOption, 0, len(items))
-	for _, item := range items {
-		options = append(options, discord.StringSelectMenuOption{
-			Label:       item.Name,
-			Value:       "item_" + item.ID,
-			Description: fmt.Sprintf("%d %s - %dh duration", item.Price, getCurrencyEmoji(item.Currency), item.Duration),
-			Emoji:       &discord.ComponentEmoji{Name: getTypeEmoji(item.Type)},
-		})
-	}
+    options := make([]discord.StringSelectMenuOption, 0, len(items))
+    for _, item := range items {
+        // Display duration as days for passive, uses for active
+        var durationSnippet string
+        if item.Passive {
+            durationSnippet = fmt.Sprintf("%dd", item.Duration)
+        } else {
+            durationSnippet = fmt.Sprintf("%d uses", item.Duration)
+        }
+        options = append(options, discord.StringSelectMenuOption{
+            Label:       item.Name,
+            Value:       "item_" + item.ID,
+            Description: fmt.Sprintf("%d %s • %s", item.Price, getCurrencyEmoji(item.Currency), durationSnippet),
+            Emoji:       &discord.ComponentEmoji{Name: getTypeEmoji(item.Type)},
+        })
+    }
 
-	return discord.NewActionRow(
-		discord.NewStringSelectMenu("/shop_item", "Select Item", options...).
-			WithMinValues(1).
-			WithMaxValues(1),
-	)
+    return discord.NewActionRow(
+        discord.NewStringSelectMenu("/shop_item/"+ownerID, "Select Item", options...).
+            WithMinValues(1).
+            WithMaxValues(1),
+    )
 }
 
 func (h *ShopHandler) handleItemSelect(event *handler.ComponentEvent) error {
-	data, ok := event.Data.(discord.StringSelectMenuInteractionData)
-	if !ok || len(data.Values) == 0 {
-		return event.CreateMessage(discord.MessageCreate{
-			Content: "Invalid interaction data",
-			Flags:   discord.MessageFlagEphemeral,
-		})
-	}
+    data, ok := event.Data.(discord.StringSelectMenuInteractionData)
+    if !ok || len(data.Values) == 0 {
+        return event.CreateMessage(discord.MessageCreate{Content: "Invalid interaction data", Flags: discord.MessageFlagEphemeral})
+    }
 
-	ctx := context.Background()
-	itemID := strings.TrimPrefix(data.Values[0], "item_")
+    ctx := context.Background()
+    itemID := strings.TrimPrefix(data.Values[0], "item_")
+    // Validate user ownership based on custom ID
+    ownerID := ""
+    parts := strings.Split(data.CustomID(), "/")
+    if len(parts) >= 3 {
+        ownerID = parts[2]
+    }
+    if ownerID == "" || ownerID != event.User().ID.String() {
+        return utils.EH.CreateEphemeralError(event, "Only the command user can interact with this shop view.")
+    }
 
-	item, err := h.effectManager.GetEffectItem(ctx, itemID)
-	if err != nil {
-		return event.CreateMessage(discord.MessageCreate{
-			Content: fmt.Sprintf("Failed to fetch item details: %v", err),
-			Flags:   discord.MessageFlagEphemeral,
-		})
-	}
+    item, err := h.effectManager.GetEffectItem(ctx, itemID)
+    if err != nil {
+        return event.CreateMessage(discord.MessageCreate{Content: fmt.Sprintf("Failed to fetch item details: %v", err), Flags: discord.MessageFlagEphemeral})
+    }
 
 	// Enhanced recipe formatting - show actual recipe breakdown
 	recipeText := ""
@@ -428,23 +478,31 @@ func (h *ShopHandler) handleItemSelect(event *handler.ComponentEvent) error {
 		}
 	}
 
-	embed := discord.NewEmbedBuilder().
-		SetTitle(fmt.Sprintf("%s %s", getTypeEmoji(item.Type), item.Name)).
-		SetColor(getColorByType(item.Type)).
-		SetDescription(fmt.Sprintf("%s\n\n**Price:** %d %s\n**Duration:** %d hours\n%s",
-			h.formatItemDescription(item),
-			item.Price,
-			getCurrencyEmoji(item.Currency),
-			item.Duration,
-			recipeText)).
-		SetFooter("💡 Tip: Prices update hourly", "").
-		Build()
+    // Choose duration label based on item type
+    durationText := ""
+    if item.Passive {
+        durationText = fmt.Sprintf("%d days", item.Duration)
+    } else {
+        durationText = fmt.Sprintf("%d uses", item.Duration)
+    }
 
-	// Simplify component structure similar to liquefy
-	actionRow := discord.NewActionRow(
-		discord.NewSuccessButton("Buy 🛍️", fmt.Sprintf("/shop_buy/%s", item.ID)),
-		discord.NewSecondaryButton("Back ↩️", "/shop_category"),
-	)
+    embed := discord.NewEmbedBuilder().
+        SetTitle(fmt.Sprintf("%s %s", getTypeEmoji(item.Type), item.Name)).
+        SetColor(getColorByType(item.Type)).
+        SetDescription(fmt.Sprintf("%s\n\n**Price:** %d %s\n**Duration:** %s\n%s",
+            h.formatItemDescription(item),
+            item.Price,
+            getCurrencyEmoji(item.Currency),
+            durationText,
+            recipeText)).
+        SetFooter("💡 Tip: Prices update hourly", "").
+        Build()
+
+    // Simplify component structure similar to liquefy
+    actionRow := discord.NewActionRow(
+        discord.NewSuccessButton("Buy 🛍️", fmt.Sprintf("/shop_buy/%s/%s", ownerID, item.ID)),
+        discord.NewSecondaryButton("Back ↩️", "/shop_category/"+ownerID),
+    )
 
 	return event.UpdateMessage(discord.MessageUpdate{
 		Embeds:     &[]discord.Embed{embed},

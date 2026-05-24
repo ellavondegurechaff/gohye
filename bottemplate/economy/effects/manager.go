@@ -500,12 +500,14 @@ func (m *Manager) createUserEffect(ctx context.Context, userID string, effectID 
 		if staticEffect.Passive {
 			// For passive effects, extend duration if already active
 			if existingEffect.ExpiresAt != nil {
-				newExpiry := existingEffect.ExpiresAt.Add(time.Duration(staticEffect.Duration) * time.Hour)
+                // Duration for passive effects is measured in days
+                newExpiry := existingEffect.ExpiresAt.Add(time.Duration(staticEffect.Duration) * 24 * time.Hour)
 				existingEffect.ExpiresAt = &newExpiry
 				existingEffect.Notified = false
 			} else {
 				// First time activation
-				expiry := time.Now().Add(time.Duration(staticEffect.Duration) * time.Hour)
+                // Duration for passive effects is measured in days
+                expiry := time.Now().Add(time.Duration(staticEffect.Duration) * 24 * time.Hour)
 				existingEffect.ExpiresAt = &expiry
 				existingEffect.Active = true
 				existingEffect.Notified = false

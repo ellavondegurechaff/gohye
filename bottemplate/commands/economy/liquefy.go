@@ -159,14 +159,15 @@ func (h *LiquefyHandler) showLiquefyConfirmation(e *handler.CommandEvent, card *
 		SetTimestamp(time.Now()).
 		Build()
 
-	actionRow := discord.NewActionRow(
-		discord.NewSuccessButton(
-			"Confirm",
-			fmt.Sprintf("/liquefy/confirm/%d", card.ID)),
-		discord.NewDangerButton(
-			"Cancel",
-			fmt.Sprintf("/liquefy/cancel/%d", card.ID)),
-	)
+    ownerID := e.User().ID.String()
+    actionRow := discord.NewActionRow(
+        discord.NewSuccessButton(
+            "Confirm",
+            fmt.Sprintf("/liquefy/confirm/%s/%d", ownerID, card.ID)),
+        discord.NewDangerButton(
+            "Cancel",
+            fmt.Sprintf("/liquefy/cancel/%s/%d", ownerID, card.ID)),
+    )
 
 	return e.CreateMessage(discord.MessageCreate{
 		Embeds:     []discord.Embed{embed},
@@ -180,21 +181,25 @@ func (h *LiquefyHandler) HandleComponent(e *handler.ComponentEvent) error {
 	userID := int64(e.User().ID)
 	ctx := context.Background()
 
-	parts := strings.Split(e.Data.CustomID(), "/")
-	if len(parts) != 4 {
-		return e.UpdateMessage(discord.MessageUpdate{
-			Content:    utils.Ptr("��� Invalid interaction"),
-			Components: &[]discord.ContainerComponent{},
-		})
-	}
+    parts := strings.Split(e.Data.CustomID(), "/")
+    if len(parts) != 5 {
+        return e.UpdateMessage(discord.MessageUpdate{
+            Content:    utils.Ptr("��� Invalid interaction"),
+            Components: &[]discord.ContainerComponent{},
+        })
+    }
 
-	cardID, err := strconv.ParseInt(parts[3], 10, 64)
-	if err != nil {
-		return e.UpdateMessage(discord.MessageUpdate{
-			Content:    utils.Ptr("❌ Invalid card ID"),
-			Components: &[]discord.ContainerComponent{},
-		})
-	}
+    if parts[3] != e.User().ID.String() {
+        return utils.EH.CreateEphemeralError(e, "Only the command user can use these buttons.")
+    }
+
+    cardID, err := strconv.ParseInt(parts[4], 10, 64)
+    if err != nil {
+        return e.UpdateMessage(discord.MessageUpdate{
+            Content:    utils.Ptr("❌ Invalid card ID"),
+            Components: &[]discord.ContainerComponent{},
+        })
+    }
 
 	// Check if user owns the card first
 	userCard, err := h.bot.UserCardRepository.GetByUserIDAndCardID(ctx, strconv.FormatInt(userID, 10), cardID)
@@ -212,8 +217,8 @@ func (h *LiquefyHandler) HandleComponent(e *handler.ComponentEvent) error {
 		})
 	}
 
-	switch parts[2] {
-	case "confirm":
+    switch parts[2] {
+    case "confirm":
 		card, err := h.bot.CardRepository.GetByID(context.Background(), cardID)
 		if err != nil {
 			return e.UpdateMessage(discord.MessageUpdate{

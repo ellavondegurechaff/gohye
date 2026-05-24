@@ -49,40 +49,45 @@ func NewForgeHandler(b *bottemplate.Bot) *ForgeHandler {
 }
 
 func (h *ForgeHandler) HandleForge(e *handler.CommandEvent) error {
-	fm := forge.NewForgeManager(h.bot.DB, h.bot.PriceCalculator)
+    // Defer immediately to avoid Discord 3s timeout (10062)
+    if err := e.DeferCreateMessage(false); err != nil {
+        return err
+    }
+
+    fm := forge.NewForgeManager(h.bot.DB, h.bot.PriceCalculator)
 	query1 := strings.TrimSpace(e.SlashCommandInteractionData().String("card_query_1"))
 	query2 := strings.TrimSpace(e.SlashCommandInteractionData().String("card_query_2"))
 	ctx := context.Background()
 	userID := strconv.FormatInt(int64(e.User().ID), 10)
 
 	// Find first card
-	card1, err := h.findCard(ctx, query1, userID, 0)
-	if err != nil {
-		return utils.EH.CreateUserError(e, fmt.Sprintf("Error finding first card: %v", err))
-	}
+    card1, err := h.findCard(ctx, query1, userID, 0)
+    if err != nil {
+        return utils.EH.UpdateInteractionResponse(e, "Forge", fmt.Sprintf("Error finding first card: %v", err))
+    }
 
 	// Find second card, excluding the first card
-	card2, err := h.findCard(ctx, query2, userID, card1.ID)
-	if err != nil {
-		return utils.EH.CreateUserError(e, fmt.Sprintf("Error finding second card: %v", err))
-	}
+    card2, err := h.findCard(ctx, query2, userID, card1.ID)
+    if err != nil {
+        return utils.EH.UpdateInteractionResponse(e, "Forge", fmt.Sprintf("Error finding second card: %v", err))
+    }
 
 	// Validate cards can be forged
-	if card1.Level != card2.Level {
-		return utils.EH.CreateBusinessLogicError(e, "Cards must be of the same level to forge")
-	}
+    if card1.Level != card2.Level {
+        return utils.EH.UpdateInteractionResponse(e, "Forge", "Cards must be of the same level to forge")
+    }
 
-	if card1.ID == card2.ID {
-		return utils.EH.CreateUserError(e, "You must use two different cards to forge")
-	}
+    if card1.ID == card2.ID {
+        return utils.EH.UpdateInteractionResponse(e, "Forge", "You must use two different cards to forge")
+    }
 
 	// Calculate forge cost with effect discounts
-	cost, err := fm.CalculateForgeCostWithEffects(ctx, card1, card2, userID, h.bot.EffectIntegrator)
-	if err != nil {
-		return utils.EH.CreateSystemError(e, fmt.Sprintf("Error calculating forge cost: %v", err))
-	}
+    cost, err := fm.CalculateForgeCostWithEffects(ctx, card1, card2, userID, h.bot.EffectIntegrator)
+    if err != nil {
+        return utils.EH.UpdateInteractionResponse(e, "Forge", fmt.Sprintf("Error calculating forge cost: %v", err))
+    }
 
-	return h.showForgeConfirmation(e, card1, card2, cost)
+    return h.showForgeConfirmation(e, card1, card2, cost)
 }
 
 func (h *ForgeHandler) showForgeConfirmation(e *handler.CommandEvent, card1, card2 *models.Card, cost int64) error {
@@ -129,55 +134,57 @@ func (h *ForgeHandler) showForgeConfirmation(e *handler.CommandEvent, card1, car
 		SetTimestamp(time.Now()).
 		Build()
 
-	actionRow := discord.NewActionRow(
-		discord.NewSuccessButton("Confirm", fmt.Sprintf("/forge/confirm/%d/%d", card1.ID, card2.ID)),
-		discord.NewDangerButton("Cancel", fmt.Sprintf("/forge/cancel/%d/%d", card1.ID, card2.ID)),
-	)
+    ownerID := e.User().ID.String()
+    actionRow := discord.NewActionRow(
+        discord.NewSuccessButton("Confirm", fmt.Sprintf("/forge/confirm/%s/%d/%d", ownerID, card1.ID, card2.ID)),
+        discord.NewDangerButton("Cancel", fmt.Sprintf("/forge/cancel/%s/%d/%d", ownerID, card1.ID, card2.ID)),
+    )
 
-	return e.CreateMessage(discord.MessageCreate{
-		Embeds:     []discord.Embed{embed},
-		Components: []discord.ContainerComponent{actionRow},
-	})
+    _, err := e.UpdateInteractionResponse(discord.MessageUpdate{
+        Embeds:     &[]discord.Embed{embed},
+        Components: &[]discord.ContainerComponent{actionRow},
+    })
+    return err
 }
 
 func (h *ForgeHandler) HandleComponent(e *handler.ComponentEvent) error {
-	fm := forge.NewForgeManager(h.bot.DB, h.bot.PriceCalculator)
+    // Defer immediately to acknowledge interaction, then update/ follow up
+    _ = e.DeferUpdateMessage()
+
+    fm := forge.NewForgeManager(h.bot.DB, h.bot.PriceCalculator)
 	userID := int64(e.User().ID)
 	ctx := context.Background()
 
-	parts := strings.Split(e.Data.CustomID(), "/")
-	if len(parts) != 5 {
-		return e.UpdateMessage(discord.MessageUpdate{
-			Content:    utils.Ptr("⚠️ Invalid interaction"),
-			Components: &[]discord.ContainerComponent{},
-		})
-	}
+    parts := strings.Split(e.Data.CustomID(), "/")
+    if len(parts) != 6 {
+        _, err := e.CreateFollowupMessage(discord.MessageCreate{Content: "⚠️ Invalid interaction", Flags: discord.MessageFlagEphemeral})
+        return err
+    }
+    // parts[3] is ownerID
+    if parts[3] != e.User().ID.String() {
+        _, err := e.CreateFollowupMessage(discord.MessageCreate{Content: "Only the command user can use these buttons.", Flags: discord.MessageFlagEphemeral})
+        return err
+    }
 
-	card1ID, err := strconv.ParseInt(parts[3], 10, 64)
-	if err != nil {
-		return e.UpdateMessage(discord.MessageUpdate{
-			Content:    utils.Ptr("⚠️ Invalid card ID"),
-			Components: &[]discord.ContainerComponent{},
-		})
-	}
+    card1ID, err := strconv.ParseInt(parts[4], 10, 64)
+    if err != nil {
+        _, ferr := e.CreateFollowupMessage(discord.MessageCreate{Content: "⚠️ Invalid card ID", Flags: discord.MessageFlagEphemeral})
+        return ferr
+    }
 
-	card2ID, err := strconv.ParseInt(parts[4], 10, 64)
-	if err != nil {
-		return e.UpdateMessage(discord.MessageUpdate{
-			Content:    utils.Ptr("⚠️ Invalid card ID"),
-			Components: &[]discord.ContainerComponent{},
-		})
-	}
+    card2ID, err := strconv.ParseInt(parts[5], 10, 64)
+    if err != nil {
+        _, ferr := e.CreateFollowupMessage(discord.MessageCreate{Content: "⚠️ Invalid card ID", Flags: discord.MessageFlagEphemeral})
+        return ferr
+    }
 
 	switch parts[2] {
-	case "confirm":
-		newCard, err := fm.ForgeCards(ctx, userID, card1ID, card2ID)
-		if err != nil {
-			return e.UpdateMessage(discord.MessageUpdate{
-				Content:    utils.Ptr(fmt.Sprintf("🔧 Failed to forge cards: %s", err.Error())),
-				Components: &[]discord.ContainerComponent{},
-			})
-		}
+    case "confirm":
+        newCard, err := fm.ForgeCards(ctx, userID, card1ID, card2ID)
+        if err != nil {
+            _, ferr := e.CreateFollowupMessage(discord.MessageCreate{Content: fmt.Sprintf("🔧 Failed to forge cards: %s", err.Error()), Flags: discord.MessageFlagEphemeral})
+            return ferr
+        }
 
 		// Track effect progress for Cherry Blossom
 		if h.bot.EffectManager != nil {
@@ -214,29 +221,21 @@ func (h *ForgeHandler) HandleComponent(e *handler.ComponentEvent) error {
 			SetTimestamp(time.Now()).
 			Build()
 
-		return e.UpdateMessage(discord.MessageUpdate{
-			Embeds:     &[]discord.Embed{embed},
-			Components: &[]discord.ContainerComponent{},
-		})
+        // Update the original message publicly (non-ephemeral) with the result and clear components
+        return e.UpdateMessage(discord.MessageUpdate{Embeds: &[]discord.Embed{embed}, Components: &[]discord.ContainerComponent{}})
 
-	case "cancel":
-		embed := discord.NewEmbedBuilder().
-			SetTitle("Forge Cancelled").
-			SetDescription("The forging process has been cancelled.").
-			SetColor(0xED4245).
-			SetTimestamp(time.Now()).
-			Build()
+    case "cancel":
+        embed := discord.NewEmbedBuilder().
+            SetTitle("Forge Cancelled").
+            SetDescription("The forging process has been cancelled.").
+            SetColor(0xED4245).
+            SetTimestamp(time.Now()).
+            Build()
+        return e.UpdateMessage(discord.MessageUpdate{Embeds: &[]discord.Embed{embed}, Components: &[]discord.ContainerComponent{}})
 
-		return e.UpdateMessage(discord.MessageUpdate{
-			Embeds:     &[]discord.Embed{embed},
-			Components: &[]discord.ContainerComponent{},
-		})
-
-	default:
-		return e.UpdateMessage(discord.MessageUpdate{
-			Content:    utils.Ptr("⚠️ Invalid action"),
-			Components: &[]discord.ContainerComponent{},
-		})
+    default:
+        _, ferr := e.CreateFollowupMessage(discord.MessageCreate{Content: "⚠️ Invalid action", Flags: discord.MessageFlagEphemeral})
+        return ferr
 	}
 }
 

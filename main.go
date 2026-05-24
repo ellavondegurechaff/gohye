@@ -442,8 +442,8 @@ func main() {
 	// Shop commands
 	shopHandler := economyCommands.NewShopHandler(b, effectManager)
 	h.Command("/shop", handlers.WrapWithLogging("shop", shopHandler.Handle))
-	h.Component("/shop_category", handlers.WrapComponentWithLogging("shop_category", shopHandler.HandleComponent))
-	h.Component("/shop_item", handlers.WrapComponentWithLogging("shop_item", shopHandler.HandleComponent))
+h.Component("/shop_category/", handlers.WrapComponentWithLogging("shop_category", shopHandler.HandleComponent))
+h.Component("/shop_item/", handlers.WrapComponentWithLogging("shop_item", shopHandler.HandleComponent))
 	h.Component("/shop_buy/", handlers.WrapComponentWithLogging("shop_buy", shopHandler.HandleComponent))
 
 	// Effects commands
@@ -468,8 +468,8 @@ func main() {
 	// Help commands
 	helpHandler := system.NewHelpHandler(b)
 	h.Command("/help", handlers.WrapWithLogging("help", helpHandler.Handle))
-	h.Component("/help_category", handlers.WrapComponentWithLogging("help", helpHandler.HandleComponent))
-	h.Component("/help_back", handlers.WrapComponentWithLogging("help", helpHandler.HandleComponent))
+h.Component("/help_category/", handlers.WrapComponentWithLogging("help", helpHandler.HandleComponent))
+h.Component("/help_back/", handlers.WrapComponentWithLogging("help", helpHandler.HandleComponent))
 
 	// Profile command
 	h.Command("/profile", handlers.WrapWithLogging("profile", system.ProfileHandler(b)))

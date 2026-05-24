@@ -16,48 +16,41 @@ import (
 )
 
 func (h *TradeHandler) HandleTradeAccept(event *handler.ComponentEvent) error {
-	ctx, cancel := context.WithTimeout(context.Background(), config.DefaultQueryTimeout)
-	defer cancel()
+    _ = event.DeferUpdateMessage()
+    ctx, cancel := context.WithTimeout(context.Background(), config.DefaultQueryTimeout)
+    defer cancel()
 
 	// Extract trade ID from component custom ID
 	parts := strings.Split(event.Data.CustomID(), "/")
-	if len(parts) < 4 {
-		return event.CreateMessage(discord.MessageCreate{
-			Content: "❌ Invalid trade interaction.",
-			Flags:   discord.MessageFlagEphemeral,
-		})
-	}
+    if len(parts) < 4 {
+        _, err := event.CreateFollowupMessage(discord.MessageCreate{Content: "❌ Invalid trade interaction.", Flags: discord.MessageFlagEphemeral})
+        return err
+    }
 
 	tradeIDStr := parts[3]
 	tradeID, err := strconv.ParseInt(tradeIDStr, 10, 64)
-	if err != nil {
-		return event.CreateMessage(discord.MessageCreate{
-			Content: "❌ Invalid trade ID.",
-			Flags:   discord.MessageFlagEphemeral,
-		})
-	}
+    if err != nil {
+        _, ferr := event.CreateFollowupMessage(discord.MessageCreate{Content: "❌ Invalid trade ID.", Flags: discord.MessageFlagEphemeral})
+        return ferr
+    }
 
 	// Get trade details
 	trade, err := h.tradeRepo.GetTradeWithCards(ctx, tradeID)
-	if err != nil {
-		return event.CreateMessage(discord.MessageCreate{
-			Content: "❌ Trade not found.",
-			Flags:   discord.MessageFlagEphemeral,
-		})
-	}
+    if err != nil {
+        _, ferr := event.CreateFollowupMessage(discord.MessageCreate{Content: "❌ Trade not found.", Flags: discord.MessageFlagEphemeral})
+        return ferr
+    }
 
 	// Verify user is the target of this trade
 	userID := event.User().ID.String()
-	if trade.TargetID != userID {
-		return event.CreateMessage(discord.MessageCreate{
-			Content: "❌ You are not authorized to accept this trade.",
-			Flags:   discord.MessageFlagEphemeral,
-		})
-	}
+    if trade.TargetID != userID {
+        _, ferr := event.CreateFollowupMessage(discord.MessageCreate{Content: "❌ You are not authorized to accept this trade.", Flags: discord.MessageFlagEphemeral})
+        return ferr
+    }
 
 	// Check if trade is still pending
-	if trade.Status != models.TradePending {
-		status := "already processed"
+    if trade.Status != models.TradePending {
+        status := "already processed"
 		switch trade.Status {
 		case models.TradeAccepted:
 			status = "already accepted"
@@ -66,20 +59,16 @@ func (h *TradeHandler) HandleTradeAccept(event *handler.ComponentEvent) error {
 		case models.TradeExpired:
 			status = "expired"
 		}
-		return event.CreateMessage(discord.MessageCreate{
-			Content: fmt.Sprintf("❌ This trade is %s.", status),
-			Flags:   discord.MessageFlagEphemeral,
-		})
-	}
+        _, ferr := event.CreateFollowupMessage(discord.MessageCreate{Content: fmt.Sprintf("❌ This trade is %s.", status), Flags: discord.MessageFlagEphemeral})
+        return ferr
+    }
 
 	// Execute the trade
 	err = h.tradeRepo.ExecuteTrade(ctx, tradeID)
-	if err != nil {
-		return event.CreateMessage(discord.MessageCreate{
-			Content: fmt.Sprintf("❌ Failed to execute trade: %s", err.Error()),
-			Flags:   discord.MessageFlagEphemeral,
-		})
-	}
+    if err != nil {
+        _, ferr := event.CreateFollowupMessage(discord.MessageCreate{Content: fmt.Sprintf("❌ Failed to execute trade: %s", err.Error()), Flags: discord.MessageFlagEphemeral})
+        return ferr
+    }
 
 	// Create success embed
 	embed := discord.NewEmbedBuilder().
@@ -95,68 +84,57 @@ func (h *TradeHandler) HandleTradeAccept(event *handler.ComponentEvent) error {
 	go h.sendTradeCompletionDM(trade.OffererID, trade, true)
 
 	// Update the original message to remove interaction buttons
-	return event.UpdateMessage(discord.MessageUpdate{
-		Embeds: &[]discord.Embed{embed},
-		Components: &[]discord.ContainerComponent{},
-	})
+    return event.UpdateMessage(discord.MessageUpdate{
+        Embeds: &[]discord.Embed{embed},
+        Components: &[]discord.ContainerComponent{},
+    })
 }
 
 func (h *TradeHandler) HandleTradeDecline(event *handler.ComponentEvent) error {
-	ctx, cancel := context.WithTimeout(context.Background(), config.DefaultQueryTimeout)
-	defer cancel()
+    _ = event.DeferUpdateMessage()
+    ctx, cancel := context.WithTimeout(context.Background(), config.DefaultQueryTimeout)
+    defer cancel()
 
 	// Extract trade ID from component custom ID
 	parts := strings.Split(event.Data.CustomID(), "/")
-	if len(parts) < 4 {
-		return event.CreateMessage(discord.MessageCreate{
-			Content: "❌ Invalid trade interaction.",
-			Flags:   discord.MessageFlagEphemeral,
-		})
-	}
+    if len(parts) < 4 {
+        _, err := event.CreateFollowupMessage(discord.MessageCreate{Content: "❌ Invalid trade interaction.", Flags: discord.MessageFlagEphemeral})
+        return err
+    }
 
 	tradeIDStr := parts[3]
 	tradeID, err := strconv.ParseInt(tradeIDStr, 10, 64)
-	if err != nil {
-		return event.CreateMessage(discord.MessageCreate{
-			Content: "❌ Invalid trade ID.",
-			Flags:   discord.MessageFlagEphemeral,
-		})
-	}
+    if err != nil {
+        _, ferr := event.CreateFollowupMessage(discord.MessageCreate{Content: "❌ Invalid trade ID.", Flags: discord.MessageFlagEphemeral})
+        return ferr
+    }
 
 	// Get trade details
 	trade, err := h.tradeRepo.GetTradeWithCards(ctx, tradeID)
-	if err != nil {
-		return event.CreateMessage(discord.MessageCreate{
-			Content: "❌ Trade not found.",
-			Flags:   discord.MessageFlagEphemeral,
-		})
-	}
+    if err != nil {
+        _, ferr := event.CreateFollowupMessage(discord.MessageCreate{Content: "❌ Trade not found.", Flags: discord.MessageFlagEphemeral})
+        return ferr
+    }
 
 	// Verify user is the target of this trade
 	userID := event.User().ID.String()
-	if trade.TargetID != userID {
-		return event.CreateMessage(discord.MessageCreate{
-			Content: "❌ You are not authorized to decline this trade.",
-			Flags:   discord.MessageFlagEphemeral,
-		})
-	}
+    if trade.TargetID != userID {
+        _, ferr := event.CreateFollowupMessage(discord.MessageCreate{Content: "❌ You are not authorized to decline this trade.", Flags: discord.MessageFlagEphemeral})
+        return ferr
+    }
 
 	// Check if trade is still pending
-	if trade.Status != models.TradePending {
-		return event.CreateMessage(discord.MessageCreate{
-			Content: "❌ This trade has already been processed.",
-			Flags:   discord.MessageFlagEphemeral,
-		})
-	}
+    if trade.Status != models.TradePending {
+        _, ferr := event.CreateFollowupMessage(discord.MessageCreate{Content: "❌ This trade has already been processed.", Flags: discord.MessageFlagEphemeral})
+        return ferr
+    }
 
 	// Update trade status to declined
 	err = h.tradeRepo.UpdateStatus(ctx, tradeID, models.TradeDeclined)
-	if err != nil {
-		return event.CreateMessage(discord.MessageCreate{
-			Content: "❌ Failed to decline trade.",
-			Flags:   discord.MessageFlagEphemeral,
-		})
-	}
+    if err != nil {
+        _, ferr := event.CreateFollowupMessage(discord.MessageCreate{Content: "❌ Failed to decline trade.", Flags: discord.MessageFlagEphemeral})
+        return ferr
+    }
 
 	// Create decline embed
 	embed := discord.NewEmbedBuilder().
@@ -170,10 +148,10 @@ func (h *TradeHandler) HandleTradeDecline(event *handler.ComponentEvent) error {
 	go h.sendTradeCompletionDM(trade.OffererID, trade, false)
 
 	// Update the original message to remove interaction buttons
-	return event.UpdateMessage(discord.MessageUpdate{
-		Embeds: &[]discord.Embed{embed},
-		Components: &[]discord.ContainerComponent{},
-	})
+    return event.UpdateMessage(discord.MessageUpdate{
+        Embeds: &[]discord.Embed{embed},
+        Components: &[]discord.ContainerComponent{},
+    })
 }
 
 func (h *TradeHandler) sendTradeCompletionDM(offererID string, trade *models.Trade, accepted bool) {
@@ -207,61 +185,50 @@ func (h *TradeHandler) sendTradeCompletionDM(offererID string, trade *models.Tra
 }
 
 func (h *TradeHandler) HandleTradeCancel(event *handler.ComponentEvent) error {
-	ctx, cancel := context.WithTimeout(context.Background(), config.DefaultQueryTimeout)
-	defer cancel()
+    _ = event.DeferUpdateMessage()
+    ctx, cancel := context.WithTimeout(context.Background(), config.DefaultQueryTimeout)
+    defer cancel()
 
 	// Extract trade ID from component custom ID
 	parts := strings.Split(event.Data.CustomID(), "/")
-	if len(parts) < 4 {
-		return event.CreateMessage(discord.MessageCreate{
-			Content: "❌ Invalid trade interaction.",
-			Flags:   discord.MessageFlagEphemeral,
-		})
-	}
+    if len(parts) < 4 {
+        _, err := event.CreateFollowupMessage(discord.MessageCreate{Content: "❌ Invalid trade interaction.", Flags: discord.MessageFlagEphemeral})
+        return err
+    }
 
 	tradeIDStr := parts[3]
 	tradeID, err := strconv.ParseInt(tradeIDStr, 10, 64)
-	if err != nil {
-		return event.CreateMessage(discord.MessageCreate{
-			Content: "❌ Invalid trade ID.",
-			Flags:   discord.MessageFlagEphemeral,
-		})
-	}
+    if err != nil {
+        _, ferr := event.CreateFollowupMessage(discord.MessageCreate{Content: "❌ Invalid trade ID.", Flags: discord.MessageFlagEphemeral})
+        return ferr
+    }
 
 	// Get trade details
 	trade, err := h.tradeRepo.GetTradeWithCards(ctx, tradeID)
-	if err != nil {
-		return event.CreateMessage(discord.MessageCreate{
-			Content: "❌ Trade not found.",
-			Flags:   discord.MessageFlagEphemeral,
-		})
-	}
+    if err != nil {
+        _, ferr := event.CreateFollowupMessage(discord.MessageCreate{Content: "❌ Trade not found.", Flags: discord.MessageFlagEphemeral})
+        return ferr
+    }
 
 	// Verify user is the offerer of this trade
 	userID := event.User().ID.String()
-	if trade.OffererID != userID {
-		return event.CreateMessage(discord.MessageCreate{
-			Content: "❌ You can only cancel trades you initiated.",
-			Flags:   discord.MessageFlagEphemeral,
-		})
-	}
+    if trade.OffererID != userID {
+        _, ferr := event.CreateFollowupMessage(discord.MessageCreate{Content: "❌ You can only cancel trades you initiated.", Flags: discord.MessageFlagEphemeral})
+        return ferr
+    }
 
 	// Check if trade is still pending
-	if trade.Status != models.TradePending {
-		return event.CreateMessage(discord.MessageCreate{
-			Content: "❌ This trade has already been processed and cannot be cancelled.",
-			Flags:   discord.MessageFlagEphemeral,
-		})
-	}
+    if trade.Status != models.TradePending {
+        _, ferr := event.CreateFollowupMessage(discord.MessageCreate{Content: "❌ This trade has already been processed and cannot be cancelled.", Flags: discord.MessageFlagEphemeral})
+        return ferr
+    }
 
 	// Cancel the trade by updating status
 	err = h.tradeRepo.UpdateStatus(ctx, tradeID, models.TradeDeclined)
-	if err != nil {
-		return event.CreateMessage(discord.MessageCreate{
-			Content: "❌ Failed to cancel trade.",
-			Flags:   discord.MessageFlagEphemeral,
-		})
-	}
+    if err != nil {
+        _, ferr := event.CreateFollowupMessage(discord.MessageCreate{Content: "❌ Failed to cancel trade.", Flags: discord.MessageFlagEphemeral})
+        return ferr
+    }
 
 	// Create cancellation embed
 	embed := discord.NewEmbedBuilder().
@@ -301,9 +268,11 @@ func (h *TradeHandler) sendTradeCancellationDM(targetID string, trade *models.Tr
 
 // CreateInboxComponentHandler creates component handler for trade inbox pagination
 func (h *TradeHandler) CreateInboxComponentHandler() handler.ComponentHandler {
-	return func(e *handler.ComponentEvent) error {
-		data := e.Data.(discord.ButtonInteractionData)
-		customID := data.CustomID()
+    return func(e *handler.ComponentEvent) error {
+        // Acknowledge immediately to avoid 3s timeout (10062)
+        _ = e.DeferUpdateMessage()
+        data := e.Data.(discord.ButtonInteractionData)
+        customID := data.CustomID()
 
 		// Parse component ID
 		parser := utils.NewRegularParser("trade-inbox")
@@ -318,9 +287,9 @@ func (h *TradeHandler) CreateInboxComponentHandler() handler.ComponentHandler {
 			return utils.EH.CreateEphemeralError(e, "Only the command user can navigate through these items.")
 		}
 
-		// Handle pagination
-		return h.handleInboxPagination(e, params, customID)
-	}
+        // Handle pagination
+        return h.handleInboxPagination(e, params, customID)
+    }
 }
 
 // handleInboxPagination handles pagination for trade inbox with custom components

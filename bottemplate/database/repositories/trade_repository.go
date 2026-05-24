@@ -44,7 +44,7 @@ func (r *tradeRepository) Create(ctx context.Context, trade *models.Trade) error
 	trade.Status = models.TradePending
 	trade.ExpiresAt = time.Now().Add(7 * 24 * time.Hour) // 7 days
 
-	_, err := r.db.NewInsert().Model(trade).Exec(ctx)
+    _, err := r.db.NewInsert().Model(trade).Returning("id").Exec(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to create trade: %w", err)
 	}

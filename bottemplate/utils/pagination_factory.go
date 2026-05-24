@@ -70,6 +70,8 @@ func NewPaginationFactory(config PaginationFactoryConfig) *PaginationFactory {
 func (pf *PaginationFactory) CreateHandler() handler.ComponentHandler {
     return func(e *handler.ComponentEvent) error {
         ctx := context.Background()
+        // Acknowledge immediately to avoid 3s timeout (10062)
+        _ = e.DeferUpdateMessage()
         // Safely get customID from any component data that supports it
         var customID string
         if d, ok := any(e.Data).(interface{ CustomID() string }); ok {
@@ -86,7 +88,9 @@ func (pf *PaginationFactory) CreateHandler() handler.ComponentHandler {
 
         // Validate user if validator provided
         if pf.config.Validator != nil && !pf.config.Validator.ValidateUser(e.User().ID.String(), params) {
-            return EH.CreateEphemeralError(e, "Only the command user can navigate through these items.")
+            // After deferring, use a follow-up ephemeral, not a first response
+            _, err := e.CreateFollowupMessage(discord.MessageCreate{Content: "Only the command user can navigate through these items.", Flags: discord.MessageFlagEphemeral})
+            return err
         }
 
         // Handle copy button (no defer, we reply ephemerally)
@@ -101,26 +105,26 @@ func (pf *PaginationFactory) CreateHandler() handler.ComponentHandler {
 
 // handleCopyButton handles copy button interactions
 func (pf *PaginationFactory) handleCopyButton(ctx context.Context, e *handler.ComponentEvent, params PaginationParams) error {
-	// Fetch data
-	items, err := pf.config.Fetcher.FetchData(ctx, params)
-	if err != nil {
-		return EH.CreateEphemeralError(e, "Failed to fetch data")
-	}
+    // Fetch data
+    items, err := pf.config.Fetcher.FetchData(ctx, params)
+    if err != nil {
+        _, ferr := e.CreateFollowupMessage(discord.MessageCreate{Content: "Failed to fetch data", Flags: discord.MessageFlagEphemeral})
+        return ferr
+    }
 
 	// Calculate page items
 	startIdx := params.Page * pf.config.ItemsPerPage
 	endIdx := min(startIdx+pf.config.ItemsPerPage, len(items))
 
-	if startIdx >= len(items) {
-		return EH.CreateEphemeralError(e, "No items to copy")
-	}
+    if startIdx >= len(items) {
+        _, ferr := e.CreateFollowupMessage(discord.MessageCreate{Content: "No items to copy", Flags: discord.MessageFlagEphemeral})
+        return ferr
+    }
 
 	// Format copy text
-	copyText := pf.config.Formatter.FormatCopy(items[startIdx:endIdx], params)
-    return e.CreateMessage(discord.MessageCreate{
-        Content: "```\n" + copyText + "```",
-        Flags:   discord.MessageFlagEphemeral,
-    })
+    copyText := pf.config.Formatter.FormatCopy(items[startIdx:endIdx], params)
+    _, ferr := e.CreateFollowupMessage(discord.MessageCreate{Content: "```\n" + copyText + "```", Flags: discord.MessageFlagEphemeral})
+    return ferr
 }
 
 // handleNavigation handles navigation button interactions

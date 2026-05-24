@@ -1,19 +1,19 @@
 package social
 
 import (
-	"context"
-	"fmt"
-	"sort"
-	"strings"
+    "context"
+    "fmt"
+    "sort"
+    "strings"
 
-	"github.com/disgoorg/bot-template/bottemplate"
-	"github.com/disgoorg/bot-template/bottemplate/config"
-	"github.com/disgoorg/bot-template/bottemplate/database/models"
-	"github.com/disgoorg/bot-template/bottemplate/services"
-	"github.com/disgoorg/bot-template/bottemplate/utils"
-	"github.com/disgoorg/disgo/discord"
-	"github.com/disgoorg/disgo/handler"
-	"github.com/disgoorg/snowflake/v2"
+    "github.com/disgoorg/bot-template/bottemplate"
+    "github.com/disgoorg/bot-template/bottemplate/config"
+    "github.com/disgoorg/bot-template/bottemplate/database/models"
+    "github.com/disgoorg/bot-template/bottemplate/services"
+    "github.com/disgoorg/bot-template/bottemplate/utils"
+    "github.com/disgoorg/disgo/discord"
+    "github.com/disgoorg/disgo/handler"
+    "github.com/disgoorg/snowflake/v2"
 )
 
 var Diff = discord.SlashCommandCreate{
@@ -56,119 +56,61 @@ var Diff = discord.SlashCommandCreate{
 }
 
 func DiffHandler(b *bottemplate.Bot) handler.CommandHandler {
-	cardOperationsService := services.NewCardOperationsService(b.CardRepository, b.UserCardRepository)
+    // Use the unified PaginationFactory for both initial and component pagination
+    cardOperationsService := services.NewCardOperationsService(b.CardRepository, b.UserCardRepository)
 
-	return func(e *handler.CommandEvent) error {
-		ctx, cancel := context.WithTimeout(context.Background(), config.DefaultQueryTimeout)
-		defer cancel()
+    return func(e *handler.CommandEvent) error {
+        // Defer to avoid 3s timeout (prevents 10062 Unknown interaction)
+        if err := e.DeferCreateMessage(false); err != nil {
+            return err
+        }
 
-		data := e.SlashCommandInteractionData()
-		subCmd := *data.SubCommandName
+        ctx, cancel := context.WithTimeout(context.Background(), config.DefaultQueryTimeout)
+        defer cancel()
 
-		targetUser := data.User("user")
-		query := strings.TrimSpace(data.String("query"))
+        data := e.SlashCommandInteractionData()
+        subCmd := *data.SubCommandName
+        targetUser := data.User("user")
+        query := strings.TrimSpace(data.String("query"))
 
-		var diffCards []*models.Card
-		var title string
-		var err error
+        // Create factory pieces shared with component handler
+        fetcher := &DiffDataFetcher{bot: b, cardOperationsService: cardOperationsService}
+        formatter := &DiffFormatter{bot: b}
+        validator := &DiffValidator{}
 
-		switch subCmd {
-		case "for":
-			diffCards, err = cardOperationsService.GetCardDifferences(ctx, e.User().ID.String(), targetUser.ID.String(), "for")
-			title = fmt.Sprintf("Cards you have that %s doesn't", targetUser.Username)
-		case "from":
-			diffCards, err = cardOperationsService.GetCardDifferences(ctx, e.User().ID.String(), targetUser.ID.String(), "from")
-			title = fmt.Sprintf("Cards %s has that you don't", targetUser.Username)
-		default:
-			return utils.EH.CreateErrorEmbed(e, "Invalid subcommand")
-		}
+        factoryConfig := utils.PaginationFactoryConfig{
+            ItemsPerPage: config.CardsPerPage,
+            Prefix:       "diff",
+            Parser:       utils.NewDiffParser(),
+            Fetcher:      fetcher,
+            Formatter:    formatter,
+            Validator:    validator,
+        }
+        factory := utils.NewPaginationFactory(factoryConfig)
 
-		if err != nil {
-			return utils.EH.CreateErrorEmbed(e, err.Error())
-		}
+        params := utils.PaginationParams{
+            UserID:       e.User().ID.String(),
+            Page:         0,
+            SubCommand:   subCmd,
+            TargetUserID: targetUser.ID.String(),
+            Query:        query,
+        }
 
-		if len(diffCards) == 0 {
-			return utils.EH.CreateErrorEmbed(e, "No difference found in card collections!")
-		}
+        // Build initial embed/components via factory
+        embed, components, err := factory.CreateInitialPaginationEmbed(ctx, params)
+        if err != nil {
+            // Provide meaningful error via the deferred response
+            msg := "Failed to create pagination"
+            if strings.Contains(strings.ToLower(err.Error()), "no items") {
+                msg = "No difference found in card collections!"
+            }
+            return utils.EH.UpdateInteractionResponse(e, "Diff", msg)
+        }
 
-		// Apply search filter if provided
-		if query != "" {
-			filters := utils.ParseSearchQuery(query)
-			diffCards = cardOperationsService.SearchCardsInCollection(ctx, diffCards, filters)
-			if len(diffCards) == 0 {
-				return utils.EH.CreateErrorEmbed(e, fmt.Sprintf("No cards match the query: %s", query))
-			}
-		} else {
-			// Default sorting by level and name when no query is provided
-			sort.Slice(diffCards, func(i, j int) bool {
-				if diffCards[i].Level != diffCards[j].Level {
-					return diffCards[i].Level > diffCards[j].Level
-				}
-				return strings.ToLower(diffCards[i].Name) < strings.ToLower(diffCards[j].Name)
-			})
-		}
-
-		// Use service-based pagination
-		cardDisplayService := services.NewCardDisplayService(b.CardRepository, b.SpacesService)
-		displayItems := cardDisplayService.ConvertCardsToDiffDisplayItemsSimple(diffCards)
-
-		paginationHandler := utils.NewDiffPaginationHandler()
-		paginationHandler.FormatItems = func(items []interface{}, page, totalPages int, data *utils.DiffPaginationData) (discord.Embed, error) {
-			// Convert items to CardDisplayItem slice (items are already pre-sliced for the page)
-			pageItems := make([]services.CardDisplayItem, len(items))
-			for i, item := range items {
-				pageItems[i] = item.(services.CardDisplayItem)
-			}
-
-			// Calculate total items from data
-			totalItems := data.TotalItems
-
-			return cardDisplayService.CreateCardsEmbed(
-				ctx,
-				data.Title,
-				pageItems,
-				page,
-				totalPages,
-				totalItems,
-				data.Query,
-				config.BackgroundColor,
-			)
-		}
-
-		paginationHandler.FormatCopy = func(items []interface{}, title string) string {
-			pageItems := make([]services.CardDisplayItem, len(items))
-			for i, item := range items {
-				pageItems[i] = item.(services.CardDisplayItem)
-			}
-			copyText, _ := cardDisplayService.FormatCopyText(ctx, pageItems, title)
-			return copyText
-		}
-
-		items := make([]interface{}, len(displayItems))
-		for i, item := range displayItems {
-			items[i] = item
-		}
-
-		paginationData := &utils.DiffPaginationData{
-			Items:        items,
-			TotalItems:   len(items),
-			UserID:       e.User().ID.String(),
-			SubCommand:   subCmd,
-			TargetUserID: targetUser.ID.String(),
-			Query:        query,
-			Title:        title,
-		}
-
-		embed, components, err := paginationHandler.CreateInitialDiffPaginationEmbed(paginationData)
-		if err != nil {
-			return utils.EH.CreateErrorEmbed(e, "Failed to create pagination")
-		}
-
-		return e.CreateMessage(discord.MessageCreate{
-			Embeds:     []discord.Embed{embed},
-			Components: components,
-		})
-	}
+        // Update deferred initial response
+        _, updErr := e.UpdateInteractionResponse(discord.MessageUpdate{Embeds: &[]discord.Embed{embed}, Components: &components})
+        return updErr
+    }
 }
 
 // DiffComponentHandler handles diff command pagination using the new unified factory
@@ -279,15 +221,25 @@ func (df *DiffFormatter) FormatItems(items []interface{}, page, totalPages int, 
 		displayItems[i] = item.(services.CardDisplayItem)
 	}
 
-	cardDisplayService := services.NewCardDisplayService(df.bot.CardRepository, df.bot.SpacesService)
-	return cardDisplayService.CreatePaginatedCardsEmbed(
-		context.Background(),
-		title,
-		displayItems,
-		page,
-		params.Query,
-		config.BackgroundColor,
-	)
+    cardDisplayService := services.NewCardDisplayService(df.bot.CardRepository, df.bot.SpacesService)
+
+    // Compute totalItems from totalPages and current page size
+    itemsPerPage := config.CardsPerPage
+    totalItems := totalPages * itemsPerPage
+    if page == totalPages-1 { // last page may be partial
+        totalItems = (totalPages-1)*itemsPerPage + len(displayItems)
+    }
+
+    return cardDisplayService.CreateCardsEmbed(
+        context.Background(),
+        title,
+        displayItems,
+        page,
+        totalPages,
+        totalItems,
+        params.Query,
+        config.BackgroundColor,
+    )
 }
 
 func (df *DiffFormatter) FormatCopy(items []interface{}, params utils.PaginationParams) string {

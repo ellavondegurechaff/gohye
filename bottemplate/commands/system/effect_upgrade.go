@@ -1,14 +1,15 @@
 package system
 
 import (
-	"context"
-	"fmt"
+    "context"
+    "fmt"
+    "strings"
 
-	"github.com/disgoorg/bot-template/bottemplate"
-	"github.com/disgoorg/bot-template/bottemplate/economy/effects"
-	"github.com/disgoorg/bot-template/bottemplate/utils"
-	"github.com/disgoorg/disgo/discord"
-	"github.com/disgoorg/disgo/handler"
+    "github.com/disgoorg/bot-template/bottemplate"
+    "github.com/disgoorg/bot-template/bottemplate/economy/effects"
+    "github.com/disgoorg/bot-template/bottemplate/utils"
+    "github.com/disgoorg/disgo/discord"
+    "github.com/disgoorg/disgo/handler"
 )
 
 type EffectUpgradeHandler struct {
@@ -96,32 +97,43 @@ func (h *EffectUpgradeHandler) HandleUpgrade(event *handler.CommandEvent) error 
 		SetColor(0x57F287).
 		Build()
 
-	return event.CreateMessage(discord.MessageCreate{
-		Embeds: []discord.Embed{embed},
-		Components: []discord.ContainerComponent{
-			discord.ActionRowComponent{
-				discord.ButtonComponent{
-					Label:    "✅ Upgrade",
-					Style:    discord.ButtonStyleSuccess,
-					CustomID: fmt.Sprintf("effect_upgrade_confirm_%s", effectID),
-				},
-				discord.ButtonComponent{
-					Label:    "❌ Cancel",
-					Style:    discord.ButtonStyleDanger,
-					CustomID: "effect_upgrade_cancel",
-				},
-			},
-		},
-	})
+    ownerID := userID
+    return event.CreateMessage(discord.MessageCreate{
+        Embeds: []discord.Embed{embed},
+        Components: []discord.ContainerComponent{
+            discord.ActionRowComponent{
+                discord.ButtonComponent{
+                    Label:    "✅ Upgrade",
+                    Style:    discord.ButtonStyleSuccess,
+                    CustomID: fmt.Sprintf("effect_upgrade_confirm_%s@%s", effectID, ownerID),
+                },
+                discord.ButtonComponent{
+                    Label:    "❌ Cancel",
+                    Style:    discord.ButtonStyleDanger,
+                    CustomID: fmt.Sprintf("effect_upgrade_cancel@%s", ownerID),
+                },
+            },
+        },
+    })
 }
 
 func (h *EffectUpgradeHandler) HandleUpgradeConfirm(event *handler.ComponentEvent) error {
-	ctx := context.Background()
-	userID := event.User().ID.String()
+    ctx := context.Background()
+    userID := event.User().ID.String()
 
-	// Extract effect ID from custom ID
-	customID := event.Data.CustomID()
-	effectID := customID[len("effect_upgrade_confirm_"):]
+    // Extract effect ID from custom ID
+    customID := event.Data.CustomID()
+    // Support new format: effect_upgrade_confirm_<effectID>@<ownerID>
+    effectID := customID
+    ownerCheck := ""
+    if idx := strings.Index(customID, "@"); idx != -1 {
+        effectID = customID[:idx]
+        ownerCheck = customID[idx+1:]
+    }
+    effectID = strings.TrimPrefix(effectID, "effect_upgrade_confirm_")
+    if ownerCheck != "" && ownerCheck != userID {
+        return utils.EH.CreateEphemeralError(event, "Only the command user can confirm this upgrade.")
+    }
 
 	// Perform upgrade
 	err := h.effectManager.UpgradeEffectTier(ctx, userID, effectID)
@@ -156,11 +168,18 @@ func (h *EffectUpgradeHandler) HandleUpgradeConfirm(event *handler.ComponentEven
 }
 
 func (h *EffectUpgradeHandler) HandleUpgradeCancel(event *handler.ComponentEvent) error {
-	embed := discord.NewEmbedBuilder().
-		SetTitle("❌ Upgrade Cancelled").
-		SetDescription("The upgrade has been cancelled. You can upgrade anytime when ready!").
-		SetColor(0xED4245).
-		Build()
+    // Owner validation for new format: effect_upgrade_cancel@<ownerID>
+    if strings.Contains(event.Data.CustomID(), "@") {
+        parts := strings.Split(event.Data.CustomID(), "@")
+        if len(parts) == 2 && parts[1] != event.User().ID.String() {
+            return utils.EH.CreateEphemeralError(event, "Only the command user can cancel this upgrade.")
+        }
+    }
+    embed := discord.NewEmbedBuilder().
+        SetTitle("❌ Upgrade Cancelled").
+        SetDescription("The upgrade has been cancelled. You can upgrade anytime when ready!").
+        SetColor(0xED4245).
+        Build()
 
 	return event.UpdateMessage(discord.MessageUpdate{
 		Embeds:     &[]discord.Embed{embed},

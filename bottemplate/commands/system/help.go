@@ -93,12 +93,13 @@ func (h *HelpHandler) showOverviewHelp(event *handler.CommandEvent, categories m
 
 	embed.SetFooter(fmt.Sprintf("Total: %d commands • Use /help category:<name> for details", totalCommands), "")
 
-	components := []discord.ContainerComponent{
-		discord.NewActionRow(
-			discord.NewStringSelectMenu("help_category", "Select a category for detailed help...",
-				discord.StringSelectMenuOption{
-					Label:       "🛠️ Admin Commands",
-					Value:       "admin",
+    ownerID := event.User().ID.String()
+    components := []discord.ContainerComponent{
+        discord.NewActionRow(
+            discord.NewStringSelectMenu("help_category/"+ownerID, "Select a category for detailed help...",
+                discord.StringSelectMenuOption{
+                    Label:       "🛠️ Admin Commands",
+                    Value:       "admin",
 					Description: "Database and management commands",
 				},
 				discord.StringSelectMenuOption{
@@ -155,12 +156,13 @@ func (h *HelpHandler) showCategoryHelp(event *handler.CommandEvent, categoryName
 
 	embed.SetFooter(fmt.Sprintf("%d commands in %s category • Use /help to see all categories", len(category.Commands), category.Name), "")
 
-	components := []discord.ContainerComponent{
-		discord.NewActionRow(
-			discord.NewPrimaryButton("← Back to Overview", "help_back").
-				WithEmoji(discord.ComponentEmoji{Name: "📖"}),
-		),
-	}
+    ownerID := event.User().ID.String()
+    components := []discord.ContainerComponent{
+        discord.NewActionRow(
+            discord.NewPrimaryButton("← Back to Overview", "help_back/"+ownerID).
+                WithEmoji(discord.ComponentEmoji{Name: "📖"}),
+        ),
+    }
 
 	return event.CreateMessage(discord.MessageCreate{
 		Embeds:     []discord.Embed{embed.Build()},
@@ -169,22 +171,33 @@ func (h *HelpHandler) showCategoryHelp(event *handler.CommandEvent, categoryName
 }
 
 func (h *HelpHandler) HandleComponent(event *handler.ComponentEvent) error {
-	customID := event.Data.CustomID()
+    customID := event.Data.CustomID()
 
-	switch {
-	case customID == "help_category":
-		data, ok := event.Data.(discord.StringSelectMenuInteractionData)
-		if ok && len(data.Values) > 0 {
-			categoryName := data.Values[0]
-			categories := h.getCommandCategories()
-			return h.updateCategoryHelp(event, categoryName, categories)
-		}
-	case customID == "help_back":
-		categories := h.getCommandCategories()
-		return h.updateOverviewHelp(event, categories)
-	}
+    switch {
+    case strings.HasPrefix(customID, "help_category/"):
+        parts := strings.Split(customID, "/")
+        if len(parts) < 2 || parts[1] != "help_category" {
+            return nil
+        }
+        if len(parts) < 3 || parts[2] != event.User().ID.String() {
+            return utils.EH.CreateEphemeralError(event, "Only the command user can use these buttons.")
+        }
+        data, ok := event.Data.(discord.StringSelectMenuInteractionData)
+        if ok && len(data.Values) > 0 {
+            categoryName := data.Values[0]
+            categories := h.getCommandCategories()
+            return h.updateCategoryHelp(event, categoryName, categories)
+        }
+    case strings.HasPrefix(customID, "help_back/"):
+        parts := strings.Split(customID, "/")
+        if len(parts) < 3 || parts[2] != event.User().ID.String() {
+            return utils.EH.CreateEphemeralError(event, "Only the command user can use these buttons.")
+        }
+        categories := h.getCommandCategories()
+        return h.updateOverviewHelp(event, categories)
+    }
 
-	return nil
+    return nil
 }
 
 func (h *HelpHandler) updateCategoryHelp(event *handler.ComponentEvent, categoryName string, categories map[string]CategoryInfo) error {
@@ -211,12 +224,20 @@ func (h *HelpHandler) updateCategoryHelp(event *handler.ComponentEvent, category
 
 	embed.SetFooter(fmt.Sprintf("%d commands in %s category • Use /help to see all categories", len(category.Commands), category.Name), "")
 
-	components := []discord.ContainerComponent{
-		discord.NewActionRow(
-			discord.NewPrimaryButton("← Back to Overview", "help_back").
-				WithEmoji(discord.ComponentEmoji{Name: "📖"}),
-		),
-	}
+    // Preserve the original owner ID if present in the triggering component
+    ownerID := ""
+    if idd, ok := event.Data.(interface{ CustomID() string }); ok {
+        parts := strings.Split(idd.CustomID(), "/")
+        if len(parts) >= 3 {
+            ownerID = parts[2]
+        }
+    }
+    components := []discord.ContainerComponent{
+        discord.NewActionRow(
+            discord.NewPrimaryButton("← Back to Overview", "help_back/"+ownerID).
+                WithEmoji(discord.ComponentEmoji{Name: "📖"}),
+        ),
+    }
 
 	return event.UpdateMessage(discord.MessageUpdate{
 		Embeds:     &[]discord.Embed{embed.Build()},
@@ -249,12 +270,13 @@ func (h *HelpHandler) updateOverviewHelp(event *handler.ComponentEvent, categori
 
 	embed.SetFooter(fmt.Sprintf("Total: %d commands • Use /help category:<name> for details", totalCommands), "")
 
-	components := []discord.ContainerComponent{
-		discord.NewActionRow(
-			discord.NewStringSelectMenu("help_category", "Select a category for detailed help...",
-				discord.StringSelectMenuOption{
-					Label:       "🛠️ Admin Commands",
-					Value:       "admin",
+    ownerID := event.User().ID.String()
+    components := []discord.ContainerComponent{
+        discord.NewActionRow(
+            discord.NewStringSelectMenu("help_category/"+ownerID, "Select a category for detailed help...",
+                discord.StringSelectMenuOption{
+                    Label:       "🛠️ Admin Commands",
+                    Value:       "admin",
 					Description: "Database and management commands",
 				},
 				discord.StringSelectMenuOption{

@@ -1,12 +1,13 @@
 package repositories
 
 import (
-	"context"
-	"database/sql"
-	"errors"
-	"fmt"
-	"log/slog"
-	"time"
+    "context"
+    "database/sql"
+    "errors"
+    "fmt"
+    "log/slog"
+    "strings"
+    "time"
 
 	"github.com/disgoorg/bot-template/bottemplate/database/models"
 	"github.com/uptrace/bun"
@@ -49,10 +50,21 @@ func (r *userRepository) GetByDiscordID(ctx context.Context, discordID string) (
 		slog.String("discord_id", discordID))
 
 	user := new(models.User)
-	err := r.db.NewSelect().
-		Model(user).
-		Where("discord_id = ?", discordID).
-		Scan(ctx)
+    var err error
+    for attempt := 0; attempt < 2; attempt++ {
+        err = r.db.NewSelect().
+            Model(user).
+            Where("discord_id = ?", discordID).
+            Scan(ctx)
+        if err == nil || errors.Is(err, sql.ErrNoRows) {
+            break
+        }
+        // Retry once on transient EOF-like errors
+        if strings.Contains(err.Error(), "EOF") {
+            continue
+        }
+        break
+    }
 
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {

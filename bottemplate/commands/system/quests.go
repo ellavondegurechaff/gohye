@@ -21,38 +21,64 @@ var QuestsCommand = discord.SlashCommandCreate{
 }
 
 func QuestsHandler(b *bottemplate.Bot) handler.CommandHandler {
-	return func(e *handler.CommandEvent) error {
-		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-		defer cancel()
+    return func(e *handler.CommandEvent) error {
+        // Defer immediately to avoid 3s timeout (prevents Unknown interaction 10062)
+        if err := e.DeferCreateMessage(false); err != nil {
+            return err
+        }
+
+        ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+        defer cancel()
 
 		userID := e.User().ID.String()
 
 		// Ensure user exists
-		user, err := b.UserRepository.GetByDiscordID(ctx, userID)
-		if err != nil {
-			slog.Error("Failed to get user",
-				slog.String("user_id", userID),
-				slog.Any("error", err))
-			return utils.EH.CreateErrorEmbed(e, "Failed to load user data. Please try again.")
-		}
+        user, err := b.UserRepository.GetByDiscordID(ctx, userID)
+        if err != nil {
+            slog.Error("Failed to get user",
+                slog.String("user_id", userID),
+                slog.Any("error", err))
+            return utils.EH.UpdateInteractionResponse(e, "Quests", "Failed to load user data. Please try again.")
+        }
 
 		// Get quest service
-		questService := b.QuestService
-		if questService == nil {
-			return utils.EH.CreateErrorEmbed(e, "Quest system is not available right now. Please try again later.")
-		}
+        questService := b.QuestService
+        if questService == nil {
+            return utils.EH.UpdateInteractionResponse(e, "Quests", "Quest system is not available right now. Please try again later.")
+        }
 
-		// NOTE: Removed automatic quest assignment - users must wait for reset periods
-		// Quests are now only assigned during daily/weekly/monthly resets
+        // Get user's quest status
+        status, err := questService.GetUserQuestStatus(ctx, userID)
+        if err != nil {
+            slog.Error("Failed to get quest status",
+                slog.String("user_id", userID),
+                slog.Any("error", err))
+            return utils.EH.UpdateInteractionResponse(e, "Quests", "Failed to load your quests. Please try again.")
+        }
 
-		// Get user's quest status
-		status, err := questService.GetUserQuestStatus(ctx, userID)
-		if err != nil {
-			slog.Error("Failed to get quest status",
-				slog.String("user_id", userID),
-				slog.Any("error", err))
-			return utils.EH.CreateErrorEmbed(e, "Failed to load your quests. Please try again.")
-		}
+        // If the user has no active quests (fresh or missed rotation), assign on-demand
+        if len(status.DailyQuests) == 0 || len(status.WeeklyQuests) == 0 || len(status.MonthlyQuests) == 0 {
+            // Best-effort assignment; ignore individual errors and proceed with what we can
+            if len(status.DailyQuests) == 0 {
+                if err := questService.AssignDailyQuests(ctx, userID); err != nil {
+                    slog.Warn("Failed to assign daily quests on-demand", slog.String("user_id", userID), slog.Any("error", err))
+                }
+            }
+            if len(status.WeeklyQuests) == 0 {
+                if err := questService.AssignWeeklyQuests(ctx, userID); err != nil {
+                    slog.Warn("Failed to assign weekly quests on-demand", slog.String("user_id", userID), slog.Any("error", err))
+                }
+            }
+            if len(status.MonthlyQuests) == 0 {
+                if err := questService.AssignMonthlyQuests(ctx, userID); err != nil {
+                    slog.Warn("Failed to assign monthly quests on-demand", slog.String("user_id", userID), slog.Any("error", err))
+                }
+            }
+            // Refresh status after assignment
+            if refreshed, err2 := questService.GetUserQuestStatus(ctx, userID); err2 == nil {
+                status = refreshed
+            }
+        }
 
 		// Create initial embed (Daily quests by default)
 		embed := createQuestEmbed(status.DailyQuests, "Daily", user.Username, "daily")
@@ -60,11 +86,12 @@ func QuestsHandler(b *bottemplate.Bot) handler.CommandHandler {
 		// Create components for navigation
 		components := createQuestComponents("daily", userID)
 
-		return e.CreateMessage(discord.MessageCreate{
-			Embeds:     []discord.Embed{embed},
-			Components: components,
-		})
-	}
+        _, updErr := e.UpdateInteractionResponse(discord.MessageUpdate{
+            Embeds:     &[]discord.Embed{embed},
+            Components: &components,
+        })
+        return updErr
+    }
 }
 
 // QuestComponentHandler handles quest navigation

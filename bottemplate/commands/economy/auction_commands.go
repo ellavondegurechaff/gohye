@@ -147,19 +147,20 @@ func (h *AuctionHandler) HandleCreate(event *handler.CommandEvent) error {
         SetFooter("This auction will be visible to all users", "").
         Build()
 
-	// Create confirmation buttons
-	components := []discord.ContainerComponent{
-		discord.NewActionRow(
-			discord.NewSuccessButton(
-				"Confirm",
-				fmt.Sprintf("/auction/confirm/%d/%d/%d", card.ID, startPrice, int64(duration.Seconds())),
-			),
-			discord.NewDangerButton(
-				"Cancel",
-				"/auction/cancel",
-			),
-		),
-	}
+    // Create confirmation buttons (restrict to command user)
+    ownerID := event.User().ID.String()
+    components := []discord.ContainerComponent{
+        discord.NewActionRow(
+            discord.NewSuccessButton(
+                "Confirm",
+                fmt.Sprintf("/auction/confirm/%s/%d/%d/%d", ownerID, card.ID, startPrice, int64(duration.Seconds())),
+            ),
+            discord.NewDangerButton(
+                "Cancel",
+                fmt.Sprintf("/auction/cancel/%s", ownerID),
+            ),
+        ),
+    }
 
 	return event.CreateMessage(discord.MessageCreate{
 		Embeds:     []discord.Embed{embed},
@@ -293,16 +294,24 @@ func (h *AuctionHandler) HandleList(event *handler.CommandEvent) error {
 }
 
 func (h *AuctionHandler) HandleCancel(event *handler.ComponentEvent) error {
-	return event.UpdateMessage(discord.MessageUpdate{
-		Embeds: &[]discord.Embed{
-			discord.NewEmbedBuilder().
-				SetTitle("❌ Auction Cancelled").
-				SetDescription("The auction creation was cancelled.").
-				SetColor(0xFF0000).
-				Build(),
-		},
-		Components: &[]discord.ContainerComponent{},
-	})
+    // Validate only the command user can cancel
+    parts := strings.Split(event.Data.CustomID(), "/")
+    if len(parts) >= 4 {
+        ownerID := parts[3]
+        if ownerID != event.User().ID.String() {
+            return utils.EH.CreateEphemeralError(event, "Only the command user can cancel this action.")
+        }
+    }
+    return event.UpdateMessage(discord.MessageUpdate{
+        Embeds: &[]discord.Embed{
+            discord.NewEmbedBuilder().
+                SetTitle("❌ Auction Cancelled").
+                SetDescription("The auction creation was cancelled.").
+                SetColor(0xFF0000).
+                Build(),
+        },
+        Components: &[]discord.ContainerComponent{},
+    })
 }
 
 // CreateAuctionListComponentHandler creates component handler for auction list pagination

@@ -86,8 +86,12 @@ func (h *TradeHandler) Register(r handler.Router) {
 }
 
 func (h *TradeHandler) HandleTrade(event *handler.CommandEvent) error {
-	ctx, cancel := context.WithTimeout(context.Background(), config.DefaultQueryTimeout)
-	defer cancel()
+    // Defer immediately to avoid 3s timeout (10062)
+    if err := event.DeferCreateMessage(false); err != nil {
+        return err
+    }
+    ctx, cancel := context.WithTimeout(context.Background(), config.DefaultQueryTimeout)
+    defer cancel()
 
 	data := event.SlashCommandInteractionData()
 	yourCardName := data.String("your_card")
@@ -97,73 +101,57 @@ func (h *TradeHandler) HandleTrade(event *handler.CommandEvent) error {
 	offererID := event.User().ID.String()
 	targetID := targetUser.ID.String()
 
-	// Prevent self-trading
-	if offererID == targetID {
-		return event.CreateMessage(discord.MessageCreate{
-			Content: "❌ You cannot trade with yourself!",
-			Flags:   discord.MessageFlagEphemeral,
-		})
-	}
+    // Prevent self-trading
+    if offererID == targetID {
+        _, updErr := event.UpdateInteractionResponse(discord.MessageUpdate{Content: utils.Ptr("❌ You cannot trade with yourself!")})
+        return updErr
+    }
 
 	// Find offerer's card
-	offererCard, err := h.getUserCardByName(ctx, offererID, yourCardName)
-	if err != nil {
-		return event.CreateMessage(discord.MessageCreate{
-			Content: fmt.Sprintf("❌ You don't own a card matching '%s' or you don't have any copies available.", yourCardName),
-			Flags:   discord.MessageFlagEphemeral,
-		})
-	}
+    offererCard, err := h.getUserCardByName(ctx, offererID, yourCardName)
+    if err != nil {
+        _, updErr := event.UpdateInteractionResponse(discord.MessageUpdate{Content: utils.Ptr(fmt.Sprintf("❌ You don't own a card matching '%s' or you don't have any copies available.", yourCardName))})
+        return updErr
+    }
 
 	// Find target's card
-	targetCard, err := h.getUserCardByName(ctx, targetID, theirCardName)
-	if err != nil {
-		return event.CreateMessage(discord.MessageCreate{
-			Content: fmt.Sprintf("❌ %s doesn't own a card matching '%s' or they don't have any copies available.", targetUser.Username, theirCardName),
-			Flags:   discord.MessageFlagEphemeral,
-		})
-	}
+    targetCard, err := h.getUserCardByName(ctx, targetID, theirCardName)
+    if err != nil {
+        _, updErr := event.UpdateInteractionResponse(discord.MessageUpdate{Content: utils.Ptr(fmt.Sprintf("❌ %s doesn't own a card matching '%s' or they don't have any copies available.", targetUser.Username, theirCardName))})
+        return updErr
+    }
 
 	// Check for existing pending trades between these users
-	pendingTrades, err := h.tradeRepo.GetPendingTradesBetweenUsers(ctx, offererID, targetID)
-	if err != nil {
-		return event.CreateMessage(discord.MessageCreate{
-			Content: "❌ Failed to check for existing trades.",
-			Flags:   discord.MessageFlagEphemeral,
-		})
-	}
+    pendingTrades, err := h.tradeRepo.GetPendingTradesBetweenUsers(ctx, offererID, targetID)
+    if err != nil {
+        _, updErr := event.UpdateInteractionResponse(discord.MessageUpdate{Content: utils.Ptr("❌ Failed to check for existing trades.")})
+        return updErr
+    }
 
-	if len(pendingTrades) > 0 {
-		return event.CreateMessage(discord.MessageCreate{
-			Content: fmt.Sprintf("❌ You already have a pending trade with %s. Please wait for them to respond or check your /inbox.", targetUser.Username),
-			Flags:   discord.MessageFlagEphemeral,
-		})
-	}
+    if len(pendingTrades) > 0 {
+        _, updErr := event.UpdateInteractionResponse(discord.MessageUpdate{Content: utils.Ptr(fmt.Sprintf("❌ You already have a pending trade with %s. Please wait for them to respond or check your /inbox.", targetUser.Username))})
+        return updErr
+    }
 
 	// Get card details for display
-	offererCardDetails, err := h.cardRepo.GetByID(ctx, offererCard.CardID)
-	if err != nil {
-		return event.CreateMessage(discord.MessageCreate{
-			Content: "❌ Failed to get your card details.",
-			Flags:   discord.MessageFlagEphemeral,
-		})
-	}
+    offererCardDetails, err := h.cardRepo.GetByID(ctx, offererCard.CardID)
+    if err != nil {
+        _, updErr := event.UpdateInteractionResponse(discord.MessageUpdate{Content: utils.Ptr("❌ Failed to get your card details.")})
+        return updErr
+    }
 
-	targetCardDetails, err := h.cardRepo.GetByID(ctx, targetCard.CardID)
-	if err != nil {
-		return event.CreateMessage(discord.MessageCreate{
-			Content: "❌ Failed to get their card details.",
-			Flags:   discord.MessageFlagEphemeral,
-		})
-	}
+    targetCardDetails, err := h.cardRepo.GetByID(ctx, targetCard.CardID)
+    if err != nil {
+        _, updErr := event.UpdateInteractionResponse(discord.MessageUpdate{Content: utils.Ptr("❌ Failed to get their card details.")})
+        return updErr
+    }
 
 	// Generate unique trade ID
-	tradeID, err := h.generateTradeID(ctx, offererCardDetails)
-	if err != nil {
-		return event.CreateMessage(discord.MessageCreate{
-			Content: "❌ Failed to generate trade ID.",
-			Flags:   discord.MessageFlagEphemeral,
-		})
-	}
+    tradeID, err := h.generateTradeID(ctx, offererCardDetails)
+    if err != nil {
+        _, updErr := event.UpdateInteractionResponse(discord.MessageUpdate{Content: utils.Ptr("❌ Failed to generate trade ID.")})
+        return updErr
+    }
 
 	// Create trade offer
 	trade := &models.Trade{
@@ -174,31 +162,50 @@ func (h *TradeHandler) HandleTrade(event *handler.CommandEvent) error {
 		TargetCardID:  targetCard.CardID,
 	}
 
-	err = h.tradeRepo.Create(ctx, trade)
-	if err != nil {
-		return event.CreateMessage(discord.MessageCreate{
-			Content: "❌ Failed to create trade offer.",
-			Flags:   discord.MessageFlagEphemeral,
-		})
-	}
+    err = h.tradeRepo.Create(ctx, trade)
+    if err != nil {
+        _, updErr := event.UpdateInteractionResponse(discord.MessageUpdate{Content: utils.Ptr("❌ Failed to create trade offer.")})
+        return updErr
+    }
 
-	// Create confirmation embed
-	embed := discord.NewEmbedBuilder().
-		SetTitle("🔄 Trade Offer Created").
-		SetDescription(fmt.Sprintf("Your trade offer has been sent to %s!", targetUser.Mention())).
-		AddField("Your Offer", fmt.Sprintf("%s %s", utils.GetPromoRarityPlainText(offererCardDetails.ColID, offererCardDetails.Level), offererCardDetails.Name), false).
-		AddField("Requesting", fmt.Sprintf("%s %s", utils.GetPromoRarityPlainText(targetCardDetails.ColID, targetCardDetails.Level), targetCardDetails.Name), false).
-		AddField("Trade ID", tradeID, false).
-		SetColor(config.BackgroundColor).
-		SetFooter(fmt.Sprintf("%s can view this offer in their /inbox", targetUser.Username), "").
-		Build()
+    // Create confirmation embed (for the offerer)
+    embed := discord.NewEmbedBuilder().
+        SetTitle("🔄 Trade Offer Created").
+        SetDescription(fmt.Sprintf("Your trade offer has been sent to %s!", targetUser.Mention())).
+        AddField("Your Offer", fmt.Sprintf("%s %s", utils.GetPromoRarityPlainText(offererCardDetails.ColID, offererCardDetails.Level), offererCardDetails.Name), false).
+        AddField("Requesting", fmt.Sprintf("%s %s", utils.GetPromoRarityPlainText(targetCardDetails.ColID, targetCardDetails.Level), targetCardDetails.Name), false).
+        AddField("Trade ID", tradeID, false).
+        SetColor(config.BackgroundColor).
+        SetFooter(fmt.Sprintf("%s can view this offer in their /inbox", targetUser.Username), "").
+        Build()
 
-	// Send DM to target user
-	go h.sendTradeNotificationDM(targetID, trade, offererCardDetails, targetCardDetails, event.User().Username)
+    // Send DM to target user (best-effort)
+    go h.sendTradeNotificationDM(targetID, trade, offererCardDetails, targetCardDetails, event.User().Username)
 
-	return event.CreateMessage(discord.MessageCreate{
-		Embeds: []discord.Embed{embed},
-	})
+    // Respond to the offerer via the deferred interaction
+    if _, err := event.UpdateInteractionResponse(discord.MessageUpdate{Embeds: &[]discord.Embed{embed}}); err != nil {
+        return err
+    }
+
+    // Post an interactive offer in channel so the target can accept/decline
+    offerEmbed := discord.NewEmbedBuilder().
+        SetTitle("🔄 Trade Offer").
+        SetDescription(fmt.Sprintf("%s wants to trade with %s", event.User().Mention(), targetUser.Mention())).
+        AddField("Offerer Gives", fmt.Sprintf("%s %s", utils.GetPromoRarityPlainText(offererCardDetails.ColID, offererCardDetails.Level), offererCardDetails.Name), false).
+        AddField("Offerer Wants", fmt.Sprintf("%s %s", utils.GetPromoRarityPlainText(targetCardDetails.ColID, targetCardDetails.Level), targetCardDetails.Name), false).
+        AddField("Trade ID", trade.TradeID, false).
+        SetColor(config.BackgroundColor).
+        SetFooter("Only the target user can accept or decline this offer", "").
+        Build()
+
+    actionRow := discord.NewActionRow(
+        discord.NewSuccessButton("Accept", fmt.Sprintf("/trade/accept/%d", trade.ID)),
+        discord.NewDangerButton("Decline", fmt.Sprintf("/trade/decline/%d", trade.ID)),
+    )
+
+    _, _ = event.CreateFollowupMessage(discord.MessageCreate{Embeds: []discord.Embed{offerEmbed}, Components: []discord.ContainerComponent{actionRow}})
+
+    return nil
 }
 
 func (h *TradeHandler) HandleInbox(event *handler.CommandEvent) error {

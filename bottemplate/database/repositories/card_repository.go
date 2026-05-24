@@ -744,38 +744,46 @@ func (r *cardRepository) GetCardCount(ctx context.Context) (int64, error) {
 
 // GetByNameOrIDFuzzy finds a single card by name or ID with fuzzy matching - optimized for price stats
 func (r *cardRepository) GetByNameOrIDFuzzy(ctx context.Context, query string) (*models.Card, error) {
-	ctx, cancel := context.WithTimeout(ctx, config.DefaultQueryTimeout)
-	defer cancel()
+    ctx, cancel := context.WithTimeout(ctx, config.DefaultQueryTimeout)
+    defer cancel()
 
-	card := new(models.Card)
+    card := new(models.Card)
 
-	// Try exact ID match first
-	err := r.db.NewSelect().
-		Model(card).
-		Where("id::text = ?", query).
-		Scan(ctx)
+    // Try exact ID match first
+    err := r.db.NewSelect().
+        Model(card).
+        Where("id::text = ?", query).
+        Scan(ctx)
 
-	if err == nil {
-		return card, nil
-	}
+    if err == nil {
+        return card, nil
+    }
 
-	// Try exact name match (case insensitive)
-	err = r.db.NewSelect().
-		Model(card).
-		Where("LOWER(name) = LOWER(?)", query).
-		Scan(ctx)
+    // Try exact name match (case insensitive)
+    err = r.db.NewSelect().
+        Model(card).
+        Where("LOWER(name) = LOWER(?)", query).
+        Scan(ctx)
 
-	if err == nil {
-		return card, nil
-	}
+    if err == nil {
+        return card, nil
+    }
 
-	// Try fuzzy name match with LIKE
-	err = r.db.NewSelect().
-		Model(card).
-		Where("LOWER(name) LIKE LOWER(?)", "%"+query+"%").
-		OrderExpr("LENGTH(name)"). // Prefer shorter matches
-		Limit(1).
-		Scan(ctx)
+    // Try fuzzy name match with flexible spaces/underscores
+    q := strings.ToLower(query)
+    alt1 := strings.ReplaceAll(q, "_", " ")
+    alt2 := strings.ReplaceAll(q, " ", "_")
+    err = r.db.NewSelect().
+        Model(card).
+        WhereGroup("(", func(s *bun.SelectQuery) *bun.SelectQuery {
+            s = s.Where("LOWER(name) LIKE ?", "%"+q+"%")
+            s = s.WhereOr("LOWER(name) LIKE ?", "%"+alt1+"%")
+            s = s.WhereOr("LOWER(name) LIKE ?", "%"+alt2+"%")
+            return s
+        }).
+        OrderExpr("LENGTH(name)"). // Prefer shorter matches
+        Limit(1).
+        Scan(ctx)
 
 	if err != nil {
 		if err == sql.ErrNoRows {
