@@ -455,6 +455,11 @@ func main() {
 	effectsHandler := system.NewEffectsHandler(b, effectManager)
 	h.Command("/effects", handlers.WrapWithLogging("effects", effectsHandler.Handle))
 
+	inventoryHandler := system.NewInventoryHandler(b, effectManager)
+	h.Command("/inventory", handlers.WrapWithLogging("inventory", inventoryHandler.Handle))
+	h.Component("/inventory_category/", handlers.WrapComponentWithLogging("inventory_category", inventoryHandler.HandleComponent))
+	h.Component("/inventory_item/", handlers.WrapComponentWithLogging("inventory_item", inventoryHandler.HandleComponent))
+
 	effectInfoHandler := system.NewEffectInfoHandler(b, effectManager)
 	h.Command("/effect", handlers.WrapWithLogging("effect", effectInfoHandler.Handle))
 

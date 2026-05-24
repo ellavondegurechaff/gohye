@@ -415,7 +415,16 @@ func (m *Manager) ListUserEffects(ctx context.Context, userID string) ([]*models
 	if err != nil {
 		slog.Error("Failed to get user effects", slog.Any("error", err))
 	} else {
+		seenEffects := make(map[string]struct{}, len(userEffects))
 		for _, userEffect := range userEffects {
+			if userEffect == nil || userEffect.EffectID == "" {
+				continue
+			}
+			if _, exists := seenEffects[userEffect.EffectID]; exists {
+				continue
+			}
+			seenEffects[userEffect.EffectID] = struct{}{}
+
 			staticItem := GetEffectItemByID(userEffect.EffectID)
 			if staticItem == nil {
 				continue
@@ -438,7 +447,16 @@ func (m *Manager) ListUserEffects(ctx context.Context, userID string) ([]*models
 	if err != nil {
 		slog.Error("Failed to get user recipes", slog.Any("error", err))
 	} else {
+		seenRecipes := make(map[string]struct{}, len(recipes))
 		for _, recipe := range recipes {
+			if recipe == nil || recipe.ItemID == "" {
+				continue
+			}
+			if _, exists := seenRecipes[recipe.ItemID]; exists {
+				continue
+			}
+			seenRecipes[recipe.ItemID] = struct{}{}
+
 			staticItem := GetEffectItemByID(recipe.ItemID)
 			if staticItem == nil {
 				continue

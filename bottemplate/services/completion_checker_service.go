@@ -51,6 +51,15 @@ func (s *CompletionCheckerService) SetClient(client bot.Client) {
 // CheckCompletionForCards checks collection completion for cards that were just added/modified
 // This is called asynchronously after card operations
 func (s *CompletionCheckerService) CheckCompletionForCards(ctx context.Context, userID string, cardIDs []int64) {
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Error("Recovered from collection completion check panic",
+				slog.String("user_id", userID),
+				slog.Any("card_ids", cardIDs),
+				slog.Any("panic", r))
+		}
+	}()
+
 	if len(cardIDs) == 0 {
 		return
 	}

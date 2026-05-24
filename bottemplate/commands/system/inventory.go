@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/disgoorg/bot-template/bottemplate"
 	"github.com/disgoorg/bot-template/bottemplate/config"
@@ -18,6 +19,8 @@ var Inventory = discord.SlashCommandCreate{
 	Name:        "inventory",
 	Description: "View your inventory of items",
 }
+
+const maxInventorySelectOptions = 25
 
 type InventoryHandler struct {
 	bot           *bottemplate.Bot
@@ -158,8 +161,20 @@ func createInventoryCategories(selectedValue string, ownerID string) discord.Con
 }
 
 func createInventoryItems(items []*models.EffectItem, _ string, ownerID string) discord.ContainerComponent {
-	options := make([]discord.StringSelectMenuOption, 0, len(items))
+	options := make([]discord.StringSelectMenuOption, 0, maxInventorySelectOptions)
+	seen := make(map[string]struct{}, len(items))
 	for _, item := range items {
+		if item == nil || item.ID == "" {
+			continue
+		}
+		if _, exists := seen[item.ID]; exists {
+			continue
+		}
+		seen[item.ID] = struct{}{}
+		if len(options) >= maxInventorySelectOptions {
+			break
+		}
+
 		// Format duration per type
 		var desc string
 		if item.Passive {
@@ -168,9 +183,9 @@ func createInventoryItems(items []*models.EffectItem, _ string, ownerID string) 
 			desc = fmt.Sprintf("%d uses", item.Duration)
 		}
 		options = append(options, discord.StringSelectMenuOption{
-			Label:       fmt.Sprintf("%s", item.Name),
+			Label:       truncateDiscordOptionText(item.Name, 100),
 			Value:       fmt.Sprintf("inv_%s", item.ID),
-			Description: desc,
+			Description: truncateDiscordOptionText(desc, 100),
 			Emoji:       &discord.ComponentEmoji{Name: getTypeEmoji(item.Type)},
 		})
 	}
@@ -180,6 +195,14 @@ func createInventoryItems(items []*models.EffectItem, _ string, ownerID string) 
 			WithMinValues(1).
 			WithMaxValues(1),
 	)
+}
+
+func truncateDiscordOptionText(value string, maxRunes int) string {
+	if utf8.RuneCountInString(value) <= maxRunes {
+		return value
+	}
+	runes := []rune(value)
+	return string(runes[:maxRunes])
 }
 
 func (h *InventoryHandler) handleItemSelect(event *handler.ComponentEvent) error {
