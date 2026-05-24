@@ -39,10 +39,10 @@ var AuctionCommand = discord.SlashCommandCreate{
 				},
 				discord.ApplicationCommandOptionInt{
 					Name:        "duration",
-					Description: "Auction duration in seconds (min 10 seconds, max 24 hours)",
+					Description: "Auction duration in hours (min 1 hour, max 24 hours)",
 					Required:    true,
-					MinValue:    intPtr(10),
-					MaxValue:    intPtr(86400),
+					MinValue:    intPtr(1),
+					MaxValue:    intPtr(24),
 				},
 			},
 		},
@@ -107,7 +107,7 @@ func (h *AuctionHandler) HandleCreate(event *handler.CommandEvent) error {
 	data := event.SlashCommandInteractionData()
 	cardName := data.String("card_name")
 	startPrice := int64(data.Int("start_price"))
-	duration := time.Duration(data.Int("duration")) * time.Second
+	duration := time.Duration(data.Int("duration")) * time.Hour
 
 	// Get user's matching card using the weighted search
 	userCard, err := h.manager.GetUserCardByName(ctx, event.User().ID.String(), cardName)

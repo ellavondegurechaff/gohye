@@ -43,6 +43,11 @@ func NewCompletionCheckerService(
 	}
 }
 
+// SetClient updates the Discord client after the bot has been initialized.
+func (s *CompletionCheckerService) SetClient(client bot.Client) {
+	s.client = client
+}
+
 // CheckCompletionForCards checks collection completion for cards that were just added/modified
 // This is called asynchronously after card operations
 func (s *CompletionCheckerService) CheckCompletionForCards(ctx context.Context, userID string, cardIDs []int64) {
@@ -176,6 +181,12 @@ func (s *CompletionCheckerService) handleLostCompletion(ctx context.Context, use
 
 // sendCompletionNotification sends a DM to the user about collection completion changes
 func (s *CompletionCheckerService) sendCompletionNotification(ctx context.Context, user *models.User, collectionID string, isCompleted bool) {
+	if s.client == nil || user == nil || user.DiscordID == "" {
+		slog.Warn("Skipping completion notification because Discord client or user is unavailable",
+			slog.String("collection_id", collectionID))
+		return
+	}
+
 	// Check if user has notifications enabled (following JavaScript pattern)
 	// For now, we'll assume notifications are enabled. In the future, this could check user preferences
 

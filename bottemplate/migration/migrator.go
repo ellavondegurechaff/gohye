@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"time"
 
+	"strings"
+
 	"github.com/disgoorg/bot-template/bottemplate/database/models"
 	pgx "github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -21,7 +23,6 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
-	"strings"
 )
 
 type Migrator struct {

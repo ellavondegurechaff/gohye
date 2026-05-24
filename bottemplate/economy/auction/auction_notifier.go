@@ -9,7 +9,7 @@ import (
 
 	"github.com/disgoorg/bot-template/bottemplate/database/models"
 	"github.com/disgoorg/disgo/bot"
-	"github.com/disgoorg/disgo/discord" 
+	"github.com/disgoorg/disgo/discord"
 	"github.com/disgoorg/snowflake/v2"
 )
 

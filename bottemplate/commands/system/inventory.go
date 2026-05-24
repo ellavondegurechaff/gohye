@@ -32,6 +32,9 @@ func NewInventoryHandler(b *bottemplate.Bot, effectManager *effects.Manager) *In
 }
 
 func (h *InventoryHandler) Handle(event *handler.CommandEvent) error {
+	if err := event.DeferCreateMessage(false); err != nil {
+		return err
+	}
 	return h.handleList(event)
 }
 
@@ -42,18 +45,18 @@ func (h *InventoryHandler) handleList(event *handler.CommandEvent) error {
 	// Get effects
 	items, err := h.effectManager.ListUserEffects(ctx, userID)
 	if err != nil {
-		return utils.EH.CreateErrorEmbed(event, fmt.Sprintf("Failed to fetch inventory: %v", err))
+		return utils.EH.UpdateInteractionResponse(event, "Inventory", fmt.Sprintf("Failed to fetch inventory: %v", err))
 	}
 
 	// Get material items
 	userItems, err := h.bot.ItemRepository.GetUserItems(ctx, userID)
 	if err != nil {
-		return utils.EH.CreateErrorEmbed(event, fmt.Sprintf("Failed to fetch items: %v", err))
+		return utils.EH.UpdateInteractionResponse(event, "Inventory", fmt.Sprintf("Failed to fetch items: %v", err))
 	}
 
 	if len(items) == 0 && len(userItems) == 0 {
-		return event.CreateMessage(discord.MessageCreate{
-			Embeds: []discord.Embed{{
+		_, err := event.UpdateInteractionResponse(discord.MessageUpdate{
+			Embeds: &[]discord.Embed{{
 				Title:       "📦 Your Inventory",
 				Description: "Your inventory is empty! Visit the `/shop` to purchase items or `/work` to earn materials.",
 				Color:       0x2b2d31,
@@ -62,6 +65,7 @@ func (h *InventoryHandler) handleList(event *handler.CommandEvent) error {
 				},
 			}},
 		})
+		return err
 	}
 
 	actives, recipes, passives := groupItems(items)
@@ -84,10 +88,10 @@ func (h *InventoryHandler) handleList(event *handler.CommandEvent) error {
 	}
 
 	if len(currentItems) == 0 {
-		return event.CreateMessage(discord.MessageCreate{
-			Content: "No items in your inventory",
-			Flags:   discord.MessageFlagEphemeral,
+		_, err := event.UpdateInteractionResponse(discord.MessageUpdate{
+			Content: utils.Ptr("No items in your inventory"),
 		})
+		return err
 	}
 
 	selectedCategory := "recipe"
@@ -104,8 +108,8 @@ func (h *InventoryHandler) handleList(event *handler.CommandEvent) error {
 		createInventoryItems(currentItems, selectedCategory, userID),
 	}
 
-	return event.CreateMessage(discord.MessageCreate{
-		Embeds: []discord.Embed{{
+	_, err = event.UpdateInteractionResponse(discord.MessageUpdate{
+		Embeds: &[]discord.Embed{{
 			Title:       title,
 			Description: "Select an item to view details",
 			Color:       getColorByType(currentItems[0].Type),
@@ -113,8 +117,9 @@ func (h *InventoryHandler) handleList(event *handler.CommandEvent) error {
 				Text: fmt.Sprintf("Total Items: %d", len(items)),
 			},
 		}},
-		Components: components,
+		Components: &components,
 	})
+	return err
 }
 
 func createInventoryCategories(selectedValue string, ownerID string) discord.ContainerComponent {
@@ -429,10 +434,11 @@ func groupItems(items []*models.EffectItem) (actives, recipes, passives []*model
 
 func (h *InventoryHandler) showMaterialsView(event *handler.CommandEvent, userItems []*models.UserItem, totalEffects int) error {
 	embed, components := h.createMaterialsEmbed(userItems, totalEffects, event.User().ID.String())
-	return event.CreateMessage(discord.MessageCreate{
-		Embeds:     []discord.Embed{embed},
-		Components: components,
+	_, err := event.UpdateInteractionResponse(discord.MessageUpdate{
+		Embeds:     &[]discord.Embed{embed},
+		Components: &components,
 	})
+	return err
 }
 
 func (h *InventoryHandler) updateMaterialsView(event *handler.ComponentEvent, userItems []*models.UserItem, totalEffects int) error {

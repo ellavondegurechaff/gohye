@@ -143,14 +143,13 @@ func LimitedCardsComponentHandler(b *bottemplate.Bot) handler.ComponentHandler {
 				Prefix:       "limitedcards",
 			},
 			FormatItems: func(items []interface{}, page, totalPages int, userID, query string) (discord.Embed, error) {
-				startIdx := page * config.CardsPerPage
-				endIdx := startIdx + config.CardsPerPage
-				if endIdx > len(items) {
-					endIdx = len(items)
-				}
-				pageItems := make([]services.CardDisplayItem, endIdx-startIdx)
-				for i, item := range items[startIdx:endIdx] {
+				pageItems := make([]services.CardDisplayItem, len(items))
+				for i, item := range items {
 					pageItems[i] = item.(services.CardDisplayItem)
+				}
+				totalItems := totalPages * config.CardsPerPage
+				if page == totalPages-1 && len(items) < config.CardsPerPage {
+					totalItems = (totalPages-1)*config.CardsPerPage + len(items)
 				}
 
 				cardDisplayService := services.NewCardDisplayService(b.CardRepository, b.SpacesService)
@@ -160,7 +159,7 @@ func LimitedCardsComponentHandler(b *bottemplate.Bot) handler.ComponentHandler {
 					pageItems,
 					page,
 					totalPages,
-					len(items),
+					totalItems,
 					query,
 					config.SuccessColor,
 				)

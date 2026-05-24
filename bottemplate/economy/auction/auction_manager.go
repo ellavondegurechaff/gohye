@@ -103,6 +103,10 @@ func (m *Manager) SetClient(client bot.Client) {
 }
 
 func (m *Manager) CreateAuction(ctx context.Context, cardID int64, sellerID string, startPrice int64, duration time.Duration) (*models.Auction, error) {
+	if duration < economicUtils.MinAuctionTime || duration > economicUtils.MaxAuctionTime {
+		return nil, fmt.Errorf("auction duration must be between 1 and 24 hours")
+	}
+
 	// Log auction creation start only at debug level to reduce noise
 	if slog.Default().Enabled(nil, slog.LevelDebug) {
 		slog.Debug("Starting auction creation process",

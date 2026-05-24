@@ -110,7 +110,7 @@ const (
 	// Auction system
 	MinAuctionDuration     = 1 * time.Hour
 	MaxAuctionDuration     = 24 * time.Hour
-	MinAuctionTime         = 10 * time.Second
+	MinAuctionTime         = 1 * time.Hour
 	AuctionCleanupInterval = 5 * time.Minute
 	MinBidIncrement        = 100
 

@@ -143,11 +143,6 @@ func SearchCardsHandler(b *bottemplate.Bot) handler.CommandHandler {
 				return utils.EH.UpdateInteractionResponse(event, "No Results Found", "No cards match your search criteria")
 			}
 
-			// Sort results by relevance if name filter is present
-			if repoFilters.Name != "" {
-				sortCardsByRelevance(result.cards, repoFilters.Name)
-			}
-
 			// Cache the results
 			cardSearchCache.set(cacheKey, result.cards, result.count)
 
@@ -219,11 +214,6 @@ func createPaginator(b *bottemplate.Bot, e *handler.CommandEvent, initialCards [
 			// If not in cache, fetch from database
 			offset := page * utils.CardsPerPage
 			pageCards, _, _ := b.CardRepository.Search(context.Background(), filters, offset, utils.CardsPerPage)
-
-			// Sort results by relevance if name filter is present
-			if filters.Name != "" {
-				sortCardsByRelevance(pageCards, filters.Name)
-			}
 
 			// Cache the page results
 			cardSearchCache.set(cacheKey, pageCards, totalCount)

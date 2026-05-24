@@ -105,6 +105,12 @@ func main() {
 			slog.Duration("attempted_for", time.Since(dbStartTime)))
 		os.Exit(-1)
 	}
+	if err := db.InitializeItemData(ctx); err != nil {
+		slog.Error("Failed to initialize item data",
+			slog.String("error", err.Error()),
+			slog.Duration("attempted_for", time.Since(dbStartTime)))
+		os.Exit(-1)
+	}
 	slog.Info("Database schema initialized successfully")
 
 	defer db.Close()
@@ -513,6 +519,9 @@ func main() {
 			slog.String("status", "failed"),
 		)
 		os.Exit(-1)
+	}
+	if b.CompletionChecker != nil {
+		b.CompletionChecker.SetClient(b.Client)
 	}
 
 	// Initialize auction manager with the now-initialized client

@@ -355,6 +355,9 @@ func (c *LevelUpCommand) findCard(ctx context.Context, userID, query string) (*m
 		// Check if user owns this card
 		userCard, err := c.cardRepo.GetUserCard(ctx, userID, card.ID)
 		if err == nil && userCard.Amount > 0 {
+			if isRemovedCollection(card.ColID) {
+				return nil, fmt.Errorf("removed collection cards cannot be leveled up or combined")
+			}
 			return card, nil
 		}
 	}
@@ -362,7 +365,12 @@ func (c *LevelUpCommand) findCard(ctx context.Context, userID, query string) (*m
 	// Fallback to single-query owned fuzzy search
 	ownedCards, err := c.cardRepo.SearchOwnedByUserFuzzy(ctx, userID, query, 3)
 	if err == nil && len(ownedCards) > 0 {
-		return ownedCards[0], nil
+		for _, ownedCard := range ownedCards {
+			if !isRemovedCollection(ownedCard.ColID) {
+				return ownedCard, nil
+			}
+		}
+		return nil, fmt.Errorf("removed collection cards cannot be leveled up or combined")
 	}
 
 	// Final resilient fallback: weighted search within user's cards
@@ -387,12 +395,22 @@ func (c *LevelUpCommand) findCard(ctx context.Context, userID, query string) (*m
 	if err3 != nil {
 		return nil, fmt.Errorf("failed to fetch card details: %v", err3)
 	}
+	levelableCards := make([]*models.Card, 0, len(cards))
+	for _, card := range cards {
+		if !isRemovedCollection(card.ColID) {
+			levelableCards = append(levelableCards, card)
+		}
+	}
 	filters := utils.ParseSearchQuery(query)
-	results := utils.WeightedSearchWithMulti(cards, filters, userCardMap)
+	results := utils.WeightedSearchWithMulti(levelableCards, filters, userCardMap)
 	if len(results) == 0 {
 		return nil, fmt.Errorf("no cards found matching '%s'", query)
 	}
 	return results[0], nil
+}
+
+func isRemovedCollection(colID string) bool {
+	return strings.EqualFold(colID, "removed")
 }
 
 func LevelUpHandler(b *bottemplate.Bot) handler.CommandHandler {

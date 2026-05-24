@@ -36,7 +36,7 @@ const (
 const (
 	MinBidIncrement = 100              // Minimum bid increment
 	MaxAuctionTime  = 24 * time.Hour   // Maximum auction duration
-	MinAuctionTime  = 10 * time.Second // Minimum auction duration
+	MinAuctionTime  = 1 * time.Hour    // Minimum auction duration
 	AntiSnipeTime   = 10 * time.Second // Anti-snipe extension time
 	AuctionIDLength = 6                // Length of auction ID
 	MaxRetries      = 5                // Maximum retries for operations

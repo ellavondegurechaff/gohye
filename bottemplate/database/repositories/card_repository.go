@@ -421,7 +421,9 @@ func (r *cardRepository) Search(ctx context.Context, filters SearchFilters, offs
 		return results["cards"].([]*models.Card), results["count"].(int), nil
 	}
 
-	countCacheKey := fmt.Sprintf("count:%s:%s:%d:%v",
+	countCacheKey := fmt.Sprintf("count:name=%s:id=%d:col=%s:type=%s:level=%d:animated=%v",
+		filters.Name,
+		filters.ID,
 		filters.Collection,
 		filters.Type,
 		filters.Level,
@@ -504,8 +506,12 @@ func (r *cardRepository) Search(ctx context.Context, filters SearchFilters, offs
 		query = query.Where("animated = true")
 	}
 
-	// Apply pagination and ordering
-	query = query.Order("id ASC").
+	// Apply a deterministic global ordering before pagination.
+	query = query.
+		OrderExpr("level DESC").
+		OrderExpr("LOWER(col_id) ASC").
+		OrderExpr("LOWER(name) ASC").
+		Order("id ASC").
 		Limit(limit).
 		Offset(offset)
 
@@ -659,7 +665,7 @@ func (r *cardRepository) GetAllByUserID(ctx context.Context, userID string) ([]*
 		return nil, fmt.Errorf("failed to fetch user cards: %w", err)
 	}
 
-	return userCards, nil
+	return mergeDuplicateUserCards(userCards), nil
 }
 
 func (r *cardRepository) GetByIDs(ctx context.Context, ids []int64) ([]*models.Card, error) {

@@ -159,13 +159,14 @@ func (h *ClaimHandler) HandleCommand(e *handler.CommandEvent) error {
 		"limited":     true,
 		"special":     true,
 		"lottery":     true,
+		"removed":     true,
 	}
 
 	// Filter out excluded collection cards
 	var cards []*models.Card
 	for _, card := range allCards {
 		// Skip if card is in excluded collections
-		if excludedCollections[card.ColID] {
+		if excludedCollections[strings.ToLower(card.ColID)] {
 			continue
 		}
 

@@ -146,10 +146,7 @@ func (ucdc *UserCardDisplayWithContext) GetExtraInfo() []string {
 			extras = append(extras, fmt.Sprintf("**`%d%%`**", expPercent))
 		}
 	case utils.SortByAmount:
-		// Prominently show amount when sorting by amount
-		if ucdc.UserCard.Amount > 1 {
-			extras = append(extras, fmt.Sprintf("**x%d**", ucdc.UserCard.Amount))
-		}
+		// Amount is rendered by the shared card entry formatter.
 	case utils.SortByRating:
 		// Show rating when sorting by rating
 		if ucdc.UserCard.Rating > 0 {
@@ -172,10 +169,6 @@ func (ucdc *UserCardDisplayWithContext) GetExtraInfo() []string {
 		}
 		// For promo cards, fragments, excluded collections, and level 5 cards, no EXP is shown
 
-		// Show amount for multiples in default view
-		if ucdc.UserCard.Amount > 1 {
-			extras = append(extras, fmt.Sprintf("`x%d`", ucdc.UserCard.Amount))
-		}
 	}
 
 	// Always add custom mark if exists

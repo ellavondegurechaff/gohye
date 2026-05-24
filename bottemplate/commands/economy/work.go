@@ -129,7 +129,7 @@ func (h *WorkHandler) HandleWork(e *handler.CommandEvent) error {
 	embed := h.createJobScenarioEmbedWithCollection(scenario, enhancedScenario)
 	components := h.createScenarioComponentsWithCollection(scenario, enhancedScenario, e.User().ID.String())
 
-	_, err := e.UpdateInteractionResponse(discord.MessageUpdate{
+	_, err = e.UpdateInteractionResponse(discord.MessageUpdate{
 		Embeds:     &[]discord.Embed{embed},
 		Components: &components,
 	})
@@ -770,7 +770,25 @@ func (h *WorkHandler) applyWorkRewardsTx(ctx context.Context, userID string, rew
 
 func addWorkItemDropsTx(ctx context.Context, tx bun.Tx, userID string, itemIDs []string, now time.Time) error {
 	for _, itemID := range itemIDs {
-		_, err := tx.NewInsert().
+		result, err := tx.NewUpdate().
+			Model((*models.UserItem)(nil)).
+			Set("quantity = quantity + ?", 1).
+			Set("updated_at = ?", now).
+			Where("user_id = ? AND item_id = ?", userID, itemID).
+			Exec(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to update work item drop %s: %w", itemID, err)
+		}
+
+		rowsAffected, err := result.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("failed to verify work item drop %s update: %w", itemID, err)
+		}
+		if rowsAffected > 0 {
+			continue
+		}
+
+		_, err = tx.NewInsert().
 			Model(&models.UserItem{
 				UserID:     userID,
 				ItemID:     itemID,
@@ -778,9 +796,6 @@ func addWorkItemDropsTx(ctx context.Context, tx bun.Tx, userID string, itemIDs [
 				ObtainedAt: now,
 				UpdatedAt:  now,
 			}).
-			On("CONFLICT (user_id, item_id) DO UPDATE").
-			Set("quantity = user_items.quantity + EXCLUDED.quantity").
-			Set("updated_at = EXCLUDED.updated_at").
 			Exec(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to add work item drop %s: %w", itemID, err)

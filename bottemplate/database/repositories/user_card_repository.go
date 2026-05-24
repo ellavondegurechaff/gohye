@@ -83,7 +83,10 @@ func (r *userCardRepository) GetAllByUserID(ctx context.Context, userID string) 
 		Where("user_id = ? AND amount > 0", userID).
 		Order("obtained DESC").
 		Scan(ctx)
-	return userCards, err
+	if err != nil {
+		return nil, err
+	}
+	return mergeDuplicateUserCards(userCards), nil
 }
 
 func (r *userCardRepository) Update(ctx context.Context, userCard *models.UserCard) error {
@@ -136,10 +139,20 @@ func (r *userCardRepository) GetFavorites(ctx context.Context, userID string) ([
 	var userCards []*models.UserCard
 	err := r.db.NewSelect().
 		Model(&userCards).
-		Where("user_id = ? AND favorite = true", userID).
+		Where("user_id = ? AND amount > 0", userID).
 		Order("obtained DESC").
 		Scan(ctx)
-	return userCards, err
+	if err != nil {
+		return nil, err
+	}
+	mergedCards := mergeDuplicateUserCards(userCards)
+	favorites := make([]*models.UserCard, 0, len(mergedCards))
+	for _, userCard := range mergedCards {
+		if userCard.Favorite {
+			favorites = append(favorites, userCard)
+		}
+	}
+	return favorites, nil
 }
 
 func (r *userCardRepository) GetUserCard(ctx context.Context, userID string, cardID int64) (*models.UserCard, error) {
@@ -219,7 +232,50 @@ func (r *userCardRepository) GetUserCardsByName(ctx context.Context, userID stri
 		}
 	}
 
-	return matchedUserCards, nil
+	return mergeDuplicateUserCards(matchedUserCards), nil
+}
+
+func mergeDuplicateUserCards(userCards []*models.UserCard) []*models.UserCard {
+	mergedByCardID := make(map[int64]*models.UserCard, len(userCards))
+	merged := make([]*models.UserCard, 0, len(userCards))
+
+	for _, userCard := range userCards {
+		if userCard == nil || userCard.Amount <= 0 {
+			continue
+		}
+
+		if existing, ok := mergedByCardID[userCard.CardID]; ok {
+			existing.Amount += userCard.Amount
+			existing.Favorite = existing.Favorite || userCard.Favorite
+			existing.Locked = existing.Locked || userCard.Locked
+			if userCard.Rating > existing.Rating {
+				existing.Rating = userCard.Rating
+			}
+			if userCard.Level > existing.Level || (userCard.Level == existing.Level && userCard.Exp > existing.Exp) {
+				existing.Level = userCard.Level
+				existing.Exp = userCard.Exp
+			}
+			if existing.Mark == "" {
+				existing.Mark = userCard.Mark
+			}
+			if userCard.Obtained.After(existing.Obtained) {
+				existing.Obtained = userCard.Obtained
+			}
+			if existing.CreatedAt.IsZero() || (!userCard.CreatedAt.IsZero() && userCard.CreatedAt.Before(existing.CreatedAt)) {
+				existing.CreatedAt = userCard.CreatedAt
+			}
+			if userCard.UpdatedAt.After(existing.UpdatedAt) {
+				existing.UpdatedAt = userCard.UpdatedAt
+			}
+			continue
+		}
+
+		copied := *userCard
+		mergedByCardID[userCard.CardID] = &copied
+		merged = append(merged, &copied)
+	}
+
+	return merged
 }
 
 // Helper function to collect card IDs
