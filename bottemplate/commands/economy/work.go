@@ -233,7 +233,7 @@ func (h *WorkHandler) generateJobScenarioWithCollection(ctx context.Context) (Jo
 			// Filter out special collections (fragments, albums, etc)
 			var regularCollections []*models.Collection
 			for _, col := range collections {
-				if !col.Fragments && !col.Promo {
+				if !col.Fragments && !col.Promo && !utils.IsForgeExcludedCollection(col.ID) && !utils.IsClaimExcludedCollection(col.ID) {
 					regularCollections = append(regularCollections, col)
 				}
 			}

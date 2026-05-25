@@ -253,7 +253,10 @@ func (h *ForgeHandler) findCard(ctx context.Context, query, userID string, exclu
 	if err == nil {
 		// Check if user owns this card
 		userCard, err := h.bot.CardRepository.GetUserCard(ctx, userID, card.ID)
-		if err == nil && userCard.Amount > 0 && card.ID != excludeCardID {
+		if err == nil && userCard != nil && userCard.Amount > 0 && card.ID != excludeCardID {
+			if !utils.IsCardForgeEligible(card, userCard) {
+				return nil, fmt.Errorf("this card cannot be forged (legendary, album, locked, last favorite copy, or restricted collection)")
+			}
 			return card, nil
 		}
 	}

@@ -148,34 +148,12 @@ func (h *ClaimHandler) HandleCommand(e *handler.CommandEvent) error {
 		return utils.EH.UpdateInteractionResponse(e, "Error", "Failed to fetch cards")
 	}
 
-	// List of collection IDs to exclude from normal claims
-	excludedCollections := map[string]bool{
-		"promos":      true,
-		"ggalbums":    true,
-		"bgalbums":    true,
-		"birthdays":   true,
-		"liveauction": true,
-		"mythical":    true,
-		"limited":     true,
-		"special":     true,
-		"lottery":     true,
-		"removed":     true,
-	}
-
-	// Filter out excluded collection cards
+	// Filter out cards that should never enter the normal claim pool.
 	var cards []*models.Card
 	for _, card := range allCards {
-		// Skip if card is in excluded collections
-		if excludedCollections[strings.ToLower(card.ColID)] {
-			continue
+		if utils.IsCardClaimEligible(card) {
+			cards = append(cards, card)
 		}
-
-		// Also check collection info for promo flag
-		if colInfo, exists := utils.GetCollectionInfo(card.ColID); exists && colInfo.IsPromo {
-			continue
-		}
-
-		cards = append(cards, card)
 	}
 
 	// Randomly pick cards (with effect modifications)

@@ -64,7 +64,10 @@ func (h *AuctionHelpers) getUserCardByName(ctx context.Context, userID string, c
 	// Try direct query first (optimized approach)
 	if card, err := h.manager.cardRepo.GetByQuery(ctx, cardName); err == nil {
 		// Check if user owns this card
-		if userCard, err := h.manager.UserCardRepo.GetUserCard(ctx, userID, card.ID); err == nil && userCard.Amount > 0 {
+		if userCard, err := h.manager.UserCardRepo.GetUserCard(ctx, userID, card.ID); err == nil && userCard != nil && userCard.Amount > 0 {
+			if !utils.IsCardAuctionEligible(card, userCard) {
+				return nil, fmt.Errorf("this card cannot be auctioned")
+			}
 			return userCard, nil
 		}
 	}
@@ -100,10 +103,17 @@ func (h *AuctionHelpers) getUserCardByName(ctx context.Context, userID string, c
 	filters.SortBy = utils.SortByLevel
 	filters.SortDesc = true
 
-	searchResults := utils.WeightedSearchWithMulti(cards, filters, userCardMap)
+	eligibleCards := make([]*models.Card, 0, len(cards))
+	for _, card := range cards {
+		if utils.IsCardAuctionEligible(card, userCardMap[card.ID]) {
+			eligibleCards = append(eligibleCards, card)
+		}
+	}
+
+	searchResults := utils.WeightedSearchWithMulti(eligibleCards, filters, userCardMap)
 
 	if len(searchResults) == 0 {
-		return nil, fmt.Errorf("no matching owned cards found")
+		return nil, fmt.Errorf("no matching auction-eligible owned cards found")
 	}
 
 	// Return the UserCard for the best match

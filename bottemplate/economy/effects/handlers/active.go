@@ -12,6 +12,7 @@ import (
 	"github.com/disgoorg/bot-template/bottemplate/database/models"
 	"github.com/disgoorg/bot-template/bottemplate/database/repositories"
 	"github.com/disgoorg/bot-template/bottemplate/economy/effects"
+	botutils "github.com/disgoorg/bot-template/bottemplate/utils"
 	"github.com/uptrace/bun"
 )
 
@@ -291,6 +292,9 @@ func (h *SpaceUnityHandler) checkCollectionRestrictions(collection *models.Colle
 	if collection.Fragments {
 		return "cannot use this effect on fragmented collections"
 	}
+	if botutils.IsRecipeExcludedCollection(collection.ID) {
+		return "cannot use this effect on restricted collections"
+	}
 
 	// Check for restricted tags
 	for _, tag := range collection.Tags {
@@ -350,6 +354,9 @@ func (h *SpaceUnityHandler) getUniqueCard(ctx context.Context, userID string, co
 			}
 		}
 		if isExcluded {
+			continue
+		}
+		if botutils.IsFragmentLikeCard(card) {
 			continue
 		}
 

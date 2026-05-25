@@ -92,6 +92,29 @@ func (fm *ForgeManager) ForgeCardsWithEffects(ctx context.Context, userID int64,
 			return fmt.Errorf("failed to get card 2: %w", err)
 		}
 
+		if card1.ID == card2.ID {
+			return fmt.Errorf("you must use two different cards to forge")
+		}
+		if card1.Level != card2.Level {
+			return fmt.Errorf("cards must be of the same level to forge")
+		}
+
+		userCard1, err := getForgeUserCardState(ctx, tx, userIDStr, card1ID)
+		if err != nil {
+			return fmt.Errorf("failed to get user card 1: %w", err)
+		}
+		if !botutils.IsCardForgeEligible(&card1, userCard1) {
+			return fmt.Errorf("card 1 cannot be forged")
+		}
+
+		userCard2, err := getForgeUserCardState(ctx, tx, userIDStr, card2ID)
+		if err != nil {
+			return fmt.Errorf("failed to get user card 2: %w", err)
+		}
+		if !botutils.IsCardForgeEligible(&card2, userCard2) {
+			return fmt.Errorf("card 2 cannot be forged")
+		}
+
 		// Calculate forge cost
 		forgeCost, err := fm.CalculateForgeCostWithEffects(ctx, &card1, &card2, userIDStr, effectIntegrator)
 		if err != nil {
@@ -164,9 +187,25 @@ func (fm *ForgeManager) ForgeCardsWithEffects(ctx context.Context, userID int64,
 	return newCard, nil
 }
 
-// filterForgeOutputCards applies sophisticated filtering for forge output based on input card characteristics
-// This implements the logic from CommandReference.js to ensure proper card type consistency
-// Special album logic: album + album = album, album + normal = normal, normal + normal = normal
+func getForgeUserCardState(ctx context.Context, tx bun.Tx, userID string, cardID int64) (*models.UserCard, error) {
+	var userCard models.UserCard
+	err := tx.NewSelect().
+		Model((*models.UserCard)(nil)).
+		ColumnExpr("? AS user_id", userID).
+		ColumnExpr("? AS card_id", cardID).
+		ColumnExpr("COALESCE(SUM(amount), 0) AS amount").
+		ColumnExpr("COALESCE(BOOL_OR(favorite), false) AS favorite").
+		ColumnExpr("COALESCE(BOOL_OR(locked), false) AS locked").
+		Where("user_id = ? AND card_id = ?", userID, cardID).
+		Scan(ctx, &userCard)
+	if err != nil {
+		return nil, err
+	}
+	return &userCard, nil
+}
+
+// filterForgeOutputCards applies legacy forge filtering for result cards.
+// Special collections are excluded from forge results unless explicitly allowed elsewhere.
 func filterForgeOutputCards(possibleCards []*models.Card, card1, card2 *models.Card) []*models.Card {
 	var filteredCards []*models.Card
 
@@ -180,52 +219,28 @@ func filterForgeOutputCards(possibleCards []*models.Card, card1, card2 *models.C
 	// Determine if both cards are promo
 	bothPromo := (col1Exists && col1Info.IsPromo) && (col2Exists && col2Info.IsPromo)
 
-	// Special handling for album collections
-	isCard1Album := card1.ColID == "bgalbums" || card1.ColID == "ggalbums"
-	isCard2Album := card2.ColID == "bgalbums" || card2.ColID == "ggalbums"
-	bothAlbums := isCard1Album && isCard2Album
-
 	// Determine if both cards have same tags (group consistency)
 	sameTags := hasSameTags(card1.Tags, card2.Tags)
 
 	for _, card := range possibleCards {
 		// Get collection info for potential output card
 		colInfo, exists := botutils.GetCollectionInfo(card.ColID)
-		isOutputAlbum := card.ColID == "bgalbums" || card.ColID == "ggalbums"
 
-		// 1. Exclude forge-excluded collections (fragments, album, liveauction, jackpot, birthdays, limited)
-		if exists && colInfo.IsForgeExcluded {
+		// 1. Exclude forge-excluded collections (fragments, albums, liveauction,
+		// jackpot, birthdays, limited, lottery, signed, removed).
+		if botutils.IsForgeExcludedCollection(card.ColID) || botutils.IsFragmentLikeCard(card) {
 			continue
 		}
 
-		// 2. Special album collection logic
-		if bothAlbums {
-			// If both inputs are albums, output must be album
-			if !isOutputAlbum {
-				continue // Skip non-album cards when both inputs are albums
-			}
-		} else if isCard1Album || isCard2Album {
-			// If only one input is album, output should NOT be album (normal forge logic)
-			if isOutputAlbum {
-				continue // Skip album cards when only one input is album
-			}
-			// Apply normal promo logic for non-album output
-			if exists && colInfo.IsPromo {
+		// 2. Promo collection logic
+		if sameCollection && bothPromo {
+			// If both input cards are from the same promo collection, result must be promo
+			if !exists || !colInfo.IsPromo {
 				continue
 			}
-		} else {
-			// Regular promo collection logic for non-album cases
-			if sameCollection && bothPromo {
-				// If both input cards are from the same promo collection, result must be promo
-				if !exists || !colInfo.IsPromo {
-					continue
-				}
-			} else {
-				// For normal forging, ensure result is not from a promo collection
-				if exists && colInfo.IsPromo {
-					continue
-				}
-			}
+		} else if exists && colInfo.IsPromo {
+			// For normal forging, ensure result is not from a promo collection
+			continue
 		}
 
 		// 3. Tag consistency (group type consistency: GG→GG, BG→BG)

@@ -9,6 +9,7 @@ import (
 
 	"github.com/disgoorg/bot-template/bottemplate/database/models"
 	economicUtils "github.com/disgoorg/bot-template/bottemplate/economy/utils"
+	botutils "github.com/disgoorg/bot-template/bottemplate/utils"
 	"github.com/uptrace/bun"
 )
 
@@ -29,6 +30,27 @@ func (l *AuctionLifecycleManager) createAuctionInternal(ctx context.Context, auc
 	// Execute auction creation in transaction
 	var auction *models.Auction
 	err := l.manager.txManager.WithTransaction(ctx, economicUtils.SerializableTransactionOptions(), func(ctx context.Context, tx bun.Tx) error {
+		card := new(models.Card)
+		if err := tx.NewSelect().Model(card).Where("id = ?", cardID).Scan(ctx); err != nil {
+			return fmt.Errorf("failed to get card details: %w", err)
+		}
+
+		userCard := new(models.UserCard)
+		if err := tx.NewSelect().
+			Model((*models.UserCard)(nil)).
+			ColumnExpr("? AS user_id", sellerID).
+			ColumnExpr("? AS card_id", cardID).
+			ColumnExpr("COALESCE(SUM(amount), 0) AS amount").
+			ColumnExpr("COALESCE(BOOL_OR(favorite), false) AS favorite").
+			ColumnExpr("COALESCE(BOOL_OR(locked), false) AS locked").
+			Where("user_id = ? AND card_id = ?", sellerID, cardID).
+			Scan(ctx, userCard); err != nil {
+			return fmt.Errorf("failed to get user card: %w", err)
+		}
+		if !botutils.IsCardAuctionEligible(card, userCard) {
+			return fmt.Errorf("this card cannot be auctioned")
+		}
+
 		// Remove card from seller's inventory
 		if err := l.manager.txManager.RemoveCardFromInventory(ctx, tx, economicUtils.CardOperationOptions{
 			UserID: sellerID,

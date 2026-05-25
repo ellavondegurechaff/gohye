@@ -13,6 +13,7 @@ import (
 	"github.com/disgoorg/bot-template/bottemplate/database/models"
 	"github.com/disgoorg/bot-template/bottemplate/economy"
 	"github.com/disgoorg/bot-template/bottemplate/economy/utils"
+	botutils "github.com/disgoorg/bot-template/bottemplate/utils"
 	"github.com/uptrace/bun"
 )
 
@@ -212,13 +213,24 @@ func (vm *VialManager) liquefyCard(ctx context.Context, userID int64, cardNameOr
 			return fmt.Errorf("invalid card identifier type")
 		}
 
-		// Verify card level is valid for liquefying
-		if card.Level > 3 {
-			return fmt.Errorf("cannot liquefy cards above 3 stars")
+		userCard := new(models.UserCard)
+		err := tx.NewSelect().
+			Model((*models.UserCard)(nil)).
+			ColumnExpr("? AS user_id", userIDStr).
+			ColumnExpr("? AS card_id", card.ID).
+			ColumnExpr("COALESCE(SUM(amount), 0) AS amount").
+			ColumnExpr("COALESCE(BOOL_OR(favorite), false) AS favorite").
+			ColumnExpr("COALESCE(BOOL_OR(locked), false) AS locked").
+			Where("user_id = ? AND card_id = ?", userIDStr, card.ID).
+			Scan(ctx, userCard)
+		if err != nil {
+			return fmt.Errorf("failed to get user card: %w", err)
+		}
+		if !botutils.IsCardLiquefyEligible(&card, userCard) {
+			return fmt.Errorf("this card cannot be liquefied")
 		}
 
 		// Calculate vial yield
-		var err error
 		if effectIntegrator != nil {
 			vials, err = vm.CalculateVialYieldWithEffects(ctx, &card, userIDStr, effectIntegrator)
 		} else {

@@ -153,9 +153,31 @@ var (
 	excludedCollections = []string{} // No exclusions - all cards are searchable
 
 	// List of collection IDs that should be excluded from forge operations
-	// Based on legacy system: fragments, album, liveauction, jackpot, birthdays, limited
-	forgeExcludedCollections = []string{"fragments", "album", "liveauction", "jackpot", "birthdays", "limited"}
+	// Based on legacy system: excluded cards plus fragments, album, liveauction,
+	// jackpot, birthdays, limited, and lottery.
+	forgeExcludedCollections = []string{"fragments", "album", "albums", "ggalbums", "bgalbums", "liveauction", "jackpot", "birthdays", "limited", "lottery", "signed", "removed"}
+
+	claimExcludedCollections = []string{"promos", "ggalbums", "bgalbums", "birthdays", "liveauction", "mythical", "mystical", "limited", "special", "lottery", "jackpot", "signed", "removed", "fragments"}
+
+	levelUpExcludedCollections = []string{"lottery", "jackpot", "fragments", "album", "albums", "ggalbums", "bgalbums", "removed"}
+
+	recipeExcludedCollections = []string{"lottery", "jackpot", "fragments", "album", "albums", "ggalbums", "bgalbums", "signed", "liveauction", "birthdays", "limited", "removed"}
+
+	auctionExcludedCollections = []string{"signed", "lottery", "jackpot"}
 )
+
+func isForgeExcludedCollectionID(colID string) bool {
+	return collectionIDInList(colID, forgeExcludedCollections)
+}
+
+func collectionIDInList(colID string, excludedIDs []string) bool {
+	for _, excludedID := range excludedIDs {
+		if strings.EqualFold(colID, excludedID) {
+			return true
+		}
+	}
+	return false
+}
 
 // InitializeCollectionInfo caches collection information for efficient searching
 func InitializeCollectionInfo(collections []*models.Collection) {
@@ -173,13 +195,7 @@ func InitializeCollectionInfo(collections []*models.Collection) {
 		}
 
 		// Check if collection is forge-excluded
-		isForgeExcluded := false
-		for _, forgeExcludedID := range forgeExcludedCollections {
-			if collection.ID == forgeExcludedID {
-				isForgeExcluded = true
-				break
-			}
-		}
+		isForgeExcluded := isForgeExcludedCollectionID(collection.ID)
 
 		collectionCache.Store(collection.ID, CollectionInfo{
 			IsPromo:         collection.Promo,
@@ -213,13 +229,7 @@ func RefreshCollectionCache(collections []*models.Collection) {
 		}
 
 		// Check if collection is forge-excluded
-		isForgeExcluded := false
-		for _, forgeExcludedID := range forgeExcludedCollections {
-			if collection.ID == forgeExcludedID {
-				isForgeExcluded = true
-				break
-			}
-		}
+		isForgeExcluded := isForgeExcludedCollectionID(collection.ID)
 
 		collectionCache.Store(collection.ID, CollectionInfo{
 			IsPromo:         collection.Promo,
@@ -254,9 +264,88 @@ func GetCollectionInfo(colID string) (CollectionInfo, bool) {
 	return CollectionInfo{}, false
 }
 
+func IsForgeExcludedCollection(colID string) bool {
+	if isForgeExcludedCollectionID(colID) {
+		return true
+	}
+	if colInfo, exists := GetCollectionInfo(colID); exists {
+		return colInfo.IsForgeExcluded || colInfo.IsFragments
+	}
+	return false
+}
+
+func IsClaimExcludedCollection(colID string) bool {
+	return collectionIDInList(colID, claimExcludedCollections)
+}
+
+func IsRecipeExcludedCollection(colID string) bool {
+	return collectionIDInList(colID, recipeExcludedCollections)
+}
+
+func IsLevelUpExcludedCollection(colID string) bool {
+	return collectionIDInList(colID, levelUpExcludedCollections)
+}
+
+func IsAuctionExcludedCollection(colID string) bool {
+	return collectionIDInList(colID, auctionExcludedCollections)
+}
+
+func IsFragmentLikeCard(card *models.Card) bool {
+	if card == nil {
+		return false
+	}
+	cardNameLower := strings.ToLower(card.Name)
+	return strings.Contains(cardNameLower, "fragment") || strings.Contains(cardNameLower, "frag")
+}
+
+func IsCardClaimEligible(card *models.Card) bool {
+	if card == nil || card.Level >= 5 {
+		return false
+	}
+	if IsClaimExcludedCollection(card.ColID) || IsFragmentLikeCard(card) {
+		return false
+	}
+	if colInfo, exists := GetCollectionInfo(card.ColID); exists && (colInfo.IsPromo || colInfo.IsFragments || colInfo.IsExcluded) {
+		return false
+	}
+	return true
+}
+
+func IsCardLevelUpEligible(card *models.Card, userCard *models.UserCard) bool {
+	if card == nil || userCard == nil || userCard.Amount <= 0 {
+		return false
+	}
+	if card.Level >= 5 || userCard.Locked {
+		return false
+	}
+	if IsLevelUpExcludedCollection(card.ColID) || IsFragmentLikeCard(card) {
+		return false
+	}
+	if colInfo, exists := GetCollectionInfo(card.ColID); exists && (colInfo.IsPromo || colInfo.IsFragments || colInfo.IsExcluded) {
+		return false
+	}
+	return true
+}
+
+func IsCardAuctionEligible(card *models.Card, userCard *models.UserCard) bool {
+	if card == nil || userCard == nil || userCard.Amount <= 0 {
+		return false
+	}
+	if card.Level >= 5 || userCard.Locked {
+		return false
+	}
+	if IsAuctionExcludedCollection(card.ColID) {
+		return false
+	}
+	return true
+}
+
 // IsCardForgeEligible checks if a card can be used in forge operations
 // This centralizes all forge eligibility logic based on the legacy system
 func IsCardForgeEligible(card *models.Card, userCard *models.UserCard) bool {
+	if card == nil {
+		return false
+	}
 	// Level 5+ cards cannot be forged (legendary restriction)
 	if card.Level >= 5 {
 		return false
@@ -267,28 +356,23 @@ func IsCardForgeEligible(card *models.Card, userCard *models.UserCard) bool {
 		return false
 	}
 
-	// Cards with amount <= 0 cannot be forged
-	if userCard != nil && userCard.Amount <= 0 {
+	// Missing cards or cards with amount <= 0 cannot be forged.
+	if userCard == nil || userCard.Amount <= 0 {
 		return false
 	}
 
 	// Check collection-based exclusions
-	if colInfo, exists := GetCollectionInfo(card.ColID); exists {
-		// Forge-excluded collections cannot be forged
-		if colInfo.IsForgeExcluded || colInfo.IsFragments {
-			return false
-		}
+	if IsForgeExcludedCollection(card.ColID) {
+		return false
 	}
 
-	// Enhanced fragment detection: Check for cards with "fragment" in their name
-	// This catches individual fragment cards that might not be in a properly configured collection
-	cardNameLower := strings.ToLower(card.Name)
-	if strings.Contains(cardNameLower, "fragment") || strings.Contains(cardNameLower, "frag") {
+	// Enhanced fragment detection: Check for cards with "fragment" in their name.
+	if IsFragmentLikeCard(card) {
 		return false
 	}
 
 	// Favorite cards with only 1 copy cannot be forged (last copy protection)
-	if userCard != nil && userCard.Favorite && userCard.Amount == 1 {
+	if userCard.Favorite && userCard.Amount == 1 {
 		return false
 	}
 
@@ -298,18 +382,22 @@ func IsCardForgeEligible(card *models.Card, userCard *models.UserCard) bool {
 // IsCardLiquefyEligible checks if a card can be liquefied
 // This centralizes all liquefy eligibility logic based on the legacy system
 func IsCardLiquefyEligible(card *models.Card, userCard *models.UserCard) bool {
+	if card == nil || userCard == nil {
+		return false
+	}
+
 	// Level restriction: cards above level 3 cannot be liquefied
 	if card.Level > 3 {
 		return false
 	}
 
 	// Locked cards cannot be liquefied
-	if userCard != nil && userCard.Locked {
+	if userCard.Locked {
 		return false
 	}
 
 	// Cards with amount <= 0 cannot be liquefied
-	if userCard != nil && userCard.Amount <= 0 {
+	if userCard.Amount <= 0 {
 		return false
 	}
 
@@ -327,7 +415,7 @@ func IsCardLiquefyEligible(card *models.Card, userCard *models.UserCard) bool {
 	}
 
 	// Favorite cards with only 1 copy cannot be liquefied (last copy protection)
-	if userCard != nil && userCard.Favorite && userCard.Amount == 1 {
+	if userCard.Favorite && userCard.Amount == 1 {
 		return false
 	}
 

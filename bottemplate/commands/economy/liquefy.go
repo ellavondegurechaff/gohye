@@ -163,6 +163,13 @@ func (h *LiquefyHandler) HandleComponent(e *handler.ComponentEvent) error {
 			})
 			return err
 		}
+		if !utils.IsCardLiquefyEligible(card, userCard) {
+			_, err := e.UpdateInteractionResponse(discord.MessageUpdate{
+				Content:    utils.Ptr("❌ Failed to liquefy card: this card is locked, protected, too high rarity, or from a restricted collection"),
+				Components: &[]discord.ContainerComponent{},
+			})
+			return err
+		}
 
 		vials, err := vm.LiquefyCardWithEffects(context.Background(), userID, cardID, h.bot.EffectIntegrator)
 		if err != nil {

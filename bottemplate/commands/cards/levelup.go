@@ -74,6 +74,9 @@ func (c *LevelUpCommand) Handle(event *handler.CommandEvent) error {
 	if userCard == nil {
 		return createErrorEmbed(event, "Card Data Error", "Card data is invalid.")
 	}
+	if !utils.IsCardLevelUpEligible(card, userCard) {
+		return createErrorEmbed(event, "Card Not Eligible", "This card cannot be leveled up because it is from a restricted collection, locked, or already max level.")
+	}
 
 	if combineWith := event.SlashCommandInteractionData().String("combine_with"); combineWith != "" {
 		return c.handleCombine(event, userCard, combineWith)
@@ -206,6 +209,13 @@ func (c *LevelUpCommand) handleCombine(event *handler.CommandEvent, mainCard *mo
 	// Safety checks to prevent nil pointer dereference
 	if userFodderCard == nil {
 		return createErrorEmbed(event, "Fodder Card Data Error", "Fodder card data is invalid.")
+	}
+	mainCardDetails, err := c.cardRepo.GetByID(ctx, mainCard.CardID)
+	if err != nil {
+		return createErrorEmbed(event, "Card Access Error", "Failed to access your card data.")
+	}
+	if !utils.IsCardLevelUpEligible(mainCardDetails, mainCard) || !utils.IsCardLevelUpEligible(fodderCard, userFodderCard) {
+		return createErrorEmbed(event, "Combination Failed", "Restricted collection cards cannot be used for levelup or combination.")
 	}
 
 	oldLevel := mainCard.Level
@@ -354,9 +364,9 @@ func (c *LevelUpCommand) findCard(ctx context.Context, userID, query string) (*m
 	if err == nil {
 		// Check if user owns this card
 		userCard, err := c.cardRepo.GetUserCard(ctx, userID, card.ID)
-		if err == nil && userCard.Amount > 0 {
-			if isRemovedCollection(card.ColID) {
-				return nil, fmt.Errorf("removed collection cards cannot be leveled up or combined")
+		if err == nil && userCard != nil && userCard.Amount > 0 {
+			if !utils.IsCardLevelUpEligible(card, userCard) {
+				return nil, fmt.Errorf("restricted collection cards cannot be leveled up or combined")
 			}
 			return card, nil
 		}
@@ -366,11 +376,12 @@ func (c *LevelUpCommand) findCard(ctx context.Context, userID, query string) (*m
 	ownedCards, err := c.cardRepo.SearchOwnedByUserFuzzy(ctx, userID, query, 3)
 	if err == nil && len(ownedCards) > 0 {
 		for _, ownedCard := range ownedCards {
-			if !isRemovedCollection(ownedCard.ColID) {
+			userCard, err := c.cardRepo.GetUserCard(ctx, userID, ownedCard.ID)
+			if err == nil && utils.IsCardLevelUpEligible(ownedCard, userCard) {
 				return ownedCard, nil
 			}
 		}
-		return nil, fmt.Errorf("removed collection cards cannot be leveled up or combined")
+		return nil, fmt.Errorf("restricted collection cards cannot be leveled up or combined")
 	}
 
 	// Final resilient fallback: weighted search within user's cards
@@ -397,7 +408,7 @@ func (c *LevelUpCommand) findCard(ctx context.Context, userID, query string) (*m
 	}
 	levelableCards := make([]*models.Card, 0, len(cards))
 	for _, card := range cards {
-		if !isRemovedCollection(card.ColID) {
+		if utils.IsCardLevelUpEligible(card, userCardMap[card.ID]) {
 			levelableCards = append(levelableCards, card)
 		}
 	}
@@ -407,10 +418,6 @@ func (c *LevelUpCommand) findCard(ctx context.Context, userID, query string) (*m
 		return nil, fmt.Errorf("no cards found matching '%s'", query)
 	}
 	return results[0], nil
-}
-
-func isRemovedCollection(colID string) bool {
-	return strings.EqualFold(colID, "removed")
 }
 
 func LevelUpHandler(b *bottemplate.Bot) handler.CommandHandler {

@@ -127,10 +127,9 @@ func (h *AuctionHandler) HandleCreate(event *handler.CommandEvent) error {
 		})
 	}
 
-	// Prevent auctioning level 5 (legendary) cards
-	if card.Level >= 5 {
+	if !utils.IsCardAuctionEligible(card, userCard) {
 		return event.CreateMessage(discord.MessageCreate{
-			Content: "❌ Level 5 (legendary) cards cannot be auctioned",
+			Content: "❌ This card cannot be auctioned (legendary, locked, or restricted collection)",
 			Flags:   discord.MessageFlagEphemeral,
 		})
 	}

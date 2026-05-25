@@ -9,6 +9,7 @@ import (
 
 	"github.com/disgoorg/bot-template/bottemplate/database/models"
 	"github.com/disgoorg/bot-template/bottemplate/database/repositories"
+	botutils "github.com/disgoorg/bot-template/bottemplate/utils"
 )
 
 type Service struct {
@@ -39,6 +40,13 @@ func (s *Service) GainExpWithModifier(ctx context.Context, userCard *models.User
 
 	if userCard.Level >= 5 {
 		return nil, errors.New("level 5 cards cannot gain experience")
+	}
+	card, err := s.cardRepo.GetByID(ctx, userCard.CardID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get card details: %w", err)
+	}
+	if !botutils.IsCardLevelUpEligible(card, userCard) {
+		return nil, errors.New("restricted collection cards cannot gain experience")
 	}
 
 	// Get stats
@@ -88,6 +96,21 @@ func (s *Service) GainExpWithModifier(ctx context.Context, userCard *models.User
 }
 
 func (s *Service) CombineCards(ctx context.Context, mainCard, fodderCard *models.UserCard) (*LevelingResult, error) {
+	if mainCard == nil || fodderCard == nil {
+		return nil, errors.New("card not found")
+	}
+	mainCardDetails, err := s.cardRepo.GetByID(ctx, mainCard.CardID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get main card details: %w", err)
+	}
+	fodderCardDetails, err := s.cardRepo.GetByID(ctx, fodderCard.CardID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get fodder card details: %w", err)
+	}
+	if !botutils.IsCardLevelUpEligible(mainCardDetails, mainCard) || !botutils.IsCardLevelUpEligible(fodderCardDetails, fodderCard) {
+		return nil, errors.New("restricted collection cards cannot be used for combination")
+	}
+
 	// Check if fodder card has exp
 	if fodderCard.Exp <= 0 {
 		return nil, errors.New("fodder card must have experience points to be used for combination")

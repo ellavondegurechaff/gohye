@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/disgoorg/bot-template/bottemplate/database/models"
+	botutils "github.com/disgoorg/bot-template/bottemplate/utils"
 	"github.com/uptrace/bun"
 )
 
@@ -298,12 +299,15 @@ func (r *effectRepository) GetRandomCardForRecipe(ctx context.Context, userID st
 		"jackpot",   // Jackpot cards (legacy)
 		"fragments", // Fragment cards (legacy)
 		"albums",    // Album cards (legacy - "album" in JS)
+		"ggalbums",  // Current album collection ID
+		"bgalbums",  // Current album collection ID
 
 		// Additional exclusions requested by user
 		"signed",      // Signed cards
 		"liveauction", // Live auction cards
 		"birthdays",   // Birthday cards
 		"limited",     // Limited cards
+		"removed",     // Removed/imported legacy cards
 	}
 
 	query := r.db.NewSelect().
@@ -313,11 +317,12 @@ func (r *effectRepository) GetRandomCardForRecipe(ctx context.Context, userID st
 
 	// Exclude specific event/special collections
 	for _, excludedCol := range excludedCollections {
-		query = query.Where("col_id != ?", excludedCol)
+		query = query.Where("LOWER(col_id) != ?", excludedCol)
 	}
 
 	// Also exclude promo collections by checking the collections table
 	query = query.Where("NOT EXISTS (SELECT 1 FROM collections col WHERE col.id = c.col_id AND col.promo = true)")
+	query = query.Where("LOWER(name) NOT LIKE ?", "%fragment%")
 
 	query = query.OrderExpr("RANDOM()").Limit(1)
 
@@ -343,6 +348,9 @@ func (r *effectRepository) GetRandomCardForRecipe(ctx context.Context, userID st
 		slog.String("name", card.Name),
 		slog.Int64("level", int64(card.Level)),
 		slog.String("collection", card.ColID))
+	if botutils.IsRecipeExcludedCollection(card.ColID) || botutils.IsFragmentLikeCard(&card) {
+		return nil, fmt.Errorf("selected card is from a restricted collection")
+	}
 	return &card, nil
 }
 
